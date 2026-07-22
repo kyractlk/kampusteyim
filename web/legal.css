@@ -1,0 +1,162 @@
+:root {
+  --navy: #0b1f3a;
+  --navy-soft: #163356;
+  --cyan: #00d4c8;
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --text: #0b1f3a;
+  --muted: #5b6b7c;
+  --border: #d7e0eb;
+  --radius: 16px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  font-family: "DM Sans", system-ui, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(0, 212, 200, 0.12), transparent 55%),
+    radial-gradient(900px 400px at 100% 0%, rgba(45, 27, 78, 0.08), transparent 50%),
+    var(--bg);
+  line-height: 1.65;
+  min-height: 100vh;
+}
+
+a {
+  color: var(--navy-soft);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+a:hover { color: var(--cyan); }
+
+.wrap {
+  width: min(760px, calc(100% - 2rem));
+  margin-inline: auto;
+}
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(12px);
+  background: rgba(244, 247, 251, 0.88);
+  border-bottom: 1px solid var(--border);
+}
+
+.top-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-weight: 700;
+  color: var(--navy);
+  text-decoration: none;
+  letter-spacing: -0.02em;
+}
+.brand img {
+  border-radius: 10px;
+  background: #000;
+}
+
+nav {
+  display: flex;
+  gap: 0.35rem;
+}
+nav a {
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  color: var(--muted);
+}
+nav a[aria-current="page"] {
+  background: var(--navy);
+  color: #fff;
+}
+nav a:not([aria-current="page"]):hover {
+  background: var(--surface);
+  color: var(--navy);
+}
+
+.doc {
+  padding: 2.5rem 0 3.5rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+h1 {
+  margin: 0 0 0.5rem;
+  font-family: Fraunces, Georgia, serif;
+  font-size: clamp(1.85rem, 4vw, 2.45rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.meta {
+  margin: 0 0 2rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.35rem 1.35rem;
+  margin-bottom: 0.85rem;
+}
+
+h2 {
+  margin: 0 0 0.55rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+section p { margin: 0 0 0.65rem; }
+section p:last-child { margin-bottom: 0; }
+
+ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+li { margin: 0.25rem 0; }
+
+.foot-note {
+  margin-top: 1.5rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.site-foot {
+  border-top: 1px solid var(--border);
+  padding: 1.25rem 0 2rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.site-foot p { margin: 0; }
+
+@media (max-width: 560px) {
+  .top-inner { flex-wrap: wrap; }
+  nav { width: 100%; justify-content: flex-start; }
+}

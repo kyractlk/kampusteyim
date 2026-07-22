@@ -9,7 +9,9 @@ class AppInfo {
   static const supportEmail = 'info@gaunengineering.com.tr';
   static const versionLabel = '1.1.0';
   /// Paylaşılabilir derin linkler (Hosting SPA).
-  static const webBaseUrl = 'https://gaunengineering.com.tr';
+  static const webBaseUrl = 'https://ayskampuss.web.app';
+  static const privacyUrl = 'https://ayskampuss.web.app/privacy.html';
+  static const termsUrl = 'https://ayskampuss.web.app/terms.html';
   static const copyright =
       '© KampüsteyimAPP · AYS Tech';
 }
