@@ -12,6 +12,7 @@ class AppInfo {
   static const webBaseUrl = 'https://ayskampuss.web.app';
   static const privacyUrl = 'https://ayskampuss.web.app/privacy.html';
   static const termsUrl = 'https://ayskampuss.web.app/terms.html';
+  static const deleteAccountUrl = 'https://ayskampuss.web.app/delete-account.html';
   static const copyright =
       '© KampüsteyimAPP · AYS Tech';
 }

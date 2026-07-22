@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hesap Silme · KampüsteyimAPP</title>
+  <meta name="description" content="KampüsteyimAPP hesap silme talebi ve uygulama içi silme adımları." />
+  <link rel="icon" href="favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="legal.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="brand" href="/">
+        <img src="kampusteyim_icon.png" alt="" width="36" height="36" />
+        <span>KampüsteyimAPP</span>
+      </a>
+      <nav>
+        <a href="/privacy.html">Gizlilik</a>
+        <a href="/terms.html">Şartlar</a>
+        <a href="/delete-account.html" aria-current="page">Hesap sil</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap doc">
+    <p class="eyebrow">Hesap</p>
+    <h1>Hesap silme</h1>
+    <p class="meta">
+      KampüsteyimAPP hesap oluşturmaya izin verir. Bu nedenle Google Play ve
+      KVKK kapsamında hesap silme yolu sunulur. Talep sonrası kişisel verileriniz
+      silinir / yok edilir (yasal saklama zorunlulukları saklıdır).
+    </p>
+
+    <section>
+      <h2>Uygulama içinden silme (önerilen)</h2>
+      <ol>
+        <li>KampüsteyimAPP’e giriş yap</li>
+        <li><strong>Profil → Hesabı sil</strong> (veya Ayarlar / yasal bölüm)</li>
+        <li>Uyarıyı onayla</li>
+        <li>E-postana gelen doğrulama kodunu gir</li>
+        <li>Hesabın kalıcı olarak silinir</li>
+      </ol>
+      <p>
+        Bu işlem geri alınamaz. Paylaşımların “silinmiş hesap” olarak kalabilir;
+        kişisel profil verilerin kaldırılır.
+      </p>
+    </section>
+
+    <section>
+      <h2>Web üzerinden talep (uygulama yoksa)</h2>
+      <p>
+        Uygulamaya erişemiyorsan aşağıdaki formu doldur. Talebin
+        <strong>en geç 30 gün</strong> içinde işlenir; gerekirse kimlik
+        doğrulaması için e-posta ile dönüş yapılır.
+      </p>
+      <form class="delete-form" id="deleteForm">
+        <label>
+          Kayıtlı e-posta
+          <input type="email" id="email" name="email" required placeholder="ornek@mail.com" autocomplete="email" />
+        </label>
+        <label>
+          Kullanıcı adı (varsa)
+          <input type="text" id="username" name="username" placeholder="@kullanici" autocomplete="username" />
+        </label>
+        <label>
+          Ek not
+          <textarea id="note" name="note" rows="3" placeholder="İsteğe bağlı"></textarea>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="confirm" required />
+          Hesabımın ve ilişkili kişisel verilerimin silinmesini talep ediyorum.
+        </label>
+        <button type="submit">Silme talebi gönder</button>
+      </form>
+      <p id="formMsg" class="form-msg" hidden></p>
+    </section>
+
+    <section>
+      <h2>Ne silinir?</h2>
+      <ul>
+        <li>Profil, iletişim ve hesap bilgileri</li>
+        <li>Oturum / bildirim token’ları</li>
+        <li>Öğrenci doğrulama belgesi kayıtları (saklama süresi dolmuşsa)</li>
+      </ul>
+      <p>
+        Yasal zorunluluk veya güvenlik logları sınırlı süreyle tutulabilir.
+        Ayrıntılar: <a href="/privacy.html">Gizlilik Politikası</a>
+      </p>
+    </section>
+
+    <section>
+      <h2>Destek</h2>
+      <p>
+        <a href="mailto:info@gaunengineering.com.tr?subject=Kamp%C3%BCsteyimAPP%20Hesap%20Silme">info@gaunengineering.com.tr</a>
+      </p>
+    </section>
+  </main>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <p>© KampüsteyimAPP · AYS Tech · Kayra Çatalkaya</p>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('deleteForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = document.getElementById('email').value.trim();
+      var username = document.getElementById('username').value.trim();
+      var note = document.getElementById('note').value.trim();
+      var body =
+        'KampüsteyimAPP hesap silme talebi%0A%0A' +
+        'E-posta: ' + encodeURIComponent(email) + '%0A' +
+        'Kullanıcı adı: ' + encodeURIComponent(username || '-') + '%0A' +
+        'Not: ' + encodeURIComponent(note || '-') + '%0A%0A' +
+        'Bu talebi KVKK kapsamında işleyin.';
+      var href =
+        'mailto:info@gaunengineering.com.tr' +
+        '?subject=' + encodeURIComponent('KampüsteyimAPP Hesap Silme Talebi') +
+        '&body=' + body;
+      window.location.href = href;
+      var msg = document.getElementById('formMsg');
+      msg.hidden = false;
+      msg.textContent =
+        'E-posta uygulaman açıldıysa gönder. Açılmazsa info@gaunengineering.com.tr adresine aynı bilgileri yazarak ilet.';
+    });
+  </script>
+</body>
+</html>

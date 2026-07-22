@@ -136,11 +136,65 @@ h2 {
 section p { margin: 0 0 0.65rem; }
 section p:last-child { margin-bottom: 0; }
 
-ul {
+ul, ol {
   margin: 0.35rem 0 0;
   padding-left: 1.15rem;
 }
 li { margin: 0.25rem 0; }
+
+.delete-form {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+.delete-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+.delete-form input,
+.delete-form textarea {
+  font: inherit;
+  font-weight: 400;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+}
+.delete-form input:focus,
+.delete-form textarea:focus {
+  outline: 2px solid rgba(0, 212, 200, 0.45);
+  border-color: var(--cyan);
+}
+.delete-form .check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+.delete-form .check input {
+  margin-top: 0.2rem;
+}
+.delete-form button {
+  justify-self: start;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.75rem 1.25rem;
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: var(--navy);
+  cursor: pointer;
+}
+.delete-form button:hover { background: var(--navy-soft); }
+.form-msg {
+  margin-top: 0.85rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
 
 .foot-note {
   margin-top: 1.5rem;
