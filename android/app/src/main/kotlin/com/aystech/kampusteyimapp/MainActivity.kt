@@ -1,4 +1,4 @@
-package com.aystech.mt_mobil
+package com.aystech.kampusteyimapp
 
 import io.flutter.embedding.android.FlutterActivity
 

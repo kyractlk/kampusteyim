@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:378741313538:android:6ab6f0d02297d15191971b",
+        "mobilesdk_app_id": "1:378741313538:android:e71902c160dee4bb91971b",
         "android_client_info": {
-          "package_name": "com.aystech.mt_mobil"
+          "package_name": "com.aystech.kampusteyimapp"
         }
       },
       "oauth_client": [],

@@ -4,7 +4,7 @@
       "android": {
         "default": {
           "projectId": "ayskampuss",
-          "appId": "1:378741313538:android:6ab6f0d02297d15191971b",
+          "appId": "1:378741313538:android:e71902c160dee4bb91971b",
           "fileOutput": "android/app/google-services.json"
         }
       },
@@ -20,7 +20,7 @@
         "lib/firebase_options.dart": {
           "projectId": "ayskampuss",
           "configurations": {
-            "android": "1:378741313538:android:6ab6f0d02297d15191971b",
+            "android": "1:378741313538:android:e71902c160dee4bb91971b",
             "ios": "1:378741313538:ios:2657fe372f2f2d5491971b",
             "web": "1:378741313538:web:d6941781b364ee6c91971b"
           }
