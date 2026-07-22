@@ -1,11 +1,6 @@
-# Windows'tan iOS: Codemagic bulut Mac (Expo Flutter derleyemez — bu EAS karşılığı).
+# Windows'tan iOS: Codemagic bulut Mac
 # Team: 8496F2PR53 · Bundle: com.aystech.mtMobil
-#
-# Codemagic UI:
-# 1) GitHub repo bağla
-# 2) Teams → Apple Developer → App Store Connect API Key yükle (isim: KampusteyimASC)
-# 3) Code signing → Automatic (distribution_type: app_store)
-# 4) Bu workflow'u Start
+# SPM kapalı → CocoaPods (permission_handler Podfile flags)
 
 workflows:
   ios-app-store:
@@ -13,7 +8,6 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 120
     integrations:
-      # Codemagic → Team integrations → App Store Connect → isim birebir aynı olmalı
       app_store_connect: KampusteyimASC
     environment:
       ios_signing:
@@ -25,21 +19,29 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
+      - name: Disable Swift Package Manager (use CocoaPods)
+        script: |
+          flutter config --no-enable-swift-package-manager
       - name: Code signing (automatic profiles)
         script: xcode-project use-profiles
       - name: Flutter pub get
-        script: flutter pub get
-      - name: CocoaPods
+        script: |
+          flutter clean
+          flutter pub get
+      - name: CocoaPods install
         script: |
           cd ios
-          pod install
+          rm -rf Pods Podfile.lock .symlinks
+          pod install --repo-update
       - name: Build number
         script: |
-          sed -i '' "s/^version: .*/version: 1.0.8+$BUILD_NUMBER/" pubspec.yaml
+          # Mevcut major.minor koru, build = Codemagic numarası
+          sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BUILD_NUMBER/" pubspec.yaml
           grep '^version:' pubspec.yaml
-      - name: Flutter IPA
+      - name: Flutter IPA (CocoaPods)
         script: |
           flutter build ipa --release \
+            --no-tree-shake-icons \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
