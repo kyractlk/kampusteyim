@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="KampüsteyimAPP — kampüs sosyal ağı. AYS Tech.">
+  <meta name="theme-color" content="#000000">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="KampüsteyimAPP">
+
+  <link rel="icon" type="image/png" sizes="192x192" href="kampusteyim_icon.png?v=3">
+  <link rel="icon" type="image/png" href="favicon.png?v=3">
+  <link rel="shortcut icon" href="favicon.png?v=3">
+  <link rel="apple-touch-icon" href="kampusteyim_icon.png?v=3">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/Icon-192.png?v=3">
+
+  <title>KampüsteyimAPP</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    html, body { height: 100%; margin: 0; background: #000000; }
+    #boot {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px; color: #E8F1F8; font-family: system-ui, sans-serif;
+      z-index: 9999; transition: opacity .28s ease; background: #000000;
+    }
+    #boot.fade { opacity: 0; pointer-events: none; }
+    #boot img {
+      width: 88px; height: 88px; border-radius: 18px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.45);
+      object-fit: cover;
+    }
+    #boot .spin {
+      width: 22px; height: 22px; border: 2px solid rgba(255,255,255,.22);
+      border-top-color: #00D4C8; border-radius: 50%; animation: s 0.8s linear infinite;
+      opacity: 0; transition: opacity .2s;
+    }
+    #boot.show-wait .spin { opacity: 1; }
+    #boot .label {
+      font-weight: 600; font-size: 13px; letter-spacing: .02em; opacity: 0;
+      transition: opacity .2s;
+    }
+    #boot.show-wait .label { opacity: .75; }
+    @keyframes s { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="boot">
+    <img src="kampusteyim_icon.png" alt="KampüsteyimAPP" width="88" height="88">
+    <div class="spin" aria-hidden="true"></div>
+    <div class="label">KampüsteyimAPP</div>
+  </div>
+  <script>
+    (function () {
+      var boot = document.getElementById('boot');
+      var removed = false;
+      function hideBoot() {
+        if (removed || !boot) return;
+        removed = true;
+        boot.classList.add('fade');
+        setTimeout(function () {
+          if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+        }, 300);
+      }
+      // Yalnizca gercekten gecikirse spinner goster (1.2s)
+      setTimeout(function () {
+        if (!removed && boot) boot.classList.add('show-wait');
+      }, 1200);
+      // Ilk frame gelince kaldir
+      window.addEventListener('flutter-first-frame', hideBoot);
+      // Emniyet: en fazla ~3.5s sonra kaldir (web takilmasin)
+      setTimeout(hideBoot, 3500);
+    })();
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

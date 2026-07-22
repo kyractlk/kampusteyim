@@ -1,0 +1,58 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function underSize() {
+      return request.resource.size < 75 * 1024 * 1024;
+    }
+    function isMedia() {
+      return request.resource.contentType.matches('image/.*')
+        || request.resource.contentType.matches('video/.*');
+    }
+
+    match /users/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && underSize()
+        && isMedia();
+    }
+
+    match /posts/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && underSize()
+        && isMedia();
+    }
+
+    match /cv/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && underSize()
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Öğrenci belgesi — kayıt (auth öncesi) + sıkı tip/boyut limiti.
+    match /student_ids/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if request.resource.size < 12 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/jpeg')
+          || request.resource.contentType.matches('image/png')
+          || request.resource.contentType == 'application/pdf'
+        );
+    }
+
+    match /stories/{userId}/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && underSize()
+        && isMedia();
+    }
+  }
+}

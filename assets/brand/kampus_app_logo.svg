@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="32" y1="24" x2="224" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1F3A"/>
+      <stop offset="1" stop-color="#12355C"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="72" y1="88" x2="184" y2="168" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#33C5D1"/>
+      <stop offset="1" stop-color="#7BE0A5"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="128" r="120" fill="url(#bg)"/>
+  <!-- Kampüs silueti: üç bina -->
+  <path d="M58 176V118l28-18 28 18v58H58Z" fill="#E8F4F8" fill-opacity=".92"/>
+  <path d="M110 176V96l36-22 36 22v80H110Z" fill="#FFFFFF"/>
+  <path d="M178 176v-46l22-14 22 14v46h-44Z" fill="#A8C5E2"/>
+  <!-- Pencereler -->
+  <rect x="72" y="128" width="10" height="10" rx="1.5" fill="#0B1F3A" fill-opacity=".55"/>
+  <rect x="88" y="128" width="10" height="10" rx="1.5" fill="#0B1F3A" fill-opacity=".55"/>
+  <rect x="72" y="146" width="10" height="10" rx="1.5" fill="#0B1F3A" fill-opacity=".55"/>
+  <rect x="88" y="146" width="10" height="10" rx="1.5" fill="#0B1F3A" fill-opacity=".55"/>
+  <rect x="128" y="108" width="12" height="12" rx="2" fill="#0B1F3A" fill-opacity=".45"/>
+  <rect x="148" y="108" width="12" height="12" rx="2" fill="#0B1F3A" fill-opacity=".45"/>
+  <rect x="128" y="130" width="12" height="12" rx="2" fill="#0B1F3A" fill-opacity=".45"/>
+  <rect x="148" y="130" width="12" height="12" rx="2" fill="#0B1F3A" fill-opacity=".45"/>
+  <rect x="128" y="152" width="12" height="12" rx="2" fill="#0B1F3A" fill-opacity=".45"/>
+  <rect x="148" y="152" width="12" height="12" rx="2" fill="#0B1F3A" fill-opacity=".45"/>
+  <!-- Kapı / accent yay -->
+  <path d="M118 176v-16a10 10 0 0 1 20 0v16" stroke="url(#accent)" stroke-width="6" stroke-linecap="round"/>
+  <!-- Üst halka / ağ noktası -->
+  <circle cx="128" cy="64" r="10" fill="url(#accent)"/>
+  <circle cx="98" cy="78" r="5" fill="#33C5D1" fill-opacity=".85"/>
+  <circle cx="158" cy="78" r="5" fill="#7BE0A5" fill-opacity=".9"/>
+  <path d="M118 68 103 76M138 68 153 76" stroke="#33C5D1" stroke-width="2.5" stroke-linecap="round" opacity=".8"/>
+</svg>

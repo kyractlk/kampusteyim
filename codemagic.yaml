@@ -1,0 +1,57 @@
+# Windows'tan iOS: Codemagic bulut Mac (Expo Flutter derleyemez — bu EAS karşılığı).
+# Team: 8496F2PR53 · Bundle: com.aystech.mtMobil
+#
+# Codemagic UI:
+# 1) GitHub repo bağla
+# 2) Teams → Apple Developer → App Store Connect API Key yükle (isim: KampusteyimASC)
+# 3) Code signing → Automatic (distribution_type: app_store)
+# 4) Bu workflow'u Start
+
+workflows:
+  ios-app-store:
+    name: KampusteyimAPP iOS → TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    integrations:
+      # Codemagic → Team integrations → App Store Connect → isim birebir aynı olmalı
+      app_store_connect: KampusteyimASC
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.aystech.mtMobil
+      vars:
+        BUNDLE_ID: com.aystech.mtMobil
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Code signing (automatic profiles)
+        script: xcode-project use-profiles
+      - name: Flutter pub get
+        script: flutter pub get
+      - name: CocoaPods
+        script: |
+          cd ios
+          pod install
+      - name: Build number
+        script: |
+          sed -i '' "s/^version: .*/version: 1.0.8+$BUILD_NUMBER/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+      - name: Flutter IPA
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      email:
+        recipients:
+          - alikayracatalkaya321@gmail.com
+        notify:
+          success: true
+          failure: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false

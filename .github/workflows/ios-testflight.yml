@@ -1,0 +1,31 @@
+# name: iOS TestFlight (Windows → GitHub macOS runner)
+# Codemagic yoksa yedek. Secrets gerekir:
+#   APP_STORE_CONNECT_API_KEY_ID
+#   APP_STORE_CONNECT_ISSUER_ID
+#   APP_STORE_CONNECT_API_KEY (p8 içeriği)
+#   MATCH / certificates için tercih Codemagic otomatik imza
+
+name: ios-testflight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Pub get
+        run: flutter pub get
+      - name: Pods
+        run: cd ios && pod install
+      - name: Build IPA (unsigned artifact path)
+        run: |
+          flutter build ios --release --no-codesign
+          echo "Kod imzası için Codemagic önerilir (otomatik Apple profil)."
+          echo "Bu workflow iskeleti; App Store yükleme Codemagic ile yapılır."
+        continue-on-error: true

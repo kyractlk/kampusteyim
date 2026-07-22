@@ -1,0 +1,191 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isAdmin() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (
+          userDoc().isSuperAdmin == true ||
+          userDoc().role == 'admin'
+        );
+    }
+    /// Seed hesaplarda AppUser.id (stableId) authorId olarak yazılır.
+    function isAuthorById(authorId) {
+      return signedIn() && (
+        authorId == request.auth.uid ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          userDoc().stableId == authorId
+        )
+      );
+    }
+
+    match /app_secrets/{doc} {
+      allow read, write: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+
+      match /cv/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+      match /cv_exports/{docId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+      match /notifications/{docId} {
+        allow read, update, delete: if isOwner(userId);
+        allow create: if signedIn();
+      }
+    }
+
+    match /cvs/{userId} {
+      allow read: if signedIn();
+      allow write: if signedIn() && (
+        isOwner(userId) ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          userDoc().stableId == userId
+        )
+      );
+    }
+
+    match /jobs/{jobId} {
+      allow read: if true;
+      allow create, update, delete: if signedIn();
+    }
+
+    match /companies/{companyId} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+
+    match /offers/{offerId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      // Beğeni / sayaç / soft-delete için giriş yapan herkes güncelleyebilir
+      allow create, update: if signedIn();
+      allow delete: if isAdmin() ||
+        (signedIn() && isAuthorById(resource.data.authorId));
+    }
+
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create, update, delete: if signedIn();
+    }
+
+    match /announcements/{id} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+
+    match /events/{id} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+
+    match /reports/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+    }
+
+    /// Instagram tarzı hikâyeler (24s, arşiv, beğeni, gizle).
+    match /stories/{storyId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if isAdmin() ||
+        (signedIn() && isAuthorById(resource.data.authorId));
+    }
+
+    match /staff_roles/{id} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /handles/{handle} {
+      allow read: if true;
+      allow create, update, delete: if signedIn();
+    }
+
+    match /moderation_actions/{id} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /password_resets/{token} {
+      allow read, write: if false;
+    }
+
+    match /mail_outbox/{id} {
+      allow create: if signedIn();
+      allow read, update, delete: if isAdmin();
+    }
+
+    /// AYS Tech bakım durumu — herkes okur; yazma yalnızca admin / CF.
+    match /app_config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /maintenance_subscribers/{id} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /feedback/{id} {
+      allow create: if signedIn();
+      allow read, update, delete: if isAdmin();
+    }
+
+    /// Hesap silme kodları — yalnızca Cloud Functions.
+    match /account_deletions/{id} {
+      allow read, write: if false;
+    }
+
+    match /account_deletion_logs/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    /// Çalışma odaları — üye okur/yazar; mesajlar ve event logları kalır.
+    match /study_rooms/{roomId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if isAdmin();
+
+      match /messages/{msgId} {
+        allow read: if signedIn();
+        allow create: if signedIn();
+        allow update, delete: if isAdmin();
+      }
+
+      match /events/{eventId} {
+        allow read: if isAdmin() || signedIn();
+        allow create: if signedIn();
+        allow update, delete: if isAdmin();
+      }
+    }
+  }
+}
