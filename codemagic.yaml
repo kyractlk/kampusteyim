@@ -1,6 +1,10 @@
 # Windows'tan iOS: Codemagic bulut Mac
 # Team: 8496F2PR53 · Bundle: com.aystech.mtMobil
 # SPM kapalı → CocoaPods (permission_handler Podfile flags)
+#
+# KRİTİK: App Store’a yalnızca --release IPA.
+# Debug IPA home screen’den açılmaz (Guideline 2.1) ve
+# iOS 26.5 ProMotion’da VSyncClient ile çöker (#187565).
 
 workflows:
   ios-app-store:
@@ -28,6 +32,7 @@ workflows:
         script: |
           flutter clean
           flutter pub get
+          flutter --version
       - name: CocoaPods install
         script: |
           cd ios
@@ -35,14 +40,24 @@ workflows:
           pod install --repo-update
       - name: Build number
         script: |
-          # Mevcut major.minor koru, build = Codemagic numarası
+          # Mevcut major.minor.patch koru, build = Codemagic numarası
           sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BUILD_NUMBER/" pubspec.yaml
           grep '^version:' pubspec.yaml
-      - name: Flutter IPA (CocoaPods)
+      - name: Flutter IPA RELEASE only
         script: |
+          set -e
+          echo "Building RELEASE IPA (never Debug)…"
           flutter build ipa --release \
             --no-tree-shake-icons \
             --export-options-plist=/Users/builder/export_options.plist
+          IPA=$(ls -1 build/ios/ipa/*.ipa | head -1)
+          echo "IPA: $IPA"
+          # Debug binary App Store’a gitmesin
+          if unzip -l "$IPA" | grep -qi 'Flutter.framework.*JIT\|kernel_blob.bin'; then
+            echo "ERROR: Debug/JIT artifacts detected in IPA — aborting upload"
+            exit 1
+          fi
+          echo "Release IPA OK"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

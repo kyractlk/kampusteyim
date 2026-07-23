@@ -2,13 +2,15 @@ import Flutter
 import UIKit
 import UserNotifications
 
+/// Klasik FlutterAppDelegate — FlutterImplicitEngineDelegate KULLANILMIYOR.
+/// iOS 26.5 + ProMotion’da implicit engine, App Store incelemesinde
+/// VSyncClient SIGSEGV ile anında çöküyor (Flutter #183900 / #187565).
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+@objc class AppDelegate: FlutterAppDelegate {
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // iOS push: UNUserNotificationCenter + APNs kaydı (FCM swizzle ile birlikte)
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
     }
@@ -16,15 +18,10 @@ import UserNotifications
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
-    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-  }
-
   override func application(
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
   ) {
-    // FlutterAppDelegate / FCM swizzle APNs → FCM eşlemesi yapar
     super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
   }
 
