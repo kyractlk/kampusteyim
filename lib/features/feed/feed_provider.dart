@@ -524,6 +524,13 @@ class FeedProvider extends ChangeNotifier {
           actorName: authorName,
           directory: directory,
         ));
+        unawaited(_mirrorVideoToReels(
+          post: post,
+          authorId: authorId,
+          authorName: authorName,
+          authorHandle: authorHandle,
+          directory: directory,
+        ));
         return 'WARN:${data['warning']}';
       }
     } catch (e) {
@@ -541,7 +548,61 @@ class FeedProvider extends ChangeNotifier {
       actorName: authorName,
       directory: directory,
     ));
+    unawaited(_mirrorVideoToReels(
+      post: post,
+      authorId: authorId,
+      authorName: authorName,
+      authorHandle: authorHandle,
+      directory: directory,
+    ));
     return null;
+  }
+
+  /// Akışa video post → Kampüs Reels’e de düşer.
+  Future<void> _mirrorVideoToReels({
+    required Post post,
+    required String authorId,
+    required String authorName,
+    required String authorHandle,
+    required List<AppUser> directory,
+  }) async {
+    final video = post.media.where((m) => m.type == MediaType.video).toList();
+    if (video.isEmpty) return;
+    try {
+      final existing = await FirebaseFirestore.instance
+          .collection('reels')
+          .where('sourcePostId', isEqualTo: post.id)
+          .limit(1)
+          .get();
+      if (existing.docs.isNotEmpty) return;
+      AppUser? author;
+      for (final u in directory) {
+        if (u.id == authorId) {
+          author = u;
+          break;
+        }
+      }
+      final doc = FirebaseFirestore.instance.collection('reels').doc();
+      await doc.set({
+        'authorId': authorId,
+        'authorName': authorName,
+        'authorHandle': authorHandle,
+        'authorPhotoUrl': author?.photoUrl,
+        'authorVerified':
+            author != null && (author.showBlueBadge || author.showGoldBadge),
+        'mediaUrl': video.first.url,
+        'mediaType': 'video',
+        'caption': post.content,
+        'createdAt': DateTime.now().toIso8601String(),
+        'likedBy': <String>[],
+        'viewedBy': <String>[],
+        'commentCount': 0,
+        'reportCount': 0,
+        'sourcePostId': post.id,
+      });
+    } catch (e) {
+      debugPrint('[feed] mirrorReel: $e');
+    }
   }
 
   Future<void> _notifyMentions({

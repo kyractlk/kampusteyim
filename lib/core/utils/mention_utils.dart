@@ -59,6 +59,17 @@ class MentionUtils {
     return list.take(limit).toList();
   }
 
+  /// Görüntüleme için tek @ — handle zaten @ ile geliyorsa tekrar ekleme.
+  static String displayHandle(String handle, {String fallback = ''}) {
+    final h = handle.trim();
+    if (h.isEmpty) {
+      final f = fallback.trim().replaceFirst(RegExp(r'^@+'), '');
+      return f.isEmpty ? '@kampus' : '@$f';
+    }
+    final bare = h.replaceFirst(RegExp(r'^@+'), '');
+    return '@$bare';
+  }
+
   /// Aktif @ sorgusunu seçilen kullanıcıyla değiştir.
   static ({String text, int cursor}) applyMention({
     required String text,

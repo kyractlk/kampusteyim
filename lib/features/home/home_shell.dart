@@ -13,6 +13,7 @@ import '../../core/widgets/app_circle_logo.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
+import '../reels/reels_provider.dart';
 
 class HomeShell extends StatelessWidget {
   const HomeShell({super.key, required this.navigationShell});
@@ -31,6 +32,7 @@ class HomeShell extends StatelessWidget {
         return;
       }
     }
+    context.read<ReelsProvider>().setTabActive(index == 1);
     navigationShell.goBranch(
       index,
       initialLocation: index == navigationShell.currentIndex,
@@ -52,6 +54,12 @@ class HomeShell extends StatelessWidget {
     final loggedIn = context.watch<AuthProvider>().isAuthenticated;
     final wide = AppBreakpoints.isWide(context);
     final index = navigationShell.currentIndex;
+
+    // Reels sekmesi dışındayken videoyu durdur (indexedStack yüzünden dispose olmaz).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      context.read<ReelsProvider>().setTabActive(index == 1);
+    });
 
     // —— MOBİL: alt nav + tam genişlik içerik ——
     if (!wide) {

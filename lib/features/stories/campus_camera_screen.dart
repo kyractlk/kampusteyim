@@ -1,5 +1,10 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/storage/media_upload.dart';
@@ -9,10 +14,12 @@ import '../auth/data/auth_provider.dart';
 import '../reels/reels_provider.dart';
 import 'stories_provider.dart';
 
-/// Kampüs kamera — anlık foto / basılı video / galeri; Hikâye veya Reels paylaş.
+enum CampusShareMode { story, reels, choose }
+
+/// Kampüs kamera — uygulama içi canlı önizleme (telefon kamerasına yönlendirme yok).
 Future<void> openCampusCamera(
   BuildContext context, {
-  bool preferReels = false,
+  CampusShareMode mode = CampusShareMode.choose,
 }) async {
   if (!AuthGate.requireAuth(
     context,
@@ -37,76 +44,267 @@ Future<void> openCampusCamera(
   await Navigator.of(context).push<void>(
     MaterialPageRoute(
       fullscreenDialog: true,
-      builder: (_) => CampusCameraScreen(preferReels: preferReels),
+      builder: (_) => CampusCameraScreen(mode: mode),
     ),
   );
 }
 
-class CampusCameraScreen extends StatefulWidget {
-  const CampusCameraScreen({super.key, this.preferReels = false});
+/// Hikâye / Reels seçim menüsü (Instagram +).
+Future<void> openCampusShareMenu(BuildContext context) async {
+  if (!AuthGate.requireAuth(
+    context,
+    message: 'Paylaşmak için giriş yapmalısın.',
+  )) {
+    return;
+  }
+  final choice = await showModalBottomSheet<CampusShareMode>(
+    context: context,
+    backgroundColor: AppColors.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const Text(
+              'Ne paylaşmak istersin?',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: AppColors.cyan,
+                child: Icon(Icons.auto_awesome, color: Colors.white),
+              ),
+              title: const Text('Hikâye',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: const Text('24 saat kampüste görünür'),
+              onTap: () => Navigator.pop(ctx, CampusShareMode.story),
+            ),
+            ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: AppColors.lime,
+                child: Icon(Icons.movie_filter_rounded, color: AppColors.navy),
+              ),
+              title: const Text('Kampüs Reels',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: const Text('Dikey klip — Reels akışında'),
+              onTap: () => Navigator.pop(ctx, CampusShareMode.reels),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (!context.mounted || choice == null) return;
+  await openCampusCamera(context, mode: choice);
+}
 
-  final bool preferReels;
+class CampusCameraScreen extends StatefulWidget {
+  const CampusCameraScreen({
+    super.key,
+    this.mode = CampusShareMode.choose,
+    @Deprecated('Use mode') bool preferReels = false,
+  }) : _legacyPreferReels = preferReels;
+
+  final CampusShareMode mode;
+  final bool _legacyPreferReels;
 
   @override
   State<CampusCameraScreen> createState() => _CampusCameraScreenState();
 }
 
-class _CampusCameraScreenState extends State<CampusCameraScreen> {
-  XFile? _file;
-  bool _isVideo = false;
+class _CampusCameraScreenState extends State<CampusCameraScreen>
+    with WidgetsBindingObserver {
+  CameraController? _cam;
+  List<CameraDescription> _cameras = const [];
+  int _cameraIndex = 0;
+  bool _ready = false;
+  bool _recording = false;
   bool _busy = false;
   String? _status;
+  XFile? _captured;
+  bool _isVideo = false;
+  final _captionCtrl = TextEditingController();
 
-  Future<void> _snapPhoto() async {
-    if (_busy) return;
+  CampusShareMode get _mode {
+    if (widget.mode != CampusShareMode.choose) return widget.mode;
+    // ignore: deprecated_member_use_from_same_package
+    return widget._legacyPreferReels
+        ? CampusShareMode.reels
+        : CampusShareMode.choose;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_initCamera());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _captionCtrl.dispose();
+    unawaited(_disposeCam());
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final c = _cam;
+    if (c == null || !c.value.isInitialized) return;
+    if (state == AppLifecycleState.inactive) {
+      unawaited(_disposeCam());
+    } else if (state == AppLifecycleState.resumed && _captured == null) {
+      unawaited(_initCamera());
+    }
+  }
+
+  Future<void> _disposeCam() async {
+    final c = _cam;
+    _cam = null;
+    _ready = false;
     try {
-      setState(() => _status = 'Kamera açılıyor…');
-      final file = await MediaUpload.pickImage(source: ImageSource.camera);
-      if (!mounted) return;
-      if (file == null) {
-        setState(() => _status = null);
+      await c?.dispose();
+    } catch (_) {}
+  }
+
+  Future<void> _initCamera() async {
+    if (kIsWeb) {
+      setState(() => _status = 'Web’de galeri kullan');
+      return;
+    }
+    try {
+      final cam = await Permission.camera.request();
+      final mic = await Permission.microphone.request();
+      if (!cam.isGranted) {
+        if (mounted) {
+          setState(() => _status = 'Kamera izni gerekli');
+        }
         return;
       }
+      if (!mic.isGranted) {
+        debugPrint('[camera] mic denied — video sessiz olabilir');
+      }
+      _cameras = await availableCameras();
+      if (_cameras.isEmpty) {
+        if (mounted) setState(() => _status = 'Kamera bulunamadı');
+        return;
+      }
+      // Ön kamera tercih (hikâye tarzı), yoksa ilk.
+      final front = _cameras.indexWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+      );
+      _cameraIndex = front >= 0 ? front : 0;
+      await _openCamera(_cameras[_cameraIndex]);
+    } catch (e) {
+      debugPrint('[camera] init: $e');
+      if (mounted) setState(() => _status = 'Kamera açılamadı');
+    }
+  }
+
+  Future<void> _openCamera(CameraDescription desc) async {
+    await _disposeCam();
+    final c = CameraController(
+      desc,
+      ResolutionPreset.high,
+      enableAudio: true,
+      imageFormatGroup: ImageFormatGroup.jpeg,
+    );
+    _cam = c;
+    try {
+      await c.initialize();
+      if (!mounted) return;
       setState(() {
-        _file = file;
-        _isVideo = false;
+        _ready = true;
         _status = null;
       });
     } catch (e) {
+      debugPrint('[camera] open: $e');
+      if (mounted) setState(() => _status = 'Kamera hazır değil');
+    }
+  }
+
+  Future<void> _flipCamera() async {
+    if (_cameras.length < 2 || _recording || _busy) return;
+    _cameraIndex = (_cameraIndex + 1) % _cameras.length;
+    await _openCamera(_cameras[_cameraIndex]);
+  }
+
+  Future<void> _takePhoto() async {
+    final c = _cam;
+    if (c == null || !c.value.isInitialized || _busy || _recording) return;
+    try {
+      final file = await c.takePicture();
       if (!mounted) return;
-      setState(() => _status = null);
+      setState(() {
+        _captured = file;
+        _isVideo = false;
+      });
+      await _disposeCam();
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Foto çekilemedi: $e')),
       );
     }
   }
 
-  Future<void> _recordVideo() async {
-    if (_busy) return;
+  Future<void> _startRecord() async {
+    final c = _cam;
+    if (c == null || !c.value.isInitialized || _busy || _recording) return;
     try {
-      setState(() => _status = 'Video kaydı…');
-      final file = await MediaUpload.pickVideo(source: ImageSource.camera);
+      await c.startVideoRecording();
       if (!mounted) return;
-      if (file == null) {
-        setState(() => _status = null);
-        return;
-      }
       setState(() {
-        _file = file;
-        _isVideo = true;
-        _status = null;
+        _recording = true;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _status = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Video çekilemedi: $e')),
+        SnackBar(content: Text('Kayıt başlatılamadı: $e')),
+      );
+    }
+  }
+
+  Future<void> _stopRecord() async {
+    final c = _cam;
+    if (c == null || !_recording) return;
+    try {
+      final file = await c.stopVideoRecording();
+      if (!mounted) return;
+      setState(() {
+        _recording = false;
+        _captured = file;
+        _isVideo = true;
+      });
+      await _disposeCam();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _recording = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kayıt bitirilemedi: $e')),
       );
     }
   }
 
   Future<void> _fromGallery({required bool video}) async {
-    if (_busy) return;
+    if (_busy || _recording) return;
     try {
       setState(() => _status = 'Galeri…');
       final file = video
@@ -118,10 +316,11 @@ class _CampusCameraScreenState extends State<CampusCameraScreen> {
         return;
       }
       setState(() {
-        _file = file;
+        _captured = file;
         _isVideo = video;
         _status = null;
       });
+      await _disposeCam();
     } catch (e) {
       if (!mounted) return;
       setState(() => _status = null);
@@ -131,8 +330,17 @@ class _CampusCameraScreenState extends State<CampusCameraScreen> {
     }
   }
 
+  Future<void> _retake() async {
+    setState(() {
+      _captured = null;
+      _isVideo = false;
+      _captionCtrl.clear();
+    });
+    await _initCamera();
+  }
+
   Future<void> _publish({required bool asReel}) async {
-    final file = _file;
+    final file = _captured;
     final user = context.read<AuthProvider>().user;
     if (file == null || user == null || _busy) return;
     setState(() {
@@ -145,6 +353,7 @@ class _CampusCameraScreenState extends State<CampusCameraScreen> {
             author: user,
             file: file,
             isVideo: _isVideo,
+            caption: _captionCtrl.text,
           );
     } else {
       err = await context.read<StoriesProvider>().createStory(
@@ -172,79 +381,216 @@ class _CampusCameraScreenState extends State<CampusCameraScreen> {
     );
   }
 
+  Future<void> _publishByMode() async {
+    if (_mode == CampusShareMode.reels) {
+      await _publish(asReel: true);
+    } else if (_mode == CampusShareMode.story) {
+      await _publish(asReel: false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasFile = _file != null;
+    final hasFile = _captured != null;
+    final title = hasFile
+        ? 'Paylaş'
+        : (_mode == CampusShareMode.reels
+            ? 'Kampüs Reels'
+            : (_mode == CampusShareMode.story ? 'Hikâye' : 'Kampüs kamera'));
+
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(
-          hasFile ? 'Paylaş' : 'Kampüs kamera',
-          style: const TextStyle(fontWeight: FontWeight.w800),
-        ),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (hasFile)
+            _CapturedPreview(file: _captured!, isVideo: _isVideo)
+          else if (_ready && _cam != null && _cam!.value.isInitialized)
+            _CameraPreviewFill(controller: _cam!)
+          else
+            ColoredBox(
+              color: Colors.black,
               child: Center(
-                child: hasFile
-                    ? Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _isVideo
-                                ? Icons.videocam_rounded
-                                : Icons.photo_rounded,
-                            size: 72,
-                            color: AppColors.cyan,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _isVideo
-                                ? 'Video hazır — nasıl paylaşmak istersin?'
-                                : 'Fotoğraf hazır — nasıl paylaşmak istersin?',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.white70),
-                          ),
-                        ],
-                      )
-                    : Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.camera_alt_outlined,
-                            size: 64,
-                            color: Colors.white54,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _status ??
-                                'Dokun: foto · Basılı tut / video · Galeri',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.white54),
-                          ),
-                        ],
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_status == null)
+                      const CircularProgressIndicator(color: AppColors.cyan)
+                    else
+                      Text(
+                        _status!,
+                        style: const TextStyle(color: Colors.white70),
                       ),
+                    if (kIsWeb || _status != null) ...[
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: () => _fromGallery(video: false),
+                        child: const Text('Galeriden seç',
+                            style: TextStyle(color: AppColors.cyan)),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-            if (_busy || _status != null)
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.cyan,
+          if (_recording)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.circle, color: Colors.redAccent, size: 12),
+                      SizedBox(width: 8),
+                      Text(
+                        'KAYDEDİLİYOR',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: _busy
+                        ? null
+                        : () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Icons.close, color: Colors.white),
+                  ),
+                  Expanded(
+                    child: Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 17,
                       ),
                     ),
-                    const SizedBox(width: 10),
+                  ),
+                  if (!hasFile)
+                    IconButton(
+                      onPressed: _flipCamera,
+                      icon: const Icon(Icons.cameraswitch_rounded,
+                          color: Colors.white),
+                    )
+                  else
+                    const SizedBox(width: 48),
+                ],
+              ),
+            ),
+          ),
+          if (hasFile && !_busy)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _PublishPanel(
+                isVideo: _isVideo,
+                mode: _mode,
+                captionCtrl: _captionCtrl,
+                onRetake: _retake,
+                onStory: () => _publish(asReel: false),
+                onReels: () => _publish(asReel: true),
+                onModePublish: _publishByMode,
+              ),
+            )
+          else if (!hasFile && !_busy)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_status != null && _ready)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            _status!,
+                            style: const TextStyle(color: Colors.white54),
+                          ),
+                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          IconButton(
+                            tooltip: 'Galeriden foto',
+                            onPressed: () => _fromGallery(video: false),
+                            icon: const Icon(Icons.photo_library_outlined,
+                                color: Colors.white, size: 30),
+                          ),
+                          GestureDetector(
+                            onTap: _recording ? null : _takePhoto,
+                            onLongPressStart: (_) => _startRecord(),
+                            onLongPressEnd: (_) => _stopRecord(),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 120),
+                              width: _recording ? 84 : 78,
+                              height: _recording ? 84 : 78,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border:
+                                    Border.all(color: Colors.white, width: 4),
+                                color: _recording
+                                    ? Colors.redAccent
+                                    : AppColors.cyan.withValues(alpha: 0.4),
+                              ),
+                              child: Icon(
+                                _recording
+                                    ? Icons.stop_rounded
+                                    : Icons.circle,
+                                color: Colors.white,
+                                size: _recording ? 36 : 28,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Galeriden video',
+                            onPressed: () => _fromGallery(video: true),
+                            icon: const Icon(Icons.video_library_outlined,
+                                color: Colors.white, size: 30),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        _recording
+                            ? 'Bırakınca kayıt biter'
+                            : 'Dokun: foto · Basılı tut: video',
+                        style: const TextStyle(
+                            color: Colors.white54, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_busy)
+            ColoredBox(
+              color: Colors.black54,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: AppColors.cyan),
+                    const SizedBox(height: 12),
                     Text(
                       _status ?? 'Yükleniyor…',
                       style: const TextStyle(color: Colors.white70),
@@ -252,96 +598,178 @@ class _CampusCameraScreenState extends State<CampusCameraScreen> {
                   ],
                 ),
               ),
-            if (hasFile && !_busy) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Column(
-                  children: [
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.cyan,
-                        foregroundColor: AppColors.navy,
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                      onPressed: () => _publish(asReel: false),
-                      child: const Text(
-                        'Hikâye olarak paylaş',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.lime,
-                        foregroundColor: AppColors.navy,
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                      onPressed: () => _publish(asReel: true),
-                      child: Text(
-                        _isVideo
-                            ? 'Kampüs Reels olarak paylaş'
-                            : 'Kampüs Reels’e de koy',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => setState(() {
-                        _file = null;
-                        _isVideo = false;
-                      }),
-                      child: const Text(
-                        'Yeniden çek',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    ),
-                  ],
-                ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CameraPreviewFill extends StatelessWidget {
+  const _CameraPreviewFill({required this.controller});
+  final CameraController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = controller.value.previewSize;
+    if (size == null) return CameraPreview(controller);
+    return FittedBox(
+      fit: BoxFit.cover,
+      child: SizedBox(
+        width: size.height,
+        height: size.width,
+        child: CameraPreview(controller),
+      ),
+    );
+  }
+}
+
+class _CapturedPreview extends StatelessWidget {
+  const _CapturedPreview({required this.file, required this.isVideo});
+  final XFile file;
+  final bool isVideo;
+
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: Icon(
+            isVideo ? Icons.videocam_rounded : Icons.photo_rounded,
+            size: 80,
+            color: AppColors.cyan,
+          ),
+        ),
+      );
+    }
+    if (isVideo) {
+      return ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.play_circle_fill,
+                  size: 72, color: Colors.white70),
+              const SizedBox(height: 8),
+              Text(
+                file.name,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
               ),
-            ] else if (!_busy) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    IconButton(
-                      tooltip: 'Galeriden foto',
-                      onPressed: () => _fromGallery(video: false),
-                      icon: const Icon(Icons.photo_library_outlined,
-                          color: Colors.white, size: 28),
+            ],
+          ),
+        ),
+      );
+    }
+    return Image.file(File(file.path), fit: BoxFit.cover);
+  }
+}
+
+class _PublishPanel extends StatelessWidget {
+  const _PublishPanel({
+    required this.isVideo,
+    required this.mode,
+    required this.captionCtrl,
+    required this.onRetake,
+    required this.onStory,
+    required this.onReels,
+    required this.onModePublish,
+  });
+
+  final bool isVideo;
+  final CampusShareMode mode;
+  final TextEditingController captionCtrl;
+  final VoidCallback onRetake;
+  final VoidCallback onStory;
+  final VoidCallback onReels;
+  final VoidCallback onModePublish;
+
+  @override
+  Widget build(BuildContext context) {
+    final fixed = mode != CampusShareMode.choose;
+    return Material(
+      color: Colors.black.withValues(alpha: 0.82),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (mode == CampusShareMode.reels || mode == CampusShareMode.choose)
+                TextField(
+                  controller: captionCtrl,
+                  style: const TextStyle(color: Colors.white),
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    hintText: 'Açıklama yaz… @kullanici',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    filled: true,
+                    fillColor: Colors.white12,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
                     ),
-                    GestureDetector(
-                      onTap: _snapPhoto,
-                      onLongPress: _recordVideo,
-                      child: Container(
-                        width: 76,
-                        height: 76,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 4),
-                          color: AppColors.cyan.withValues(alpha: 0.35),
-                        ),
-                        child: const Icon(Icons.circle,
-                            color: Colors.white, size: 28),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Galeriden video',
-                      onPressed: () => _fromGallery(video: true),
-                      icon: const Icon(Icons.video_library_outlined,
-                          color: Colors.white, size: 28),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 16),
-                child: Text(
-                  'Orta düğme: dokun = foto · basılı tut = video',
-                  style: TextStyle(color: Colors.white38, fontSize: 12),
+              if (mode == CampusShareMode.reels || mode == CampusShareMode.choose)
+                const SizedBox(height: 10),
+              if (fixed)
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: mode == CampusShareMode.reels
+                        ? AppColors.lime
+                        : AppColors.cyan,
+                    foregroundColor: AppColors.navy,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  onPressed: onModePublish,
+                  child: Text(
+                    mode == CampusShareMode.reels
+                        ? 'Kampüs Reels olarak paylaş'
+                        : 'Hikâye olarak paylaş',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                )
+              else ...[
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.cyan,
+                    foregroundColor: AppColors.navy,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  onPressed: onStory,
+                  child: const Text(
+                    'Hikâye olarak paylaş',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.lime,
+                    foregroundColor: AppColors.navy,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  onPressed: onReels,
+                  child: Text(
+                    isVideo
+                        ? 'Kampüs Reels olarak paylaş'
+                        : 'Kampüs Reels’e koy',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+              TextButton(
+                onPressed: onRetake,
+                child: const Text(
+                  'Yeniden çek',
+                  style: TextStyle(color: Colors.white70),
                 ),
               ),
             ],
-          ],
+          ),
         ),
       ),
     );

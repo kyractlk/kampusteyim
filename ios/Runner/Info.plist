@@ -59,7 +59,7 @@
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>KampüsteyimAPP öğrenci belgesi tarama, profil ve hikâye fotoğrafları için kameraya erişir.</string>
+	<string>KampüsteyimAPP öğrenci belgesi, profil, hikâye ve Kampüs Reels için uygulama içi kameraya erişir.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>KampüsteyimAPP öğrenci belgesi, medya ve hikâye paylaşımı için fotoğraf kütüphanene erişir.</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -124,6 +124,13 @@ service cloud.firestore {
       allow update: if signedIn();
       allow delete: if isAdmin() ||
         (signedIn() && isAuthorById(resource.data.authorId));
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn();
+        allow update, delete: if isAdmin() ||
+          (signedIn() && isAuthorById(resource.data.authorId));
+      }
     }
 
     match /staff_roles/{id} {

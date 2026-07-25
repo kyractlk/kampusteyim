@@ -19,7 +19,7 @@ class StoryRingBar extends StatelessWidget {
       }
       return;
     }
-    await openCampusCamera(context);
+    await openCampusShareMenu(context);
   }
 
   @override
@@ -31,24 +31,22 @@ class StoryRingBar extends StatelessWidget {
     if (me.isSpectatorMode) return const SizedBox.shrink();
 
     final rings = stories.storyRings();
-    final hasOwn = rings.any((r) => r.authorId == me.id);
 
     return SizedBox(
-      height: 104,
+      height: 108,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        itemCount: rings.length + (hasOwn ? 0 : 1),
-        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        // Instagram: solda ayrı + , sonra kendi hikâye, sonra diğerleri
+        itemCount: rings.length + 1,
+        separatorBuilder: (_, _) => const SizedBox(width: 14),
         itemBuilder: (context, index) {
-          if (!hasOwn && index == 0) {
-            return _AddStoryRing(
-              name: me.fullName,
-              photoUrl: me.photoUrl,
-              onTap: () => _onSelfTap(context, hasOwn: false),
+          if (index == 0) {
+            return _CreateShareRing(
+              onTap: () => openCampusShareMenu(context),
             );
           }
-          final ring = rings[hasOwn ? index : index - 1];
+          final ring = rings[index - 1];
           final isSelf = ring.authorId == me.id;
           return _StoryRingTile(
             name: isSelf ? 'Hikâyen' : ring.authorName.split(' ').first,
@@ -61,7 +59,6 @@ class StoryRingBar extends StatelessWidget {
                 context.push('/stories/view/${ring.authorId}');
               }
             },
-            onAdd: isSelf ? () => openCampusCamera(context) : null,
           );
         },
       ),
@@ -69,15 +66,9 @@ class StoryRingBar extends StatelessWidget {
   }
 }
 
-class _AddStoryRing extends StatelessWidget {
-  const _AddStoryRing({
-    required this.name,
-    required this.photoUrl,
-    required this.onTap,
-  });
-
-  final String name;
-  final String? photoUrl;
+/// Instagram tarzı geniş + — hikâye / reels menüsü.
+class _CreateShareRing extends StatelessWidget {
+  const _CreateShareRing({required this.onTap});
   final VoidCallback onTap;
 
   @override
@@ -86,40 +77,33 @@ class _AddStoryRing extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(40),
       child: SizedBox(
-        width: 72,
+        width: 76,
         child: Column(
           children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(2.5),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.border, width: 2),
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.surface,
+                border: Border.all(color: AppColors.border, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.cyan.withValues(alpha: 0.25),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
                   ),
-                  child: UserAvatar(name: name, photoUrl: photoUrl, radius: 28),
-                ),
-                Positioned(
-                  right: -2,
-                  bottom: -2,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: const BoxDecoration(
-                      color: AppColors.cyan,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.add, size: 14, color: Colors.white),
-                  ),
-                ),
-              ],
+                ],
+              ),
+              child: const Icon(Icons.add_rounded,
+                  size: 34, color: AppColors.cyan),
             ),
             const SizedBox(height: 6),
             const Text(
-              'Hikâye ekle',
+              'Paylaş',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
             ),
           ],
         ),
@@ -134,69 +118,58 @@ class _StoryRingTile extends StatelessWidget {
     required this.photoUrl,
     required this.isSelf,
     required this.onTap,
-    this.onAdd,
   });
 
   final String name;
   final String? photoUrl;
   final bool isSelf;
   final VoidCallback onTap;
-  final VoidCallback? onAdd;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      onLongPress: onAdd,
       borderRadius: BorderRadius.circular(40),
       child: SizedBox(
         width: 72,
         child: Column(
           children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(2.5),
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [AppColors.cyan, AppColors.crimson, AppColors.gold],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: const BoxDecoration(
-                      color: AppColors.surface,
-                      shape: BoxShape.circle,
-                    ),
-                    child: UserAvatar(
-                      name: name,
-                      photoUrl: photoUrl,
-                      radius: 26,
-                    ),
-                  ),
-                ),
-                if (isSelf && onAdd != null)
-                  Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: GestureDetector(
-                      onTap: onAdd,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(
-                          color: AppColors.cyan,
-                          shape: BoxShape.circle,
-                        ),
-                        child:
-                            const Icon(Icons.add, size: 14, color: Colors.white),
+            Container(
+              padding: const EdgeInsets.all(2.5),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: isSelf
+                    ? const LinearGradient(
+                        colors: [
+                          AppColors.cyan,
+                          AppColors.crimson,
+                          AppColors.gold,
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : const LinearGradient(
+                        colors: [
+                          AppColors.cyan,
+                          AppColors.crimson,
+                          AppColors.gold,
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    ),
-                  ),
-              ],
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
+                  color: AppColors.surface,
+                  shape: BoxShape.circle,
+                ),
+                child: UserAvatar(
+                  name: name,
+                  photoUrl: photoUrl,
+                  radius: 26,
+                ),
+              ),
             ),
             const SizedBox(height: 6),
             Text(
