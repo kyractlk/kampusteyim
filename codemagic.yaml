@@ -84,6 +84,8 @@ workflows:
 
   # Telefona manuel kurulum (TestFlight olmadan) — Ad Hoc
   # Cihaz: Kayra iPhone 15 Plus · UDID ios/devices/adhoc_udids.txt
+  # NOT: ios_signing BLOĞU YOK — yoksa Codemagic hazır profil arar ve
+  # "No matching profiles found ... ad_hoc" ile düşer. Profil --create ile üretilir.
   ios-ad-hoc:
     name: KampusteyimAPP iOS → Ad Hoc (cihazına kur)
     instance_type: mac_mini_m2
@@ -91,60 +93,36 @@ workflows:
     integrations:
       app_store_connect: KampusteyimASC
     environment:
-      ios_signing:
-        distribution_type: ad_hoc
-        bundle_identifier: com.aystech.mtMobil
       vars:
         BUNDLE_ID: com.aystech.mtMobil
-        # Kayra iPhone 15 Plus (udid.tech)
         DEVICE_UDID: 00008120-000631242151A01E
         DEVICE_NAME: Kayra-iPhone15-Plus
       flutter: stable
       xcode: latest
       cocoapods: default
     scripts:
-      - name: Register test device (Ad Hoc)
+      - name: Register test device
         script: |
           set +e
           app-store-connect devices register \
             --name "$DEVICE_NAME" \
             --udid "$DEVICE_UDID"
-          echo "Device register exit: $? (already registered = OK)"
+          echo "device register status=$?"
           set -e
-          echo "Registered / confirmed UDID: $DEVICE_UDID"
-      - name: Disable Swift Package Manager
+      - name: Disable SPM
         script: flutter config --no-enable-swift-package-manager
-      - name: Fetch / create Ad Hoc signing + profiles
+      - name: Create Ad Hoc cert + profile
         script: |
           set -e
           keychain initialize
-          # Eski Ad Hoc profil UDID’siz kalmasın → sil + yeniden oluştur
-          set +e
-          app-store-connect profiles list --type ad_hoc --json > /tmp/adhoc_profiles.json 2>/dev/null
-          python3 - <<'PY' || true
-          import json, subprocess, os
-          try:
-            data = json.load(open("/tmp/adhoc_profiles.json"))
-          except Exception:
-            raise SystemExit(0)
-          bid = os.environ.get("BUNDLE_ID", "com.aystech.mtMobil")
-          items = data if isinstance(data, list) else data.get("profiles") or data.get("data") or []
-          for p in items:
-            if isinstance(p, dict):
-              name = str(p.get("name") or p.get("attributes", {}).get("name") or "")
-              pid = str(p.get("id") or p.get("profileId") or "")
-              bundle = str(p.get("bundleId") or p.get("attributes", {}).get("bundleId") or "")
-              if bid in name or bid in bundle or "ad hoc" in name.lower() or "adhoc" in name.lower().replace("-", ""):
-                if pid:
-                  print(f"Deleting old profile {pid} ({name})")
-                  subprocess.call(["app-store-connect", "profiles", "delete", pid])
-          PY
-          set -e
+          # IOS_APP_ADHOC = Ad Hoc; --create yoksa profil yoksa hata verir
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type ad_hoc \
+            --type IOS_APP_ADHOC \
             --create
           keychain add-certificates
           xcode-project use-profiles
+          echo "Signing files ready"
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null || true
       - name: Flutter pub get
         script: |
           flutter clean
@@ -172,23 +150,20 @@ workflows:
             echo "ERROR: Debug IPA"
             exit 1
           fi
-          # UDID gerçekten IPA içinde mi? (bütünlük hatasının #1 sebebi)
           TMP=$(mktemp -d)
           unzip -q "$IPA" -d "$TMP"
           PROV=$(find "$TMP" -name embedded.mobileprovision | head -1)
           if [ -z "$PROV" ]; then
-            echo "ERROR: embedded.mobileprovision yok — App Store IPA olabilir, Ad Hoc değil"
+            echo "ERROR: embedded.mobileprovision yok"
             exit 1
           fi
           security cms -D -i "$PROV" > /tmp/provision.plist
-          echo "----- ProvisionedDevices -----"
-          plutil -extract ProvisionedDevices xml1 -o - /tmp/provision.plist 2>/dev/null || true
           if ! grep -q "$DEVICE_UDID" /tmp/provision.plist; then
-            echo "ERROR: UDID $DEVICE_UDID bu IPA'nın Ad Hoc profilinde YOK"
-            echo "InstallOnAir 'bütünlük' hatası bundan olur. Profil yeniden oluşturulmalı."
+            echo "ERROR: UDID $DEVICE_UDID profilde yok"
+            plutil -p /tmp/provision.plist | head -80 || true
             exit 1
           fi
-          echo "OK: UDID profilde — InstallOnAir/Diawi ile kurulabilir"
+          echo "OK: UDID profilde — Diawi ile kur"
           ls -lh build/ios/ipa/
     artifacts:
       - build/ios/ipa/*.ipa
