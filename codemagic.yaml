@@ -1,12 +1,16 @@
 # Windows'tan iOS: Codemagic bulut Mac
 # Team: 8496F2PR53 · Bundle: com.aystech.mtMobil
 # SPM kapalı → CocoaPods (permission_handler Podfile flags)
+# İmza: ios_code_signing grubunda CERTIFICATE_PRIVATE_KEY (Ad Hoc + App Store)
 #
 # KRİTİK: App Store’a yalnızca --release IPA.
 # Debug IPA home screen’den açılmaz (Guideline 2.1) ve
 # iOS 26.5 ProMotion’da VSyncClient ile çöker (#187565).
 
 workflows:
+  # NOT: ios_signing BLOĞU YOK — yoksa Codemagic hazır profil arar ve
+  # "No matching profiles found ... app_store" ile düşer.
+  # Profil + Distribution cert: CERTIFICATE_PRIVATE_KEY ile --create.
   ios-app-store:
     name: KampusteyimAPP iOS → TestFlight
     instance_type: mac_mini_m2
@@ -14,9 +18,8 @@ workflows:
     integrations:
       app_store_connect: AYSCODEMAGIC
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.aystech.mtMobil
+      groups:
+        - ios_code_signing
       vars:
         BUNDLE_ID: com.aystech.mtMobil
       flutter: stable
@@ -26,8 +29,24 @@ workflows:
       - name: Disable Swift Package Manager (use CocoaPods)
         script: |
           flutter config --no-enable-swift-package-manager
-      - name: Code signing (automatic profiles)
-        script: xcode-project use-profiles
+      - name: Create App Store cert + profile
+        script: |
+          set -e
+          if [ -z "$CERTIFICATE_PRIVATE_KEY" ]; then
+            echo "ERROR: CERTIFICATE_PRIVATE_KEY eksik."
+            echo "Codemagic → Environment variables → Group: ios_code_signing"
+            echo "  Name: CERTIFICATE_PRIVATE_KEY (Secure)"
+            echo "  Value: ios/signing/certificate_private_key.pem içeriği"
+            exit 1
+          fi
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+          echo "App Store signing ready"
       - name: Flutter pub get
         script: |
           flutter clean
@@ -40,9 +59,9 @@ workflows:
           pod install --repo-update
       - name: Build number
         script: |
-          # App Store’da son yüklenen cfBundleVersion = 12 → her zaman daha yüksek olmalı
-          BN="${BUILD_NUMBER:-14}"
-          if [ "$BN" -le 13 ]; then BN=14; fi
+          # App Store’da son yüklenen cfBundleVersion’dan yüksek olmalı
+          BN="${BUILD_NUMBER:-27}"
+          if [ "$BN" -le 26 ]; then BN=27; fi
           sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Flutter IPA RELEASE only
