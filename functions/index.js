@@ -4109,6 +4109,11 @@ exports.reviewStudentRegistration = onCall(
     }
 
     return { ok: true, status, push };
+  },
+);
+
+/**
+ * Host odadan çıktıktan 1 saat sonra açık odaları otomatik kapatır.
  * hostLeftAt alanı client'ta markHostLeft ile yazılır.
  */
 exports.studyRoomHostTimeout = onSchedule(
