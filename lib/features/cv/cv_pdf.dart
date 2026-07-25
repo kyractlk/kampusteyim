@@ -16,6 +16,8 @@ class CvPdfBuilder {
   static const _navy = PdfColor.fromInt(0xFF3A5A78);
   static const _accent = PdfColor.fromInt(0xFF3DB8A8);
   static const _accentSoft = PdfColor.fromInt(0xFFD8F3EF);
+  /// [build] sırasında set edilir — header/entry yardımcıları için.
+  static PdfColor _paintAccent = _accent;
   static const _text = PdfColor.fromInt(0xFF2A3540);
   static const _muted = PdfColor.fromInt(0xFF6B7C8A);
   static const _line = PdfColor.fromInt(0xFFDCE4EC);
@@ -31,11 +33,13 @@ class CvPdfBuilder {
     required String languageName,
     required String fileHint,
     String languageCode = 'en',
+    int? accentArgb,
   }) async {
     final bytes = await buildBytes(
       polished: polished,
       languageName: languageName,
       languageCode: languageCode,
+      accentArgb: accentArgb,
     );
     await Printing.layoutPdf(
       name: fileHint,
@@ -79,6 +83,7 @@ class CvPdfBuilder {
     required Map<String, dynamic> polished,
     required String languageName,
     String languageCode = 'en',
+    int? accentArgb,
   }) async {
     final fonts = await _loadFonts();
     final pi =
@@ -91,6 +96,7 @@ class CvPdfBuilder {
       base: fonts.base,
       bold: fonts.bold,
       photo: photo,
+      accentArgb: accentArgb,
     );
     return doc.save();
   }
@@ -381,7 +387,10 @@ class CvPdfBuilder {
     pw.Font? base,
     pw.Font? bold,
     pw.ImageProvider? photo,
+    int? accentArgb,
   }) {
+    _paintAccent =
+        accentArgb != null ? PdfColor.fromInt(accentArgb) : _accent;
     final theme = pw.ThemeData.withFont(base: base, bold: bold);
     final labels = atsLabels(languageCode);
     final aiLabels =
@@ -462,10 +471,10 @@ class CvPdfBuilder {
                 pw.Container(
                   width: double.infinity,
                   padding: const pw.EdgeInsets.fromLTRB(12, 10, 12, 10),
-                  decoration: const pw.BoxDecoration(
+                  decoration: pw.BoxDecoration(
                     color: _panel,
                     border: pw.Border(
-                      left: pw.BorderSide(color: _accent, width: 3.5),
+                      left: pw.BorderSide(color: _paintAccent, width: 3.5),
                     ),
                   ),
                   child: pw.Text(
@@ -496,10 +505,10 @@ class CvPdfBuilder {
                 pw.Container(
                   width: double.infinity,
                   padding: const pw.EdgeInsets.fromLTRB(12, 10, 12, 10),
-                  decoration: const pw.BoxDecoration(
+                  decoration: pw.BoxDecoration(
                     color: _panel,
                     border: pw.Border(
-                      left: pw.BorderSide(color: _accent, width: 3.5),
+                      left: pw.BorderSide(color: _paintAccent, width: 3.5),
                     ),
                   ),
                   child: pw.Text(
@@ -582,7 +591,7 @@ class CvPdfBuilder {
                       ),
                       decoration: pw.BoxDecoration(
                         color: _accentSoft,
-                        border: pw.Border.all(color: _accent, width: 0.7),
+                        border: pw.Border.all(color: _paintAccent, width: 0.7),
                       ),
                       child: pw.Text(
                         l.isEmpty ? n : '$n  ·  $l',
@@ -724,7 +733,7 @@ class CvPdfBuilder {
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Container(height: 3.5, color: _accent),
+          pw.Container(height: 3.5, color: _paintAccent),
           pw.Padding(
             padding: const pw.EdgeInsets.fromLTRB(24, 24, 24, 14),
             child: pw.Row(
@@ -750,9 +759,9 @@ class CvPdfBuilder {
                         pw.Text(
                           headline,
                           maxLines: 2,
-                          style: const pw.TextStyle(
+                          style: pw.TextStyle(
                             fontSize: 10,
-                            color: _accent,
+                            color: _paintAccent,
                           ),
                         ),
                       ],
@@ -777,7 +786,7 @@ class CvPdfBuilder {
                   decoration: pw.BoxDecoration(
                     shape: pw.BoxShape.circle,
                     color: _navy,
-                    border: pw.Border.all(color: _accent, width: 2),
+                    border: pw.Border.all(color: _paintAccent, width: 2),
                   ),
                   alignment: pw.Alignment.center,
                   child: pw.ClipOval(
@@ -918,7 +927,7 @@ class CvPdfBuilder {
         children: [
           pw.Row(
             children: [
-              pw.Container(width: 3.5, height: 12, color: _accent),
+              pw.Container(width: 3.5, height: 12, color: _paintAccent),
               pw.SizedBox(width: 8),
               pw.Text(
                 title.toUpperCase(),
@@ -980,7 +989,7 @@ class CvPdfBuilder {
               padding: const pw.EdgeInsets.only(top: 2, bottom: 4),
               child: pw.Text(
                 place,
-                style: const pw.TextStyle(fontSize: 9.1, color: _accent),
+                style: pw.TextStyle(fontSize: 9.1, color: _paintAccent),
               ),
             ),
           ...bullets.map(
@@ -993,8 +1002,8 @@ class CvPdfBuilder {
                     width: 4,
                     height: 4,
                     margin: const pw.EdgeInsets.only(top: 3.5, right: 7),
-                    decoration: const pw.BoxDecoration(
-                      color: _accent,
+                    decoration: pw.BoxDecoration(
+                      color: _paintAccent,
                       shape: pw.BoxShape.circle,
                     ),
                   ),

@@ -526,7 +526,14 @@ class FeedProvider extends ChangeNotifier {
     if (text.isEmpty && media.isEmpty) return 'Boş gönderi';
 
     // Yerel Guard — OpenAI kotası olmasa da nefret/şiddet engeli
-    final localBlock = LocalSafety.blockReason(text);
+    final fileNames = media
+        .where((m) => m.type == MediaType.file)
+        .map((m) => m.fileName ?? m.url)
+        .where((s) => s.trim().isNotEmpty)
+        .toList();
+    final localBlock = LocalSafety.blockReason(
+      [text, ...fileNames].join('\n'),
+    );
     if (localBlock != null) return localBlock;
 
     final tags = HashtagUtils.extractUnique(text);
@@ -542,7 +549,7 @@ class FeedProvider extends ChangeNotifier {
       isCommunity: isCommunity,
     );
 
-    // AYS Tech Guard: içerik + link denetimi
+    // AYS Tech Guard: içerik + link + dosya denetimi
     try {
       final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
           .httpsCallable('moderatePostContent');
@@ -551,6 +558,7 @@ class FeedProvider extends ChangeNotifier {
         'authorId': authorId,
         'content': text,
         'mediaUrls': media.map((m) => m.url).toList(),
+        'fileNames': fileNames,
       });
       final data = Map<String, dynamic>.from(res.data as Map? ?? {});
       if (data['blocked'] == true) {

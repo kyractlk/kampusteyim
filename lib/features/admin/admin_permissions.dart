@@ -94,6 +94,11 @@ enum AdminPermission {
     'manage_legal_texts',
     'KVKK ve pazarlama metinlerini düzenle',
     'Sistem',
+  ),
+  managePlus(
+    'manage_plus',
+    'KampüsteyimPlus ayarları / atama',
+    'Sistem',
   );
 
   const AdminPermission(this.key, this.label, this.group);
@@ -294,6 +299,7 @@ class StaffRole {
             AdminPermission.manageLegalTexts,
             AdminPermission.reviewLeads,
             AdminPermission.managePromo,
+            AdminPermission.managePlus,
           },
           isSystem: true,
         ),
@@ -311,6 +317,7 @@ class StaffRole {
             AdminPermission.managePromo,
             AdminPermission.reviewStudyRooms,
             AdminPermission.manageLegalTexts,
+            AdminPermission.managePlus,
             AdminPermission.accessDuringMaintenance,
           },
           isSystem: true,

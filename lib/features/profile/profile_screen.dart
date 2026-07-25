@@ -21,6 +21,7 @@ import '../jobs/jobs_provider.dart';
 import '../moderation/moderation_models.dart';
 import '../moderation/report_sheet.dart';
 import '../notifications/notification_provider.dart';
+import '../plus/plus_widgets.dart';
 import '../reels/reel_models.dart';
 import '../reels/reels_provider.dart';
 
@@ -315,12 +316,11 @@ class _UserProfileViewState extends State<UserProfileView> {
                         ),
                       ),
                     ),
-                    if (user.showGoldBadge) ...[
+                    if (user.showGoldBadge ||
+                        user.showBlueBadge ||
+                        user.showGreenBadge) ...[
                       const SizedBox(width: 6),
-                      const VerifiedBadge(gold: true, size: 18),
-                    ] else if (user.showBlueBadge) ...[
-                      const SizedBox(width: 6),
-                      const VerifiedBadge(gold: false, size: 18),
+                      UserVerificationBadges(user: user, size: 18),
                     ],
                     if (user.isBot) ...[
                       const SizedBox(width: 6),
@@ -456,6 +456,8 @@ class _UserProfileViewState extends State<UserProfileView> {
             ),
           ).animate().fadeIn().slideY(begin: 0.06),
           if (isSelf) ...[
+            const SizedBox(height: 12),
+            const PlusPrivilegesCard(),
             if (user.isCompany) ...[
               const SizedBox(height: 12),
               Material(

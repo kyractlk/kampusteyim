@@ -1,17 +1,19 @@
 import '../core/constants/app_info.dart';
 import '../features/notifications/notification_prefs.dart';
 
+enum MediaType { image, video, file }
+
 class MediaItem {
   const MediaItem({
     required this.url,
     required this.type,
+    this.fileName,
   });
 
   final String url;
   final MediaType type;
+  final String? fileName;
 }
-
-enum MediaType { image, video }
 
 class ProfileLink {
   const ProfileLink({required this.label, required this.url});
@@ -45,6 +47,11 @@ class AppUser {
     this.affiliatedOrgLogoUrl,
     this.hasGoldBadge = false,
     this.hasBlueBadge = false,
+    this.plusActive = false,
+    this.plusSource = '',
+    this.plusStartsAt,
+    this.plusExpiresAt,
+    this.plusTrialUsed = false,
     this.restrictionType = 'none',
     this.restrictionReason = '',
     this.restrictionUntil,
@@ -94,6 +101,13 @@ class AppUser {
   final String? affiliatedOrgLogoUrl;
   final bool hasGoldBadge;
   final bool hasBlueBadge;
+  /// KampüsteyimPlus (sunucu + istemci doğrulaması).
+  final bool plusActive;
+  /// trial | admin | store | iban
+  final String plusSource;
+  final DateTime? plusStartsAt;
+  final DateTime? plusExpiresAt;
+  final bool plusTrialUsed;
   final String restrictionType;
   final String restrictionReason;
   final DateTime? restrictionUntil;
@@ -146,6 +160,24 @@ class AppUser {
   bool get showGoldBadge => isCommunity || hasGoldBadge;
   /// Mavi tick yalnızca açıkça verilmişse (ilişki ayrı gösterilir).
   bool get showBlueBadge => !showGoldBadge && hasBlueBadge;
+
+  /// Plus aboneliği hâlâ geçerli mi?
+  bool get isPlusActive {
+    if (!plusActive) return false;
+    final exp = plusExpiresAt;
+    if (exp == null) return true;
+    return exp.isAfter(DateTime.now());
+  }
+
+  bool get showGreenBadge => isPlusActive;
+
+  int get plusDaysLeft {
+    if (!isPlusActive) return 0;
+    final exp = plusExpiresAt;
+    if (exp == null) return 0;
+    final d = exp.difference(DateTime.now()).inDays;
+    return d < 0 ? 0 : d;
+  }
   bool get hasAffiliation {
     final id = affiliatedCommunityId?.trim() ?? '';
     final name = affiliatedCommunityName?.trim() ?? '';
@@ -231,6 +263,12 @@ class AppUser {
     String? affiliatedOrgLogoUrl,
     bool? hasGoldBadge,
     bool? hasBlueBadge,
+    bool? plusActive,
+    String? plusSource,
+    DateTime? plusStartsAt,
+    DateTime? plusExpiresAt,
+    bool? plusTrialUsed,
+    bool clearPlusDates = false,
     String? restrictionType,
     String? restrictionReason,
     DateTime? restrictionUntil,
@@ -290,6 +328,15 @@ class AppUser {
           : (affiliatedOrgLogoUrl ?? this.affiliatedOrgLogoUrl),
       hasGoldBadge: hasGoldBadge ?? this.hasGoldBadge,
       hasBlueBadge: hasBlueBadge ?? this.hasBlueBadge,
+      plusActive: plusActive ?? this.plusActive,
+      plusSource: plusSource ?? this.plusSource,
+      plusStartsAt: clearPlusDates
+          ? null
+          : (plusStartsAt ?? this.plusStartsAt),
+      plusExpiresAt: clearPlusDates
+          ? null
+          : (plusExpiresAt ?? this.plusExpiresAt),
+      plusTrialUsed: plusTrialUsed ?? this.plusTrialUsed,
       restrictionType: restrictionType ?? this.restrictionType,
       restrictionReason: restrictionReason ?? this.restrictionReason,
       restrictionUntil: clearRestrictionUntil
@@ -576,7 +623,14 @@ class Post {
         'studyMinutes': studyMinutes,
         'studyTitle': studyTitle,
         'media': media
-            .map((m) => {'url': m.url, 'type': m.type.name})
+            .map(
+              (m) => {
+                'url': m.url,
+                'type': m.type.name,
+                if (m.fileName != null && m.fileName!.isNotEmpty)
+                  'fileName': m.fileName,
+              },
+            )
             .toList(),
       };
 
@@ -588,10 +642,20 @@ class Post {
         if (item is! Map) continue;
         final url = '${item['url'] ?? ''}';
         if (url.isEmpty) continue;
-        final type = '${item['type']}' == 'video'
+        final t = '${item['type']}';
+        final type = t == 'video'
             ? MediaType.video
-            : MediaType.image;
-        media.add(MediaItem(url: url, type: type));
+            : t == 'file'
+                ? MediaType.file
+                : MediaType.image;
+        final fn = '${item['fileName'] ?? ''}'.trim();
+        media.add(
+          MediaItem(
+            url: url,
+            type: type,
+            fileName: fn.isEmpty ? null : fn,
+          ),
+        );
       }
     }
     final tags = m['hashtags'];

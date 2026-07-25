@@ -9,6 +9,8 @@ import '../../core/storage/media_upload.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_gate.dart';
 import '../auth/data/auth_provider.dart';
+import '../plus/plus_gate.dart';
+import '../plus/plus_provider.dart';
 import 'cv_models.dart';
 import 'cv_provider.dart';
 
@@ -504,20 +506,148 @@ class _GenerateTab extends StatelessWidget {
             DropdownButtonFormField<CvLanguageOption>(
               // ignore: deprecated_member_use
               value: cv.selectedLanguage,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'ATS çıktı dili (resmi çeviri)',
-                prefixIcon: Icon(Icons.translate),
+                prefixIcon: const Icon(Icons.translate),
+                helperText: (() {
+                  final plus = context.watch<PlusProvider>();
+                  final user = auth.user;
+                  final allLangs = user != null &&
+                      user.isPlusActive &&
+                      plus.config.features.cvAllLanguages;
+                  return allLangs
+                      ? 'Plus: tüm ATS dilleri açık'
+                      : 'Ücretsiz: Türkçe / English — diğerleri Plus';
+                })(),
               ),
-              items: kCvWorldLanguages
-                  .map(
-                    (l) => DropdownMenuItem(
-                      value: l,
-                      child: Text('${l.name} (${l.code})'),
+              items: (() {
+                final plus = context.read<PlusProvider>();
+                final user = auth.user;
+                final allLangs = user != null &&
+                    user.isPlusActive &&
+                    plus.config.features.cvAllLanguages;
+                final list = allLangs
+                    ? kCvWorldLanguages
+                    : kCvWorldLanguages
+                        .where((l) => l.code == 'tr' || l.code == 'en')
+                        .toList();
+                // Seçili dil listede yoksa (eski Plus seçimi) yine göster
+                if (!list.any((l) => l.code == cv.selectedLanguage.code)) {
+                  return [
+                    ...list,
+                    cv.selectedLanguage,
+                  ]
+                      .map(
+                        (l) => DropdownMenuItem(
+                          value: l,
+                          child: Text('${l.name} (${l.code})'),
+                        ),
+                      )
+                      .toList();
+                }
+                return list
+                    .map(
+                      (l) => DropdownMenuItem(
+                        value: l,
+                        child: Text('${l.name} (${l.code})'),
+                      ),
+                    )
+                    .toList();
+              })(),
+              onChanged: (v) async {
+                if (v == null) return;
+                final plus = context.read<PlusProvider>();
+                final user = auth.user;
+                final allLangs = user != null &&
+                    user.isPlusActive &&
+                    plus.config.features.cvAllLanguages;
+                if (!allLangs && v.code != 'tr' && v.code != 'en') {
+                  await requirePlus(context, featureLabel: 'Tüm CV dilleri');
+                  return;
+                }
+                cv.setLanguage(v);
+              },
+            ),
+            const SizedBox(height: 12),
+            Builder(
+              builder: (context) {
+                final plus = context.watch<PlusProvider>();
+                final user = auth.user;
+                final themeOk = user != null &&
+                    user.isPlusActive &&
+                    plus.config.features.cvTheme;
+                const swatches = <int>[
+                  0xFF3DB8A8,
+                  0xFF2563EB,
+                  0xFF7C3AED,
+                  0xFFDC2626,
+                  0xFFEA580C,
+                  0xFF0F766E,
+                  0xFF334155,
+                ];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'CV tema rengi',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        if (!themeOk) ...[
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () => requirePlus(
+                              context,
+                              featureLabel: 'CV tema rengi',
+                            ),
+                            child: const Text('Plus'),
+                          ),
+                        ],
+                      ],
                     ),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                if (v != null) cv.setLanguage(v);
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: swatches.map((c) {
+                        final selected = cv.accentArgb == c;
+                        return InkWell(
+                          onTap: () async {
+                            if (!themeOk) {
+                              await requirePlus(
+                                context,
+                                featureLabel: 'CV tema rengi',
+                              );
+                              return;
+                            }
+                            cv.setAccentArgb(c);
+                          },
+                          borderRadius: BorderRadius.circular(20),
+                          child: Opacity(
+                            opacity: themeOk ? 1 : 0.45,
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                color: Color(c),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: selected
+                                      ? AppColors.navy
+                                      : Colors.black26,
+                                  width: selected ? 2.5 : 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                );
               },
             ),
             const SizedBox(height: 16),

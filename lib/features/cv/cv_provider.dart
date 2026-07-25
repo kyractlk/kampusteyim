@@ -20,6 +20,8 @@ class CvProvider extends ChangeNotifier {
   String? status;
   String? error;
   CvLanguageOption selectedLanguage = kCvWorldLanguages.first;
+  /// Plus CV tema rengi (ARGB).
+  int accentArgb = 0xFF3DB8A8;
 
   bool get isReadyForJobs => data.isReadyForJobs;
 
@@ -229,6 +231,7 @@ class CvProvider extends ChangeNotifier {
         languageName: selectedLanguage.name,
         languageCode: selectedLanguage.code,
         fileHint: fileHint,
+        accentArgb: accentArgb,
       );
 
       status = 'ATS CV hazır · ${selectedLanguage.name} (canlı AI)';
@@ -258,11 +261,17 @@ class CvProvider extends ChangeNotifier {
       languageName: export.languageName,
       languageCode: export.languageCode,
       fileHint: 'CV_${export.languageCode.toUpperCase()}_${export.id}.pdf',
+      accentArgb: accentArgb,
     );
   }
 
   void setLanguage(CvLanguageOption lang) {
     selectedLanguage = lang;
+    notifyListeners();
+  }
+
+  void setAccentArgb(int argb) {
+    accentArgb = argb;
     notifyListeners();
   }
 

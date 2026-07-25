@@ -21,6 +21,7 @@ import 'features/maintenance/maintenance_provider.dart';
 import 'features/maintenance/maintenance_screen.dart';
 import 'features/notifications/notification_provider.dart';
 import 'features/notifications/push_service.dart';
+import 'features/plus/plus_provider.dart';
 import 'features/reels/reels_provider.dart';
 import 'features/stories/stories_provider.dart';
 import 'firebase_options.dart';
@@ -106,6 +107,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
   late final MaintenanceProvider _maintenance;
   late final StoriesProvider _stories;
   late final ReelsProvider _reels;
+  late final PlusProvider _plus;
   late final router = createRouter(_auth);
 
   @override
@@ -123,6 +125,8 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _reels = ReelsProvider()
       ..attachAuth(_auth)
       ..attachFeed(_feed);
+    _plus = PlusProvider()..bind();
+    unawaited(_plus.ensureConfigSeeded());
     _auth.addListener(_onAuth);
   }
 
@@ -150,6 +154,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _maintenance.dispose();
     _stories.dispose();
     _reels.dispose();
+    _plus.dispose();
     super.dispose();
   }
 
@@ -165,6 +170,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
         ChangeNotifierProvider.value(value: _maintenance),
         ChangeNotifierProvider.value(value: _stories),
         ChangeNotifierProvider.value(value: _reels),
+        ChangeNotifierProvider.value(value: _plus),
       ],
       child: MaterialApp.router(
         title: AppInfo.appName,

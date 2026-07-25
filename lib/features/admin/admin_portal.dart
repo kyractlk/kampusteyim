@@ -22,6 +22,7 @@ import 'admin_study_rooms_tab.dart';
 import 'admin_leads_tab.dart';
 import 'admin_promo_hub_tab.dart';
 import 'admin_cv_ai_limits_tab.dart';
+import '../plus/admin_plus_tab.dart';
 
 class _AdminTab {
   const _AdminTab({
@@ -126,6 +127,13 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           icon: const Icon(Icons.auto_awesome_outlined),
           required: const [AdminPermission.manageUsers],
           builder: () => const AdminCvAiLimitsTab(),
+        ),
+      if (admin.can(me, AdminPermission.managePlus))
+        _AdminTab(
+          label: 'Plus',
+          icon: const Icon(Icons.workspace_premium_outlined),
+          required: const [AdminPermission.managePlus],
+          builder: () => const AdminPlusTab(),
         ),
       if (admin.can(me, AdminPermission.reviewReports))
         _AdminTab(

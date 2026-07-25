@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/icons/mt_icons.dart';
 import '../../core/storage/media_upload.dart';
@@ -26,6 +27,9 @@ import '../home/home_shell.dart';
 import '../moderation/moderation_models.dart';
 import '../moderation/report_sheet.dart';
 import '../notifications/notification_provider.dart';
+import '../plus/plus_gate.dart';
+import '../plus/plus_provider.dart';
+import '../plus/plus_widgets.dart';
 import '../stories/story_ring_bar.dart';
 import '../study/study_models.dart';
 import 'feed_provider.dart';
@@ -212,6 +216,7 @@ class _ComposerCardState extends State<_ComposerCard> {
   final _focus = FocusNode();
   XFile? _imageFile;
   XFile? _videoFile;
+  XFile? _docFile;
   bool _busy = false;
   String? _mentionQuery;
   List<AppUser> _mentionHits = const [];
@@ -290,16 +295,43 @@ class _ComposerCardState extends State<_ComposerCard> {
     if (f != null) setState(() => _videoFile = f);
   }
 
+  Future<void> _pickDoc() async {
+    if (!widget.enabled) {
+      widget.onTapLocked();
+      return;
+    }
+    final user = context.read<AuthProvider>().user;
+    final cfg = context.read<PlusProvider>().config;
+    if (user == null || !user.isPlusActive || !cfg.features.filePosts) {
+      await requirePlus(context, featureLabel: 'Dosya / ders notu paylaşımı');
+      return;
+    }
+    final f = await MediaUpload.pickDocument();
+    if (f != null) setState(() => _docFile = f);
+  }
+
   Future<void> _publish() async {
     if (!widget.enabled) {
       widget.onTapLocked();
       return;
     }
     final text = _controller.text.trim();
-    if (text.isEmpty && _imageFile == null && _videoFile == null) return;
+    if (text.isEmpty &&
+        _imageFile == null &&
+        _videoFile == null &&
+        _docFile == null) {
+      return;
+    }
     final auth = context.read<AuthProvider>();
     final user = auth.user;
     if (user == null) return;
+    if (_docFile != null) {
+      final cfg = context.read<PlusProvider>().config;
+      if (!user.isPlusActive || !cfg.features.filePosts) {
+        await requirePlus(context, featureLabel: 'Dosya paylaşımı');
+        return;
+      }
+    }
     setState(() => _busy = true);
     try {
       final media = <MediaItem>[];
@@ -326,6 +358,24 @@ class _ComposerCardState extends State<_ComposerCard> {
         );
         media.add(MediaItem(url: url, type: MediaType.video));
       }
+      if (_docFile != null) {
+        final url = await MediaUpload.uploadXFile(
+          file: _docFile!,
+          folder: 'posts/$authUid',
+          firstName: user.firstName,
+          lastName: user.lastName,
+          studentNo: user.studentNo,
+          isVideo: false,
+          isFile: true,
+        );
+        media.add(
+          MediaItem(
+            url: url,
+            type: MediaType.file,
+            fileName: _docFile!.name,
+          ),
+        );
+      }
       final result = await widget.onSubmit(text, media);
       final blocked = result != null && !result.startsWith('WARN:');
       if (!blocked) {
@@ -333,6 +383,7 @@ class _ComposerCardState extends State<_ComposerCard> {
         setState(() {
           _imageFile = null;
           _videoFile = null;
+          _docFile = null;
           _mentionQuery = null;
           _mentionHits = const [];
         });
@@ -417,7 +468,7 @@ class _ComposerCardState extends State<_ComposerCard> {
                     },
                   ),
                 ),
-              if (_imageFile != null || _videoFile != null)
+              if (_imageFile != null || _videoFile != null || _docFile != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Wrap(
@@ -432,6 +483,11 @@ class _ComposerCardState extends State<_ComposerCard> {
                         Chip(
                           label: const Text('Video · max 45sn / 75MB'),
                           onDeleted: () => setState(() => _videoFile = null),
+                        ),
+                      if (_docFile != null)
+                        Chip(
+                          label: Text('Dosya · ${_docFile!.name}'),
+                          onDeleted: () => setState(() => _docFile = null),
                         ),
                     ],
                   ),
@@ -466,6 +522,16 @@ class _ComposerCardState extends State<_ComposerCard> {
                       Icons.videocam_outlined,
                       color: _videoFile != null
                           ? AppColors.lime
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Dosya / ders notu (Plus)',
+                    onPressed: _busy ? null : _pickDoc,
+                    icon: Icon(
+                      Icons.attach_file_rounded,
+                      color: _docFile != null
+                          ? AppColors.navy
                           : AppColors.textSecondary,
                     ),
                   ),
@@ -596,12 +662,9 @@ class PostCard extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              if (gold) ...[
+                              if (gold || blue || author?.showGreenBadge == true) ...[
                                 const SizedBox(width: 4),
-                                const VerifiedBadge(gold: true, size: 15),
-                              ] else if (blue) ...[
-                                const SizedBox(width: 4),
-                                const VerifiedBadge(gold: false, size: 15),
+                                UserVerificationBadges(user: author, size: 15),
                               ],
                               if (author?.isBot == true) ...[
                                 const SizedBox(width: 4),
@@ -763,12 +826,42 @@ class PostCard extends StatelessWidget {
                 ],
                 if (post.media.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  MediaCarousel(
-                    urls: post.media.map((m) => m.url).toList(),
-                    types: post.media
-                        .map((m) => m.type == MediaType.video)
-                        .toList(),
-                  ),
+                  if (post.media.any((m) => m.type != MediaType.file))
+                    MediaCarousel(
+                      urls: post.media
+                          .where((m) => m.type != MediaType.file)
+                          .map((m) => m.url)
+                          .toList(),
+                      types: post.media
+                          .where((m) => m.type != MediaType.file)
+                          .map((m) => m.type == MediaType.video)
+                          .toList(),
+                    ),
+                  ...post.media.where((m) => m.type == MediaType.file).map(
+                        (m) => Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.insert_drive_file_outlined),
+                            title: Text(
+                              m.fileName ?? 'Dosya',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            subtitle: const Text('Ders notu / ek dosya'),
+                            trailing: IconButton(
+                              tooltip: 'Aç',
+                              onPressed: () => launchUrl(
+                                Uri.parse(m.url),
+                                mode: LaunchMode.externalApplication,
+                              ),
+                              icon: const Icon(Icons.download_rounded),
+                            ),
+                          ),
+                        ),
+                      ),
                 ],
               ],
               const SizedBox(height: 10),

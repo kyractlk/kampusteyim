@@ -431,16 +431,36 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
 
   const uid = request.auth.uid;
 
-  // User başı CV-AI kotası (app_config/cv_ai_limits) — 0 veya yok = sınırsız
+  // CV-AI kota: KampüsteyimPlus free/plus limitleri (app_config/kampusteyim_plus)
+  // Geriye dönük: cv_ai_limits.perUserDailyLimit hâlâ okunur (admin eski sekme).
   try {
-    const limSnap = await db.collection('app_config').doc('cv_ai_limits').get();
+    const [plusSnap, limSnap, userSnap] = await Promise.all([
+      db.collection('app_config').doc('kampusteyim_plus').get(),
+      db.collection('app_config').doc('cv_ai_limits').get(),
+      db.collection('users').doc(uid).get(),
+    ]);
+    const plusCfg = plusSnap.exists ? plusSnap.data() || {} : {};
     const lim = limSnap.exists ? limSnap.data() || {} : {};
-    const perUser =
-      typeof lim.perUserDailyLimit === 'number' ? lim.perUserDailyLimit : null;
+    const u = userSnap.exists ? userSnap.data() || {} : {};
+    const exp = u.plusExpiresAt ? new Date(u.plusExpiresAt) : null;
+    const isPlus =
+      u.plusActive === true && (!exp || exp.getTime() > Date.now());
+
+    let perUser = null;
+    const freeLim = (plusCfg.rateLimitsFree || {}).cvAiDaily;
+    const plusLim = (plusCfg.rateLimitsPlus || {}).cvAiDaily;
+    if (isPlus && typeof plusLim === 'number') {
+      perUser = plusLim;
+    } else if (!isPlus && typeof freeLim === 'number') {
+      perUser = freeLim;
+    } else if (typeof lim.perUserDailyLimit === 'number') {
+      perUser = lim.perUserDailyLimit;
+    }
+
     const enabled = lim.enabled !== false;
     if (enabled && perUser != null && perUser >= 0 && Number.isFinite(perUser)) {
       if (perUser === 0) {
-        // 0 = sınırsız (altyapı hazır, varsayılan)
+        // 0 = sınırsız
       } else {
         const day = new Date().toISOString().slice(0, 10);
         const usageRef = db
@@ -453,7 +473,9 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
         if (count >= perUser) {
           throw new HttpsError(
             'resource-exhausted',
-            `Günlük CV-AI limitine ulaştın (${perUser}). Yarın tekrar dene.`,
+            isPlus
+              ? `Günlük CV-AI Plus limitine ulaştın (${perUser}).`
+              : `Günlük CV-AI limitine ulaştın (${perUser}). Plus ile daha fazla hak.`,
           );
         }
         await usageRef.set(
@@ -461,6 +483,7 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
             count: count + 1,
             updatedAt: new Date().toISOString(),
             limit: perUser,
+            plus: isPlus,
           },
           { merge: true },
         );
@@ -2024,8 +2047,12 @@ async function runGuardPostReview({
   authUid,
   content,
   mediaUrls,
+  fileNames,
 }) {
   const text = String(content || '');
+  const files = Array.isArray(fileNames)
+    ? fileNames.map((f) => String(f || '').trim()).filter(Boolean).slice(0, 20)
+    : [];
   const urls = [
     ...(String(text).match(/https?:\/\/[^\s<>\]]+/gi) || []),
     ...(String(text).match(/www\.[^\s<>\]]+/gi) || []),
@@ -2050,9 +2077,12 @@ async function runGuardPostReview({
     }
   };
   const riskyUrls = urls.filter((u) => !safeHost(u));
+  const riskyFiles = files.filter((n) =>
+    /\.(exe|bat|cmd|scr|js|vbs|msi|apk|dmg)$/i.test(n),
+  );
 
   // 1) Yerel kural — OpenAI kotası olmasa da çalışır
-  const local = localSafetyScan(text);
+  const local = localSafetyScan(`${text}\n${files.join(' ')}`);
   let ai = {
     decision: 'allow',
     action: 'none',
@@ -2062,7 +2092,16 @@ async function runGuardPostReview({
     message: '',
   };
 
-  if (local.hit) {
+  if (riskyFiles.length > 0) {
+    ai = {
+      decision: 'block',
+      action: 'postBan',
+      confidence: 0.99,
+      summary: 'Tehlikeli dosya uzantısı',
+      labels: ['malware'],
+      message: 'Bu dosya türü kampüste paylaşılamaz.',
+    };
+  } else if (local.hit) {
     ai = {
       decision: local.decision,
       action: local.action,
@@ -2095,6 +2134,7 @@ async function runGuardPostReview({
                 ).slice(0, 500),
                 urls: urls.slice(0, 20),
                 riskyUrls: riskyUrls.slice(0, 20),
+                fileNames: files.slice(0, 20),
                 authorId,
                 postId,
                 policy: 'zero_tolerance_campus_letter_scan',
@@ -2121,6 +2161,18 @@ async function runGuardPostReview({
         };
       }
     }
+  }
+
+  // riskyFiles zaten block set ettiyse AI üzerine yazmasın
+  if (riskyFiles.length > 0) {
+    ai = {
+      decision: 'block',
+      action: 'postBan',
+      confidence: 0.99,
+      summary: 'Tehlikeli dosya uzantısı',
+      labels: ['malware'],
+      message: 'Bu dosya türü kampüste paylaşılamaz.',
+    };
   }
 
   const decision = String(ai.decision || 'allow');
@@ -2304,13 +2356,14 @@ exports.moderatePostContent = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Giriş gerekli');
     }
-    const { postId, authorId, content, mediaUrls } = request.data || {};
+    const { postId, authorId, content, mediaUrls, fileNames } = request.data || {};
     const result = await runGuardPostReview({
       postId,
       authorId,
       authUid: request.auth.uid,
       content,
       mediaUrls,
+      fileNames,
     });
     if (result.blocked) {
       return {
@@ -2349,6 +2402,12 @@ exports.guardOnPostCreated = onDocumentCreated(
     const media = Array.isArray(data.media)
       ? data.media.map((m) => (m && m.url ? String(m.url) : '')).filter(Boolean)
       : [];
+    const fileNames = Array.isArray(data.media)
+      ? data.media
+          .filter((m) => m && (m.type === 'file' || m.fileName))
+          .map((m) => String(m.fileName || m.url || ''))
+          .filter(Boolean)
+      : [];
 
     console.log('[guardOnPostCreated]', postId, data.authorId);
     const result = await runGuardPostReview({
@@ -2357,6 +2416,7 @@ exports.guardOnPostCreated = onDocumentCreated(
       authUid: data.authUid || null,
       content: data.content || '',
       mediaUrls: media,
+      fileNames,
     });
     console.log('[guardOnPostCreated] result', postId, result.decision, result.blocked);
 
@@ -4467,6 +4527,105 @@ exports.updatePromoConfig = onCall(
       { merge: true },
     );
     return { ok: true, playStoreUrl, appStoreUrl, qrTargetUrl: qrTargetUrl || DEFAULT_QR_LANDING };
+  },
+);
+
+/** KampüsteyimPlus — ücretsiz deneme (bir kez). */
+exports.startPlusTrial = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    const uid = request.auth.uid;
+    const userRef = db.collection('users').doc(uid);
+    const [userSnap, cfgSnap] = await Promise.all([
+      userRef.get(),
+      db.collection('app_config').doc('kampusteyim_plus').get(),
+    ]);
+    if (!userSnap.exists) {
+      throw new HttpsError('not-found', 'Kullanıcı bulunamadı');
+    }
+    const u = userSnap.data() || {};
+    if (u.plusTrialUsed === true) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Ücretsiz denemeyi zaten kullandın.',
+      );
+    }
+    const exp = u.plusExpiresAt ? new Date(u.plusExpiresAt) : null;
+    if (u.plusActive === true && (!exp || exp.getTime() > Date.now())) {
+      return { ok: true, message: 'Plus zaten aktif', already: true };
+    }
+    const cfg = cfgSnap.exists ? cfgSnap.data() || {} : {};
+    let trialDays = typeof cfg.trialDays === 'number' ? cfg.trialDays : 60;
+    if (!Number.isFinite(trialDays) || trialDays < 1) trialDays = 60;
+    if (trialDays > 365) trialDays = 365;
+    const startsAt = new Date();
+    const expiresAt = new Date(startsAt.getTime() + trialDays * 86400000);
+    await userRef.set(
+      {
+        plusActive: true,
+        plusSource: 'trial',
+        plusStartsAt: startsAt.toISOString(),
+        plusExpiresAt: expiresAt.toISOString(),
+        plusTrialUsed: true,
+        updatedAt: startsAt.toISOString(),
+      },
+      { merge: true },
+    );
+    return {
+      ok: true,
+      trialDays,
+      plusExpiresAt: expiresAt.toISOString(),
+    };
+  },
+);
+
+/** Admin: Plus ver / kaldır */
+exports.adminSetPlus = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    const userId = String(request.data?.userId || '').trim();
+    const action = String(request.data?.action || '').trim();
+    if (!userId) throw new HttpsError('invalid-argument', 'userId zorunlu');
+    const userRef = db.collection('users').doc(userId);
+    const snap = await userRef.get();
+    if (!snap.exists) throw new HttpsError('not-found', 'Kullanıcı yok');
+
+    if (action === 'revoke') {
+      await userRef.set(
+        {
+          plusActive: false,
+          plusSource: '',
+          plusExpiresAt: FieldValue.delete(),
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true },
+      );
+      return { ok: true, action: 'revoke' };
+    }
+
+    if (action === 'grant') {
+      let days = Number(request.data?.days);
+      if (!Number.isFinite(days) || days < 1) days = 60;
+      if (days > 730) days = 730;
+      const startsAt = new Date();
+      const expiresAt = new Date(startsAt.getTime() + days * 86400000);
+      await userRef.set(
+        {
+          plusActive: true,
+          plusSource: 'admin',
+          plusStartsAt: startsAt.toISOString(),
+          plusExpiresAt: expiresAt.toISOString(),
+          updatedAt: startsAt.toISOString(),
+        },
+        { merge: true },
+      );
+      return { ok: true, action: 'grant', days, plusExpiresAt: expiresAt.toISOString() };
+    }
+
+    throw new HttpsError('invalid-argument', 'action: grant | revoke');
   },
 );
 

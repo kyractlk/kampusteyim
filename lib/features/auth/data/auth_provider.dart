@@ -144,6 +144,11 @@ class AuthProvider extends ChangeNotifier {
         isSuperAdmin: m['isSuperAdmin'] == true,
         hasGoldBadge: m['hasGoldBadge'] == true,
         hasBlueBadge: m['hasBlueBadge'] == true,
+        plusActive: m['plusActive'] == true,
+        plusSource: '${m['plusSource'] ?? ''}',
+        plusStartsAt: DateTime.tryParse('${m['plusStartsAt'] ?? ''}'),
+        plusExpiresAt: DateTime.tryParse('${m['plusExpiresAt'] ?? ''}'),
+        plusTrialUsed: m['plusTrialUsed'] == true,
         isBot: m['isBot'] == true,
         staffRoleId: m['staffRoleId'] as String?,
         communityLogoUrl: m['communityLogoUrl'] as String?,
@@ -178,6 +183,23 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[auth] ensureUser: $e');
       return null;
+    }
+  }
+
+  /// Plus / admin işlemleri sonrası mevcut kullanıcıyı Firestore’dan yenile.
+  Future<void> refreshCurrentUser() async {
+    final fb = fa.FirebaseAuth.instance.currentUser;
+    if (fb == null) return;
+    try {
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(fb.uid).get();
+      if (!doc.exists || doc.data() == null) return;
+      final user = _appUserFromFirestore(doc.id, doc.data()!);
+      _user = user;
+      _upsert(user);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[auth] refreshCurrentUser: $e');
     }
   }
 
@@ -456,6 +478,11 @@ class AuthProvider extends ChangeNotifier {
           'isSuperAdmin': user.isSuperAdmin,
           'hasGoldBadge': user.hasGoldBadge,
           'hasBlueBadge': user.hasBlueBadge,
+          'plusActive': user.plusActive,
+          'plusSource': user.plusSource,
+          'plusStartsAt': user.plusStartsAt?.toIso8601String(),
+          'plusExpiresAt': user.plusExpiresAt?.toIso8601String(),
+          'plusTrialUsed': user.plusTrialUsed,
           'isBot': user.isBot,
           'staffRoleId': user.staffRoleId,
           'affiliatedCommunityId': user.affiliatedCommunityId,
@@ -825,6 +852,11 @@ class AuthProvider extends ChangeNotifier {
       isSuperAdmin: m['isSuperAdmin'] == true,
       hasGoldBadge: m['hasGoldBadge'] == true,
       hasBlueBadge: m['hasBlueBadge'] == true,
+      plusActive: m['plusActive'] == true,
+      plusSource: '${m['plusSource'] ?? ''}',
+      plusStartsAt: DateTime.tryParse('${m['plusStartsAt'] ?? ''}'),
+      plusExpiresAt: DateTime.tryParse('${m['plusExpiresAt'] ?? ''}'),
+      plusTrialUsed: m['plusTrialUsed'] == true,
       isBot: m['isBot'] == true,
       staffRoleId: m['staffRoleId'] as String?,
       communityLogoUrl: m['communityLogoUrl'] as String?,

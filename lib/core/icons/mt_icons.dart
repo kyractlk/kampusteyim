@@ -72,6 +72,12 @@ class MtIcons {
   <path d="M8.2 12.2 10.6 14.6 15.8 9.4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>''';
 
+  static const badgeGreen = '''
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="12" r="9" fill="#22C55E"/>
+  <path d="M8.2 12.2 10.6 14.6 15.8 9.4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>''';
+
   static const admin = '''
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M12 3.5 19 7v5.2c0 4.4-3 7.6-7 8.8-4-1.2-7-4.4-7-8.8V7l7-3.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
@@ -132,19 +138,23 @@ class MtIcon extends StatelessWidget {
 class VerifiedBadge extends StatelessWidget {
   const VerifiedBadge({
     super.key,
-    required this.gold,
+    this.gold = false,
+    this.green = false,
     this.size = 16,
   });
 
   final bool gold;
+  final bool green;
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    return MtIcon(
-      gold ? MtIcons.badgeGold : MtIcons.badgeBlue,
-      size: size,
-    );
+    final svg = green
+        ? MtIcons.badgeGreen
+        : gold
+            ? MtIcons.badgeGold
+            : MtIcons.badgeBlue;
+    return MtIcon(svg, size: size);
   }
 }
 

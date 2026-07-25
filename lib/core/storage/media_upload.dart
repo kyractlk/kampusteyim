@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
@@ -103,6 +104,29 @@ class MediaUpload {
     }
   }
 
+  /// Ders notu / PDF vb. (Plus).
+  static Future<XFile?> pickDocument() async {
+    const accept =
+        '.pdf,.doc,.docx,.ppt,.pptx,.txt,.xls,.xlsx,application/pdf';
+    if (kIsWeb) {
+      return pickWebFile(accept: accept, fallbackName: 'not.pdf');
+    }
+    final ok = await AppPermissions.ensureMediaAccess();
+    if (!ok) throw StateError('Dosya izni gerekli');
+    try {
+      const group = XTypeGroup(
+        label: 'documents',
+        extensions: ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt', 'xls', 'xlsx'],
+      );
+      final f = await openFile(acceptedTypeGroups: [group]);
+      if (f == null) return null;
+      return XFile(f.path, name: f.name, mimeType: f.mimeType);
+    } catch (e) {
+      debugPrint('[media] pickDocument: $e');
+      rethrow;
+    }
+  }
+
   /// Hızlı yükleme: native putFile + yüzde progress.
   static Future<String> uploadXFile({
     required XFile file,
@@ -111,21 +135,25 @@ class MediaUpload {
     required String lastName,
     required String studentNo,
     required bool isVideo,
+    bool isFile = false,
     void Function(double progress)? onProgress,
   }) async {
     final name = file.name;
     final ext = name.contains('.')
         ? name.split('.').last
-        : (isVideo ? 'mp4' : 'jpg');
+        : (isVideo ? 'mp4' : (isFile ? 'pdf' : 'jpg'));
     final fileName = buildFileName(
       firstName: firstName,
       lastName: lastName,
       studentNo: studentNo,
       extension: ext,
     );
+    final lower = ext.toLowerCase();
     final contentType = isVideo
-        ? (ext.toLowerCase() == 'mov' ? 'video/quicktime' : 'video/mp4')
-        : (ext.toLowerCase() == 'png' ? 'image/png' : 'image/jpeg');
+        ? (lower == 'mov' ? 'video/quicktime' : 'video/mp4')
+        : isFile
+            ? _docMime(lower)
+            : (lower == 'png' ? 'image/png' : 'image/jpeg');
     final path = '$folder/$fileName';
     final meta = SettableMetadata(contentType: contentType);
     final ref = FirebaseStorage.instance.ref().child(path);
@@ -136,7 +164,7 @@ class MediaUpload {
       final len = await f.length();
       if (len > maxPhotoBytes) {
         throw StateError(
-          '${isVideo ? 'Video' : 'Fotoğraf'} 75 MB’dan büyük olamaz '
+          'Dosya 75 MB’dan büyük olamaz '
           '(${(len / (1024 * 1024)).toStringAsFixed(1)} MB).',
         );
       }
@@ -146,7 +174,7 @@ class MediaUpload {
       final bytes = await file.readAsBytes();
       if (bytes.length > maxPhotoBytes) {
         throw StateError(
-          '${isVideo ? 'Video' : 'Fotoğraf'} 75 MB’dan büyük olamaz '
+          'Dosya 75 MB’dan büyük olamaz '
           '(${(bytes.length / (1024 * 1024)).toStringAsFixed(1)} MB).',
         );
       }
@@ -164,6 +192,29 @@ class MediaUpload {
     await task;
     onProgress?.call(1);
     return ref.getDownloadURL();
+  }
+
+  static String _docMime(String ext) {
+    switch (ext) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'ppt':
+        return 'application/vnd.ms-powerpoint';
+      case 'pptx':
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'txt':
+        return 'text/plain';
+      default:
+        return 'application/octet-stream';
+    }
   }
 
   static Future<String> uploadBytes({
