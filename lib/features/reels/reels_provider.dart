@@ -35,6 +35,45 @@ class ReelsProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> refresh() async {
+    _loading = true;
+    notifyListeners();
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('reels')
+          .orderBy('createdAt', descending: true)
+          .limit(120)
+          .get();
+      _items
+        ..clear()
+        ..addAll(
+          snap.docs
+              .map((d) => CampusReel.fromFirestore(d.id, d.data()))
+              .where((r) => !r.isDeleted),
+        );
+      _error = null;
+    } catch (e) {
+      debugPrint('[reels] refresh: $e');
+      _error = 'Yenilenemedi';
+    }
+    _loading = false;
+    notifyListeners();
+    await _prefetchFeed();
+  }
+
+  Future<void> prefetchAround(List<CampusReel> feed, int index) async {
+    if (feed.isEmpty) return;
+    final start = (index - 2).clamp(0, feed.length);
+    final end = (index + 5).clamp(0, feed.length);
+    final slice = feed.sublist(start, end);
+    await ReelsVideoCache.instance.prefetch(slice, count: slice.length);
+    final keep = {
+      ...slice.map((r) => r.id),
+      ...feed.take(8).map((r) => r.id),
+    };
+    await ReelsVideoCache.instance.trim(keep);
+  }
+
   Future<void> _prefetchFeed() async {
     final feed = feedFor(_auth?.user?.id);
     await ReelsVideoCache.instance.prefetch(feed, count: 6);

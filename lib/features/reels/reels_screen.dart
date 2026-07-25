@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -26,11 +28,30 @@ class ReelsScreen extends StatefulWidget {
 class _ReelsScreenState extends State<ReelsScreen> {
   final _page = PageController();
   int _index = 0;
+  bool _refreshing = false;
 
   @override
   void dispose() {
     _page.dispose();
     super.dispose();
+  }
+
+  Future<void> _onRefresh() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      await context.read<ReelsProvider>().refresh();
+      if (mounted) setState(() => _index = 0);
+      if (_page.hasClients) {
+        await _page.animateToPage(
+          0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
   }
 
   @override
@@ -40,6 +61,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
     final me = auth.user;
     final feed = reels.feedFor(me?.id);
     final tabOn = reels.tabActive;
+    final topPad = MediaQuery.paddingOf(context).top;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -78,55 +100,105 @@ class _ReelsScreenState extends State<ReelsScreen> {
               ),
             )
           else
-            PageView.builder(
-              controller: _page,
-              scrollDirection: Axis.vertical,
-              itemCount: feed.length,
-              onPageChanged: (i) {
-                setState(() => _index = i);
-                final uid = me?.id;
-                if (uid == null) return;
-                context.read<ReelsProvider>().markViewed(feed[i].id, uid);
-                // Sonraki 2–3 reel’i ısıt.
-                final slice = feed.skip(i).take(4).toList();
-                ReelsVideoCache.instance.prefetch(slice, count: 4);
-              },
-              itemBuilder: (context, i) => _ReelPage(
-                key: ValueKey(feed[i].id),
-                reel: feed[i],
-                isActive: tabOn && i == _index,
+            RefreshIndicator(
+              color: AppColors.cyan,
+              backgroundColor: Colors.black87,
+              displacement: topPad + 48,
+              onRefresh: _onRefresh,
+              child: NotificationListener<OverscrollNotification>(
+                onNotification: (n) {
+                  // İlk reel’de yukarı çek → yenile (Instagram).
+                  if (_index == 0 &&
+                      n.overscroll < -28 &&
+                      n.metrics.axis == Axis.vertical &&
+                      !_refreshing) {
+                    _onRefresh();
+                  }
+                  return false;
+                },
+                child: PageView.builder(
+                  controller: _page,
+                  scrollDirection: Axis.vertical,
+                  itemCount: feed.length,
+                  onPageChanged: (i) {
+                    setState(() => _index = i);
+                    final uid = me?.id;
+                    if (uid != null) {
+                      context.read<ReelsProvider>().markViewed(feed[i].id, uid);
+                    }
+                    unawaited(
+                      context.read<ReelsProvider>().prefetchAround(feed, i),
+                    );
+                  },
+                  itemBuilder: (context, i) => _ReelPage(
+                    key: ValueKey(feed[i].id),
+                    reel: feed[i],
+                    isActive: tabOn && i == _index,
+                  ),
+                ),
               ),
             ),
-          SafeArea(
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+              padding: EdgeInsets.fromLTRB(12, topPad + 2, 4, 0),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const Text(
-                    'Kampüs Reels',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 20,
-                      shadows: [
-                        Shadow(blurRadius: 8, color: Colors.black54),
-                      ],
+                  const Expanded(
+                    child: Text(
+                      'Kampüs Reels',
+                      textAlign: TextAlign.left,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                        height: 1.1,
+                        shadows: [
+                          Shadow(blurRadius: 6, color: Colors.black54),
+                        ],
+                      ),
                     ),
                   ),
-                  const Spacer(),
                   IconButton(
                     tooltip: 'Çek / paylaş',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
+                    ),
                     onPressed: () {
                       if (!AuthGate.requireAuth(context)) return;
                       openCampusShareMenu(context);
                     },
                     icon: const Icon(Icons.camera_alt_rounded,
-                        color: Colors.white),
+                        color: Colors.white, size: 22),
                   ),
                 ],
               ),
             ),
           ),
+          if (_refreshing)
+            Positioned(
+              top: topPad + 36,
+              left: 0,
+              right: 0,
+              child: const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: AppColors.cyan,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

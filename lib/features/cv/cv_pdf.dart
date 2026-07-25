@@ -726,7 +726,7 @@ class CvPdfBuilder {
         children: [
           pw.Container(height: 3.5, color: _accent),
           pw.Padding(
-            padding: const pw.EdgeInsets.fromLTRB(28, 18, 28, 14),
+            padding: const pw.EdgeInsets.fromLTRB(24, 24, 24, 14),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
@@ -736,19 +736,22 @@ class CvPdfBuilder {
                     children: [
                       pw.Text(
                         name.toUpperCase(),
+                        maxLines: 2,
                         style: pw.TextStyle(
-                          fontSize: 21,
+                          fontSize: name.trim().length > 24 ? 15.5 : 19,
                           fontWeight: pw.FontWeight.bold,
                           color: _white,
-                          letterSpacing: 0.9,
+                          letterSpacing: 0.6,
+                          lineSpacing: 1.5,
                         ),
                       ),
                       if (headline.isNotEmpty) ...[
-                        pw.SizedBox(height: 5),
+                        pw.SizedBox(height: 6),
                         pw.Text(
                           headline,
+                          maxLines: 2,
                           style: const pw.TextStyle(
-                            fontSize: 10.5,
+                            fontSize: 10,
                             color: _accent,
                           ),
                         ),
@@ -757,8 +760,9 @@ class CvPdfBuilder {
                         pw.SizedBox(height: 5),
                         pw.Text(
                           campus,
+                          maxLines: 2,
                           style: const pw.TextStyle(
-                            fontSize: 8.3,
+                            fontSize: 8,
                             color: PdfColor.fromInt(0xFFB7C7D6),
                           ),
                         ),
@@ -766,28 +770,34 @@ class CvPdfBuilder {
                     ],
                   ),
                 ),
-                pw.SizedBox(width: 14),
+                pw.SizedBox(width: 12),
                 pw.Container(
-                  width: 78,
-                  height: 78,
+                  width: 72,
+                  height: 72,
                   decoration: pw.BoxDecoration(
                     shape: pw.BoxShape.circle,
                     color: _navy,
-                    border: pw.Border.all(color: _accent, width: 2.2),
+                    border: pw.Border.all(color: _accent, width: 2),
                   ),
                   alignment: pw.Alignment.center,
                   child: pw.ClipOval(
-                    child: pw.Container(
-                      width: 74,
-                      height: 74,
-                      color: const PdfColor.fromInt(0xFF3D5F7A),
+                    child: pw.SizedBox(
+                      width: 68,
+                      height: 68,
                       child: photo != null
-                          ? pw.Image(photo, fit: pw.BoxFit.cover)
-                          : pw.Center(
+                          ? pw.Image(
+                              photo,
+                              fit: pw.BoxFit.cover,
+                              width: 68,
+                              height: 68,
+                            )
+                          : pw.Container(
+                              color: const PdfColor.fromInt(0xFF3D5F7A),
+                              alignment: pw.Alignment.center,
                               child: pw.Text(
                                 initials,
                                 style: pw.TextStyle(
-                                  fontSize: 22,
+                                  fontSize: 20,
                                   fontWeight: pw.FontWeight.bold,
                                   color: _white,
                                 ),

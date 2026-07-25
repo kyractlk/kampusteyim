@@ -27,7 +27,7 @@ class CvProvider extends ChangeNotifier {
       fa.FirebaseAuth.instance.currentUser?.uid ?? '';
 
   /// Platform profilinden kişisel alanları doldur (mevcut değerleri ezer).
-  void applyProfileFromUser(AppUser user) {
+  void applyProfileFromUser(AppUser user, {bool forcePhoto = false}) {
     final p = data.personalInfo;
     p.name = user.fullName;
     p.email = user.email;
@@ -36,18 +36,21 @@ class CvProvider extends ChangeNotifier {
     if (user.city.trim().isNotEmpty) {
       p.address = user.city;
     }
+    final photo = (user.photoUrl ?? '').trim();
+    if (photo.isNotEmpty && (forcePhoto || p.photoUrl.trim().isEmpty)) {
+      p.photoUrl = photo;
+    }
     for (final link in user.links) {
       final label = link.label.toLowerCase();
       final url = link.url.trim();
       if (url.isEmpty) continue;
-      if (label.contains('linkedin') && p.linkedin.isEmpty) p.linkedin = url;
-      if (label.contains('github') && p.github.isEmpty) p.github = url;
-      if ((label.contains('web') || label.contains('site')) &&
-          p.website.isEmpty) {
+      if (label.contains('linkedin')) p.linkedin = url;
+      if (label.contains('github')) p.github = url;
+      if (label.contains('web') || label.contains('site')) {
         p.website = url;
       }
     }
-    if (p.about.trim().isEmpty && user.bio.trim().isNotEmpty) {
+    if (user.bio.trim().isNotEmpty) {
       p.about = user.bio.trim();
     }
     if (data.education.isEmpty && user.university.trim().isNotEmpty) {
@@ -75,7 +78,7 @@ class CvProvider extends ChangeNotifier {
   Future<void> refreshFromProfile(AuthProvider auth) async {
     final user = auth.user;
     if (user == null) return;
-    applyProfileFromUser(user);
+    applyProfileFromUser(user, forcePhoto: true);
     await saveLocal();
     notifyListeners();
   }

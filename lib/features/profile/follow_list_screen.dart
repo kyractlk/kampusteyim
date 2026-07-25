@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_gate.dart';
+import '../../core/utils/mention_utils.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
@@ -38,12 +39,20 @@ class _FollowListScreenState extends State<FollowListScreen>
       vsync: this,
       initialIndex: widget.mode == FollowListMode.following ? 1 : 0,
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final auth = context.read<AuthProvider>();
-      setState(() => _loading = true);
-      await auth.ensureUserLoaded(widget.userId);
-      if (mounted) setState(() => _loading = false);
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
+  }
+
+  Future<void> _bootstrap() async {
+    final auth = context.read<AuthProvider>();
+    setState(() => _loading = true);
+    final user = await auth.ensureUserLoaded(widget.userId);
+    if (user != null) {
+      final ids = {...user.followers, ...user.following};
+      for (final id in ids) {
+        await auth.ensureUserLoaded(id);
+      }
+    }
+    if (mounted) setState(() => _loading = false);
   }
 
   @override
@@ -103,17 +112,15 @@ class _FollowListScreenState extends State<FollowListScreen>
 
     await auth.toggleFollow(target.id);
     if (!mounted) return;
-    if (me.id != target.id) {
-      context.read<NotificationProvider>().pushSocial(
-            toUserId: target.id,
-            title: 'Yeni takipçi',
-            body: '${me.fullName} seni takip etmeye başladı',
-            emoji: 'FOLLOW',
-            type: 'follow',
-            actorId: me.id,
-            targetId: me.id,
-          );
-    }
+    context.read<NotificationProvider>().pushSocial(
+          toUserId: target.id,
+          title: 'Yeni takipçi',
+          body: '${me.fullName} seni takip etmeye başladı',
+          emoji: 'FOLLOW',
+          type: 'follow',
+          actorId: me.id,
+          targetId: me.id,
+        );
   }
 
   String _followLabel(AuthProvider auth, AppUser target) {
@@ -140,31 +147,119 @@ class _FollowListScreenState extends State<FollowListScreen>
         ),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 4),
       itemCount: users.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final u = users[i];
         final me = auth.user;
-        final isSelf = me?.id == u.id;
+        final isSelf = me != null && auth.idsFor(u.id).contains(me.id);
         final label = _followLabel(auth, u);
-        return ListTile(
-          leading: UserAvatar(
-            name: u.fullName,
-            photoUrl: u.photoUrl,
-            radius: 24,
-            onTap: () => context.push('/user/${u.id}'),
-          ),
-          title: Text(u.fullName, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(u.handle),
-          trailing: isSelf || label.isEmpty
-              ? null
-              : OutlinedButton(
-                  onPressed: () => _toggleFollow(u),
-                  child: Text(label, style: const TextStyle(fontSize: 12)),
-                ),
+        final following = me != null && auth.follows(u.id);
+        final verified = u.showBlueBadge || u.showGoldBadge;
+        final handle = MentionUtils.displayHandle(u.handle, fallback: u.fullName);
+
+        return InkWell(
           onTap: () => context.push('/user/${u.id}'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                UserAvatar(
+                  name: u.fullName,
+                  photoUrl: u.photoUrl,
+                  radius: 24,
+                  onTap: () => context.push('/user/${u.id}'),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              handle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          if (verified) ...[
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.verified,
+                              size: 15,
+                              color: u.showGoldBadge
+                                  ? AppColors.gold
+                                  : const Color(0xFF1DA1F2),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        u.fullName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!isSelf && label.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 32,
+                    child: following
+                        ? OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.navy,
+                              side: const BorderSide(color: AppColors.border),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () => _toggleFollow(u),
+                            child: Text(
+                              label,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          )
+                        : FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.cyan,
+                              foregroundColor: AppColors.navy,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () => _toggleFollow(u),
+                            child: Text(
+                              label,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         );
       },
     );
@@ -174,17 +269,20 @@ class _FollowListScreenState extends State<FollowListScreen>
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.findUser(widget.userId);
-    final followers = user == null
-        ? const <AppUser>[]
-        : _resolve(auth, user.followers);
-    final following = user == null
-        ? const <AppUser>[]
-        : _resolve(auth, user.following);
+    final followers =
+        user == null ? const <AppUser>[] : _resolve(auth, user.followers);
+    final following =
+        user == null ? const <AppUser>[] : _resolve(auth, user.following);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(user?.handle ?? 'Takip'),
+        title: Text(
+          MentionUtils.displayHandle(
+            user?.handle ?? '',
+            fallback: user?.fullName ?? 'Takip',
+          ),
+        ),
         bottom: TabBar(
           controller: _tabs,
           labelColor: AppColors.navy,

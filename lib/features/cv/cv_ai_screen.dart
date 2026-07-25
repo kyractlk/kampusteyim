@@ -168,15 +168,33 @@ class _PersonalTab extends StatelessWidget {
               Stack(
                 alignment: Alignment.bottomRight,
                 children: [
-                  CircleAvatar(
-                    radius: 48,
-                    backgroundColor: AppColors.surface,
-                    backgroundImage: p.photoUrl.trim().isNotEmpty
-                        ? NetworkImage(p.photoUrl.trim())
-                        : null,
-                    child: p.photoUrl.trim().isEmpty
-                        ? const Icon(Icons.person, size: 44)
-                        : null,
+                  Container(
+                    width: 96,
+                    height: 96,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.surfaceMuted,
+                      border: Border.all(color: AppColors.border, width: 2),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: p.photoUrl.trim().isNotEmpty
+                        ? Image.network(
+                            p.photoUrl.trim(),
+                            fit: BoxFit.cover,
+                            width: 96,
+                            height: 96,
+                            alignment: Alignment.center,
+                            errorBuilder: (_, _, _) => const Icon(
+                              Icons.person,
+                              size: 44,
+                              color: AppColors.textSecondary,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.person,
+                            size: 44,
+                            color: AppColors.textSecondary,
+                          ),
                   ),
                   Material(
                     color: AppColors.navy,
@@ -189,8 +207,9 @@ class _PersonalTab extends StatelessWidget {
                         try {
                           final file = await MediaUpload.pickImage();
                           if (file == null) return;
-                          final authUid = fa.FirebaseAuth.instance.currentUser?.uid ??
-                              user.id;
+                          final authUid =
+                              fa.FirebaseAuth.instance.currentUser?.uid ??
+                                  user.id;
                           final url = await MediaUpload.uploadXFile(
                             file: file,
                             folder: 'cv/$authUid',
@@ -211,7 +230,8 @@ class _PersonalTab extends StatelessWidget {
                       },
                       child: const Padding(
                         padding: EdgeInsets.all(8),
-                        child: Icon(Icons.photo_camera, color: Colors.white, size: 18),
+                        child: Icon(Icons.photo_camera,
+                            color: Colors.white, size: 18),
                       ),
                     ),
                   ),
@@ -220,7 +240,8 @@ class _PersonalTab extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 p.name.isEmpty ? 'Ad Soyad' : p.name,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
               ),
               Text(
                 [p.email, p.phone, p.studentNo, p.address]
@@ -234,7 +255,7 @@ class _PersonalTab extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               const Text(
-                'CV fotoğrafı ayrı yüklenir (max 75 MB). Profil fotosundan bağımsızdır.',
+                'CV fotoğrafı placeholder’a sığacak şekilde kırpılır. Profilden yenile ile profil foto da gelir.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),

@@ -13,6 +13,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_gate.dart';
 import '../auth/data/auth_provider.dart';
 import '../reels/reels_provider.dart';
+import 'camera_mirror.dart';
 import 'stories_provider.dart';
 
 enum CampusShareMode { story, reels, choose }
@@ -273,11 +274,22 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
     await _openCamera(_cameras[_cameraIndex]);
   }
 
+  bool get _isFrontLens {
+    final c = _cam;
+    if (c == null) return false;
+    return c.description.lensDirection == CameraLensDirection.front;
+  }
+
   Future<void> _takePhoto() async {
     final c = _cam;
     if (c == null || !c.value.isInitialized || _busy || _recording) return;
+    final front = _isFrontLens;
     try {
-      final file = await c.takePicture();
+      var file = await c.takePicture();
+      // Ön kamera: önizleme aynalı → kaydı da aynala (ters çevirmesin).
+      if (front) {
+        file = await mirrorImageFileHorizontal(file);
+      }
       if (!mounted) return;
       setState(() {
         _captured = file;
@@ -641,15 +653,22 @@ class _CameraPreviewFill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = controller.value.previewSize;
-    if (size == null) return CameraPreview(controller);
-    return FittedBox(
-      fit: BoxFit.cover,
-      child: SizedBox(
-        width: size.height,
-        height: size.width,
-        child: CameraPreview(controller),
-      ),
-    );
+    final front =
+        controller.description.lensDirection == CameraLensDirection.front;
+    Widget preview = size == null
+        ? CameraPreview(controller)
+        : FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: size.height,
+              height: size.width,
+              child: CameraPreview(controller),
+            ),
+          );
+    // Platform ön kamerayı zaten aynalar; ekstra çevirme yok.
+    // (Kayıt tarafında foto aynalanır → gördüğün = çekilen.)
+    if (!front) return preview;
+    return preview;
   }
 }
 
