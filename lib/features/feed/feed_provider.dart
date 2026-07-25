@@ -183,7 +183,11 @@ class FeedProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> softDeletePost(String postId, {required String byUserId}) async {
+  Future<void> softDeletePost(
+    String postId, {
+    required String byUserId,
+    bool cascadeReels = true,
+  }) async {
     final i = _posts.indexWhere((p) => p.id == postId);
     if (i < 0) return;
     final updated = _posts[i].copyWith(
@@ -193,6 +197,45 @@ class FeedProvider extends ChangeNotifier {
     _posts[i] = updated;
     notifyListeners();
     await _writePost(updated);
+    // Bağlı Kampüs Reels’i de soft-delete et.
+    if (cascadeReels) {
+      unawaited(_softDeleteReelsForPost(postId));
+    }
+  }
+
+  Future<void> _softDeleteReelsForPost(String postId) async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('reels')
+          .where('sourcePostId', isEqualTo: postId)
+          .get();
+      final now = DateTime.now().toIso8601String();
+      for (final d in snap.docs) {
+        await d.reference.set({'deletedAt': now}, SetOptions(merge: true));
+      }
+    } catch (e) {
+      debugPrint('[feed] softDelete linked reel: $e');
+    }
+  }
+
+  Future<String?> updatePostContent(String postId, String content) async {
+    final i = _posts.indexWhere((p) => p.id == postId);
+    if (i < 0) return 'Gönderi bulunamadı';
+    final text = content.trim();
+    final tags = HashtagUtils.extractUnique(text);
+    final updated = _posts[i].copyWith(content: text, hashtags: tags);
+    _posts[i] = updated;
+    notifyListeners();
+    try {
+      await FirebaseFirestore.instance.collection('posts').doc(postId).set({
+        'content': text,
+        'hashtags': tags,
+      }, SetOptions(merge: true));
+      return null;
+    } catch (e) {
+      debugPrint('[feed] updateContent: $e');
+      return 'Açıklama güncellenemedi';
+    }
   }
 
   Future<void> softDeleteComment(
@@ -477,6 +520,7 @@ class FeedProvider extends ChangeNotifier {
     List<MediaItem> media = const [],
     bool isCommunity = false,
     List<AppUser> directory = const [],
+    bool skipReelMirror = false,
   }) async {
     final text = content.trim();
     if (text.isEmpty && media.isEmpty) return 'Boş gönderi';
@@ -524,13 +568,15 @@ class FeedProvider extends ChangeNotifier {
           actorName: authorName,
           directory: directory,
         ));
-        unawaited(_mirrorVideoToReels(
-          post: post,
-          authorId: authorId,
-          authorName: authorName,
-          authorHandle: authorHandle,
-          directory: directory,
-        ));
+        if (!skipReelMirror) {
+          unawaited(_mirrorVideoToReels(
+            post: post,
+            authorId: authorId,
+            authorName: authorName,
+            authorHandle: authorHandle,
+            directory: directory,
+          ));
+        }
         return 'WARN:${data['warning']}';
       }
     } catch (e) {
@@ -548,13 +594,15 @@ class FeedProvider extends ChangeNotifier {
       actorName: authorName,
       directory: directory,
     ));
-    unawaited(_mirrorVideoToReels(
-      post: post,
-      authorId: authorId,
-      authorName: authorName,
-      authorHandle: authorHandle,
-      directory: directory,
-    ));
+    if (!skipReelMirror) {
+      unawaited(_mirrorVideoToReels(
+        post: post,
+        authorId: authorId,
+        authorName: authorName,
+        authorHandle: authorHandle,
+        directory: directory,
+      ));
+    }
     return null;
   }
 

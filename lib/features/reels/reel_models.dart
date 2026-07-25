@@ -55,7 +55,12 @@ class CampusReel {
     List<String>? likedBy,
     List<String>? viewedBy,
     int? commentCount,
+    String? caption,
+    List<String>? hashtags,
+    List<String>? mentionedUserIds,
+    String? sourcePostId,
     DateTime? deletedAt,
+    bool clearDeleted = false,
   }) =>
       CampusReel(
         id: id,
@@ -65,17 +70,17 @@ class CampusReel {
         authorPhotoUrl: authorPhotoUrl,
         mediaUrl: mediaUrl,
         mediaType: mediaType,
-        caption: caption,
-        hashtags: hashtags,
-        mentionedUserIds: mentionedUserIds,
+        caption: caption ?? this.caption,
+        hashtags: hashtags ?? this.hashtags,
+        mentionedUserIds: mentionedUserIds ?? this.mentionedUserIds,
         createdAt: createdAt,
         likedBy: likedBy ?? this.likedBy,
         viewedBy: viewedBy ?? this.viewedBy,
         commentCount: commentCount ?? this.commentCount,
         reportCount: reportCount,
-        sourcePostId: sourcePostId,
+        sourcePostId: sourcePostId ?? this.sourcePostId,
         authorVerified: authorVerified,
-        deletedAt: deletedAt ?? this.deletedAt,
+        deletedAt: clearDeleted ? null : (deletedAt ?? this.deletedAt),
       );
 
   Map<String, dynamic> toFirestore() => {

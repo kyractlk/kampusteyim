@@ -377,6 +377,96 @@ class _ReelPageState extends State<_ReelPage> {
     );
   }
 
+  Future<void> _editCaption() async {
+    final ctrl = TextEditingController(text: widget.reel.caption);
+    final next = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text(
+          'Açıklamayı düzenle',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: 4,
+          style: const TextStyle(color: Colors.white),
+          cursorColor: AppColors.cyan,
+          decoration: InputDecoration(
+            hintText: 'Açıklama · @etiket · #hashtag',
+            hintStyle: const TextStyle(color: Colors.white38),
+            filled: true,
+            fillColor: Colors.white10,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('Kaydet'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (next == null || !mounted) return;
+    final me = context.read<AuthProvider>().user;
+    if (me == null) return;
+    final err = await context.read<ReelsProvider>().updateCaption(
+          reelId: widget.reel.id,
+          caption: next,
+          actorId: me.id,
+        );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(err ?? 'Açıklama güncellendi'),
+      ),
+    );
+  }
+
+  Future<void> _confirmDelete() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reels’i sil'),
+        content: const Text(
+          'Bu Reels silinsin mi? Profildeki gönderisi de kalkar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final me = context.read<AuthProvider>().user;
+    if (me == null) return;
+    final err = await context.read<ReelsProvider>().deleteReel(
+          reelId: widget.reel.id,
+          byUserId: me.id,
+        );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(err ?? 'Reels silindi')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final reel = widget.reel;
@@ -527,6 +617,42 @@ class _ReelPageState extends State<_ReelPage> {
                             ),
                           ),
                         ),
+                    ],
+                    if (isSelf) ...[
+                      const SizedBox(width: 4),
+                      PopupMenuButton<String>(
+                        tooltip: 'Reels işlemleri',
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(
+                          Icons.more_horiz_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                        color: const Color(0xFF1E1E1E),
+                        onSelected: (v) {
+                          if (v == 'edit') {
+                            unawaited(_editCaption());
+                          } else if (v == 'delete') {
+                            unawaited(_confirmDelete());
+                          }
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: 'edit',
+                            child: Text(
+                              'Açıklamayı düzenle',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Text(
+                              'Sil',
+                              style: TextStyle(color: Colors.redAccent),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ],
                 ),

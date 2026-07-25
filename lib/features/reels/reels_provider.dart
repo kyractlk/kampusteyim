@@ -9,6 +9,7 @@ import '../../core/utils/hashtag_utils.dart';
 import '../../core/utils/mention_utils.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
+import '../feed/feed_provider.dart';
 import '../notifications/notification_models.dart';
 import '../notifications/push_service.dart';
 import 'reel_models.dart';
@@ -21,6 +22,7 @@ class ReelsProvider extends ChangeNotifier {
   final List<CampusReel> _items = [];
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
   AuthProvider? _auth;
+  FeedProvider? _feed;
   bool _loading = false;
   String? _error;
   bool _tabActive = false;
@@ -29,6 +31,7 @@ class ReelsProvider extends ChangeNotifier {
   bool get tabActive => _tabActive;
   bool get isLoading => _loading;
   String? get error => _error;
+  List<CampusReel> get items => List.unmodifiable(_items);
 
   void setTabActive(bool active) {
     if (_tabActive == active) return;
@@ -86,6 +89,21 @@ class ReelsProvider extends ChangeNotifier {
     _auth = auth;
     auth.addListener(_onAuth);
     _onAuth();
+  }
+
+  void attachFeed(FeedProvider feed) {
+    _feed = feed;
+  }
+
+  /// Profil / gönderi sayacı — yazarın silinmemiş reels’leri.
+  List<CampusReel> reelsByAuthors(Iterable<String> authorIds) {
+    final ids = authorIds.toSet();
+    if (ids.isEmpty) return const [];
+    final list = _items
+        .where((r) => !r.isDeleted && ids.contains(r.authorId))
+        .toList();
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
   }
 
   void _onAuth() {
@@ -222,6 +240,34 @@ class ReelsProvider extends ChangeNotifier {
         actorId: author.id,
         directory: _auth?.directory ?? const [],
       );
+
+      // Saf Reels paylaşımı → profil/akışta da gönderi olarak görünsün.
+      var linkedPostId = sourcePostId;
+      if (linkedPostId == null || linkedPostId.isEmpty) {
+        final feed = _feed;
+        if (feed != null) {
+          final postErr = await feed.addPost(
+            authorId: author.id,
+            authorName: author.fullName,
+            authorHandle: author.handle,
+            content: text,
+            media: [
+              MediaItem(
+                url: mediaUrl,
+                type: isVideo ? MediaType.video : MediaType.image,
+              ),
+            ],
+            isCommunity: author.isCommunity,
+            directory: _auth?.directory ?? const [],
+            skipReelMirror: true,
+          );
+          if (postErr != null && !postErr.startsWith('WARN:')) {
+            return postErr;
+          }
+          linkedPostId = feed.lastPostedId;
+        }
+      }
+
       final doc = FirebaseFirestore.instance.collection('reels').doc();
       final reel = CampusReel.fromAuthor(
         id: doc.id,
@@ -231,9 +277,11 @@ class ReelsProvider extends ChangeNotifier {
         caption: text,
         hashtags: tags,
         mentionedUserIds: mentionedIds,
-        sourcePostId: sourcePostId,
+        sourcePostId: linkedPostId,
       );
       await doc.set(reel.toFirestore());
+      _items.insert(0, reel);
+      notifyListeners();
       unawaited(_notifyReelMentions(
         content: text,
         reelId: doc.id,
@@ -245,6 +293,79 @@ class ReelsProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[reels] createUrl: $e');
       return 'Reels paylaşılamadı: $e';
+    }
+  }
+
+  Future<String?> updateCaption({
+    required String reelId,
+    required String caption,
+    required String actorId,
+  }) async {
+    final i = _items.indexWhere((r) => r.id == reelId);
+    if (i < 0) return 'Reels bulunamadı';
+    final reel = _items[i];
+    if (reel.authorId != actorId) return 'Bu Reels’i düzenleyemezsin';
+    final text = caption.trim();
+    final tags = HashtagUtils.extractUnique(text);
+    final mentionedIds = _resolveMentionIds(
+      text: text,
+      actorId: actorId,
+      directory: _auth?.directory ?? const [],
+    );
+    final updated = reel.copyWith(
+      caption: text,
+      hashtags: tags,
+      mentionedUserIds: mentionedIds,
+    );
+    _items[i] = updated;
+    notifyListeners();
+    try {
+      await FirebaseFirestore.instance.collection('reels').doc(reelId).set({
+        'caption': text,
+        'hashtags': tags,
+        'mentionedUserIds': mentionedIds,
+      }, SetOptions(merge: true));
+      final postId = reel.sourcePostId;
+      if (postId != null && postId.isNotEmpty) {
+        await _feed?.updatePostContent(postId, text);
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[reels] updateCaption: $e');
+      return 'Açıklama güncellenemedi';
+    }
+  }
+
+  Future<String?> deleteReel({
+    required String reelId,
+    required String byUserId,
+  }) async {
+    final i = _items.indexWhere((r) => r.id == reelId);
+    if (i < 0) return 'Reels bulunamadı';
+    final reel = _items[i];
+    if (reel.authorId != byUserId) return 'Bu Reels’i silemezsin';
+    final now = DateTime.now();
+    _items[i] = reel.copyWith(deletedAt: now);
+    notifyListeners();
+    try {
+      await FirebaseFirestore.instance.collection('reels').doc(reelId).set(
+        {'deletedAt': now.toIso8601String()},
+        SetOptions(merge: true),
+      );
+      final postId = reel.sourcePostId;
+      if (postId != null && postId.isNotEmpty) {
+        await _feed?.softDeletePost(
+          postId,
+          byUserId: byUserId,
+          cascadeReels: false,
+        );
+      }
+      _items.removeWhere((r) => r.id == reelId);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('[reels] delete: $e');
+      return 'Reels silinemedi';
     }
   }
 

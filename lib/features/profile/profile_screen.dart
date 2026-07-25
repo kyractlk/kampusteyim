@@ -21,6 +21,8 @@ import '../jobs/jobs_provider.dart';
 import '../moderation/moderation_models.dart';
 import '../moderation/report_sheet.dart';
 import '../notifications/notification_provider.dart';
+import '../reels/reel_models.dart';
+import '../reels/reels_provider.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -79,10 +81,50 @@ class _UserProfileViewState extends State<UserProfileView> {
     });
   }
 
+  /// Gönderiler + Reels (bağlı post yoksa sentetik kart).
+  List<Post> _profilePosts({
+    required List<Post> feedPosts,
+    required List<CampusReel> reels,
+  }) {
+    final out = List<Post>.from(feedPosts);
+    final known = out.map((p) => p.id).toSet();
+    for (final r in reels) {
+      final linked = r.sourcePostId;
+      if (linked != null && linked.isNotEmpty && known.contains(linked)) {
+        continue;
+      }
+      final syntheticId = linked?.isNotEmpty == true ? linked! : 'reel_${r.id}';
+      if (known.contains(syntheticId)) continue;
+      known.add(syntheticId);
+      out.add(
+        Post(
+          id: syntheticId,
+          authorId: r.authorId,
+          authorName: r.authorName,
+          authorHandle: r.authorHandle,
+          content: r.caption.isEmpty ? 'Kampüs Reels' : r.caption,
+          createdAt: r.createdAt,
+          media: [
+            MediaItem(
+              url: r.mediaUrl,
+              type: r.mediaType == ReelMediaType.video
+                  ? MediaType.video
+                  : MediaType.image,
+            ),
+          ],
+          hashtags: r.hashtags,
+        ),
+      );
+    }
+    out.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final feed = context.watch<FeedProvider>();
+    final reelsProv = context.watch<ReelsProvider>();
     final user = auth.findUser(widget.userId);
     if (user == null) {
       return Scaffold(
@@ -95,7 +137,11 @@ class _UserProfileViewState extends State<UserProfileView> {
       );
     }
 
-    final posts = feed.postsByAuthors(auth.idsFor(widget.userId));
+    final authorIds = auth.idsFor(widget.userId);
+    final posts = _profilePosts(
+      feedPosts: feed.postsByAuthors(authorIds),
+      reels: reelsProv.reelsByAuthors(authorIds),
+    );
     final me = auth.user;
     final following = me != null && auth.follows(user.id);
     final isSelf = widget.isSelf || me?.id == user.id;

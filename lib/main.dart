@@ -120,7 +120,9 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _admin = AdminProvider();
     _maintenance = MaintenanceProvider();
     _stories = StoriesProvider()..attachAuth(_auth);
-    _reels = ReelsProvider()..attachAuth(_auth);
+    _reels = ReelsProvider()
+      ..attachAuth(_auth)
+      ..attachFeed(_feed);
     _auth.addListener(_onAuth);
   }
 
