@@ -110,32 +110,14 @@ class StoriesProvider extends ChangeNotifier {
   }
 
   Future<void> _prefetchVisibleMedia() async {
-    final urls = visibleItemsForViewer()
+    final items = visibleItemsForViewer();
+    final imageUrls = items
         .where((s) => s.mediaType != MediaType.video)
         .map((s) => s.mediaUrl)
         .where((u) => u.startsWith('http'))
-        .take(40);
-    for (final url in urls) {
-      try {
-        final stream = NetworkImage(url).resolve(ImageConfiguration.empty);
-        final completer = Completer<void>();
-        late ImageStreamListener listener;
-        listener = ImageStreamListener(
-          (info, sync) {
-            if (!completer.isCompleted) completer.complete();
-            stream.removeListener(listener);
-          },
-          onError: (e, st) {
-            if (!completer.isCompleted) completer.complete();
-            stream.removeListener(listener);
-          },
-        );
-        stream.addListener(listener);
-        await completer.future.timeout(
-          const Duration(seconds: 4),
-          onTimeout: () {},
-        );
-      } catch (_) {}
+        .take(60);
+    for (final url in imageUrls) {
+      unawaited(_prefetchUrl(url, isVideo: false));
     }
   }
 
@@ -185,6 +167,7 @@ class StoriesProvider extends ChangeNotifier {
     required AppUser author,
     required XFile file,
     bool isVideo = false,
+    void Function(double progress)? onProgress,
   }) async {
     if (author.isSpectatorMode) {
       return 'İzleyici modunda hikâye paylaşamazsın.';
@@ -201,6 +184,7 @@ class StoriesProvider extends ChangeNotifier {
         lastName: author.lastName,
         studentNo: author.studentNo,
         isVideo: isVideo,
+        onProgress: onProgress,
       );
       final now = DateTime.now();
       final doc = FirebaseFirestore.instance.collection('stories').doc();
@@ -215,11 +199,38 @@ class StoriesProvider extends ChangeNotifier {
         expiresAt: now.add(const Duration(hours: 24)),
       );
       await doc.set(item.toFirestore());
+      // Yeni hikâyeyi hemen önbelleğe al.
+      unawaited(_prefetchUrl(url, isVideo: isVideo));
       return null;
     } catch (e) {
       debugPrint('[stories] create: $e');
       return 'Hikâye paylaşılamadı: $e';
     }
+  }
+
+  Future<void> _prefetchUrl(String url, {required bool isVideo}) async {
+    if (!url.startsWith('http')) return;
+    try {
+      if (isVideo) return;
+      final stream = NetworkImage(url).resolve(ImageConfiguration.empty);
+      final completer = Completer<void>();
+      late ImageStreamListener listener;
+      listener = ImageStreamListener(
+        (info, sync) {
+          if (!completer.isCompleted) completer.complete();
+          stream.removeListener(listener);
+        },
+        onError: (e, st) {
+          if (!completer.isCompleted) completer.complete();
+          stream.removeListener(listener);
+        },
+      );
+      stream.addListener(listener);
+      await completer.future.timeout(
+        const Duration(seconds: 6),
+        onTimeout: () {},
+      );
+    } catch (_) {}
   }
 
   Future<void> likeStory(String storyId, String userId) async {

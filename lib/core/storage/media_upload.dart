@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,7 +8,7 @@ import 'package:intl/intl.dart';
 import '../permissions/app_permissions.dart';
 import 'web_file_pick.dart';
 
-/// Ortak medya yükleme: rename + boyut/süre limitleri.
+/// Ortak medya yükleme: hızlı putFile + progress.
 class MediaUpload {
   MediaUpload._();
 
@@ -64,7 +66,6 @@ class MediaUpload {
       if (!ok) throw StateError('Galeri / dosya izni gerekli');
     }
     try {
-      // Sıkıştırma yok — orijinal kaliteye yakın.
       return await _picker.pickImage(
         source: source,
         imageQuality: 100,
@@ -102,6 +103,7 @@ class MediaUpload {
     }
   }
 
+  /// Hızlı yükleme: native putFile + yüzde progress.
   static Future<String> uploadXFile({
     required XFile file,
     required String folder,
@@ -109,14 +111,8 @@ class MediaUpload {
     required String lastName,
     required String studentNo,
     required bool isVideo,
+    void Function(double progress)? onProgress,
   }) async {
-    final bytes = await file.readAsBytes();
-    if (bytes.length > maxPhotoBytes) {
-      throw StateError(
-        '${isVideo ? 'Video' : 'Fotoğraf'} 75 MB’dan büyük olamaz '
-        '(${(bytes.length / (1024 * 1024)).toStringAsFixed(1)} MB).',
-      );
-    }
     final name = file.name;
     final ext = name.contains('.')
         ? name.split('.').last
@@ -131,9 +127,42 @@ class MediaUpload {
         ? (ext.toLowerCase() == 'mov' ? 'video/quicktime' : 'video/mp4')
         : (ext.toLowerCase() == 'png' ? 'image/png' : 'image/jpeg');
     final path = '$folder/$fileName';
-    debugPrint('[media] upload $path (${bytes.length} bytes)');
+    final meta = SettableMetadata(contentType: contentType);
     final ref = FirebaseStorage.instance.ref().child(path);
-    await ref.putData(bytes, SettableMetadata(contentType: contentType));
+
+    UploadTask task;
+    if (!kIsWeb && file.path.isNotEmpty) {
+      final f = File(file.path);
+      final len = await f.length();
+      if (len > maxPhotoBytes) {
+        throw StateError(
+          '${isVideo ? 'Video' : 'Fotoğraf'} 75 MB’dan büyük olamaz '
+          '(${(len / (1024 * 1024)).toStringAsFixed(1)} MB).',
+        );
+      }
+      debugPrint('[media] putFile $path ($len bytes)');
+      task = ref.putFile(f, meta);
+    } else {
+      final bytes = await file.readAsBytes();
+      if (bytes.length > maxPhotoBytes) {
+        throw StateError(
+          '${isVideo ? 'Video' : 'Fotoğraf'} 75 MB’dan büyük olamaz '
+          '(${(bytes.length / (1024 * 1024)).toStringAsFixed(1)} MB).',
+        );
+      }
+      debugPrint('[media] putData $path (${bytes.length} bytes)');
+      task = ref.putData(bytes, meta);
+    }
+
+    if (onProgress != null) {
+      task.snapshotEvents.listen((snap) {
+        final total = snap.totalBytes;
+        if (total <= 0) return;
+        onProgress((snap.bytesTransferred / total).clamp(0.0, 1.0));
+      });
+    }
+    await task;
+    onProgress?.call(1);
     return ref.getDownloadURL();
   }
 
@@ -141,12 +170,22 @@ class MediaUpload {
     required Uint8List bytes,
     required String storagePath,
     required String contentType,
+    void Function(double progress)? onProgress,
   }) async {
     if (bytes.length > maxPhotoBytes) {
       throw StateError('Dosya 75 MB’dan büyük olamaz.');
     }
     final ref = FirebaseStorage.instance.ref().child(storagePath);
-    await ref.putData(bytes, SettableMetadata(contentType: contentType));
+    final task = ref.putData(bytes, SettableMetadata(contentType: contentType));
+    if (onProgress != null) {
+      task.snapshotEvents.listen((snap) {
+        final total = snap.totalBytes;
+        if (total <= 0) return;
+        onProgress((snap.bytesTransferred / total).clamp(0.0, 1.0));
+      });
+    }
+    await task;
+    onProgress?.call(1);
     return ref.getDownloadURL();
   }
 }

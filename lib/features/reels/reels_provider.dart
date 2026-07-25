@@ -30,9 +30,8 @@ class ReelsProvider extends ChangeNotifier {
     if (_tabActive == active) return;
     _tabActive = active;
     notifyListeners();
-    if (active) {
-      unawaited(_prefetchFeed());
-    }
+    // Aktif olmasa da prefetch sürer — kaydırma için hazır.
+    unawaited(_prefetchFeed());
   }
 
   Future<void> refresh() async {
@@ -61,22 +60,22 @@ class ReelsProvider extends ChangeNotifier {
     await _prefetchFeed();
   }
 
-  Future<void> prefetchAround(List<CampusReel> feed, int index) async {
-    if (feed.isEmpty) return;
-    final start = (index - 2).clamp(0, feed.length);
-    final end = (index + 5).clamp(0, feed.length);
-    final slice = feed.sublist(start, end);
-    await ReelsVideoCache.instance.prefetch(slice, count: slice.length);
-    final keep = {
-      ...slice.map((r) => r.id),
-      ...feed.take(8).map((r) => r.id),
-    };
-    await ReelsVideoCache.instance.trim(keep);
-  }
-
   Future<void> _prefetchFeed() async {
     final feed = feedFor(_auth?.user?.id);
-    await ReelsVideoCache.instance.prefetch(feed, count: 6);
+    // Kullanıcı Reels’te olmasa da arka planda ısıtmaya devam.
+    await ReelsVideoCache.instance.prefetch(feed, count: 10, keepWarm: true);
+  }
+
+  Future<void> prefetchAround(List<CampusReel> feed, int index) async {
+    if (feed.isEmpty) return;
+    final start = (index - 3).clamp(0, feed.length);
+    final end = (index + 8).clamp(0, feed.length);
+    final slice = feed.sublist(start, end);
+    await ReelsVideoCache.instance.prefetch(slice, count: slice.length);
+    // Tüm feed’i de kuyruğa koy — kaydırırken hazır olsun.
+    unawaited(
+      ReelsVideoCache.instance.prefetch(feed, count: 12, keepWarm: true),
+    );
   }
 
   void attachAuth(AuthProvider auth) {
@@ -166,6 +165,7 @@ class ReelsProvider extends ChangeNotifier {
     required XFile file,
     required bool isVideo,
     String caption = '',
+    void Function(double progress)? onProgress,
   }) async {
     if (author.isSpectatorMode) {
       return 'İzleyici modunda Reels paylaşamazsın.';
@@ -181,6 +181,7 @@ class ReelsProvider extends ChangeNotifier {
         lastName: author.lastName,
         studentNo: author.studentNo,
         isVideo: isVideo,
+        onProgress: onProgress,
       );
       return createReelFromUrl(
         author: author,

@@ -102,7 +102,7 @@ class HomeShell extends StatelessWidget {
                 surfaceTintColor: Colors.transparent,
                 elevation: 0,
                 shadowColor: Colors.transparent,
-                height: 68,
+                height: reelsMode ? 58 : 68,
                 labelTextStyle: WidgetStateProperty.resolveWith((states) {
                   final selected = states.contains(WidgetState.selected);
                   return TextStyle(

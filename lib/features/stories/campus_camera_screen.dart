@@ -136,6 +136,7 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
   bool _ready = false;
   bool _recording = false;
   bool _busy = false;
+  double _uploadProgress = 0;
   String? _status;
   XFile? _captured;
   bool _isVideo = false;
@@ -386,8 +387,20 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
     if (file == null || user == null || _busy) return;
     setState(() {
       _busy = true;
+      _uploadProgress = 0;
       _status = asReel ? 'Kampüs Reels yükleniyor…' : 'Hikâye yükleniyor…';
     });
+    void onProg(double p) {
+      if (!mounted) return;
+      setState(() {
+        _uploadProgress = p;
+        final pct = (p * 100).clamp(0, 100).round();
+        _status = asReel
+            ? 'Kampüs Reels yükleniyor… %$pct'
+            : 'Hikâye yükleniyor… %$pct';
+      });
+    }
+
     String? err;
     if (asReel) {
       err = await context.read<ReelsProvider>().createReel(
@@ -395,28 +408,45 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
             file: file,
             isVideo: _isVideo,
             caption: _captionCtrl.text,
+            onProgress: onProg,
           );
     } else {
       err = await context.read<StoriesProvider>().createStory(
             author: user,
             file: file,
             isVideo: _isVideo,
+            onProgress: onProg,
           );
     }
     if (!mounted) return;
     setState(() {
       _busy = false;
       _status = null;
+      _uploadProgress = 0;
     });
     if (err != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
       return;
     }
     Navigator.of(context).pop();
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          asReel ? 'Kampüs Reels paylaşıldı' : 'Hikâyen kampüste yayınlandı',
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.navy,
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: AppColors.lime),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                asReel
+                    ? 'Kampüs Reels paylaşıldı'
+                    : 'Hikâyen kampüste yayınlandı',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -625,18 +655,64 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
             ),
           if (_busy)
             ColoredBox(
-              color: Colors.black54,
+              color: Colors.black87,
               child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(color: AppColors.cyan),
-                    const SizedBox(height: 12),
-                    Text(
-                      _status ?? 'Yükleniyor…',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                  ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 36),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: _uploadProgress),
+                        duration: const Duration(milliseconds: 180),
+                        builder: (context, value, _) {
+                          return SizedBox(
+                            width: 72,
+                            height: 72,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CircularProgressIndicator(
+                                  value: value <= 0 ? null : value,
+                                  strokeWidth: 4,
+                                  color: AppColors.cyan,
+                                  backgroundColor: Colors.white12,
+                                ),
+                                Text(
+                                  value <= 0
+                                      ? '…'
+                                      : '%${(value * 100).round()}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _status ?? 'Yükleniyor…',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: LinearProgressIndicator(
+                          value: _uploadProgress <= 0 ? null : _uploadProgress,
+                          minHeight: 6,
+                          color: AppColors.lime,
+                          backgroundColor: Colors.white12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

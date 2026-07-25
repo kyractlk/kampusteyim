@@ -366,7 +366,8 @@ class _ReelPageState extends State<_ReelPage> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: const Color(0xFF121212),
+      barrierColor: Colors.black54,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
@@ -387,6 +388,9 @@ class _ReelPageState extends State<_ReelPage> {
         (author?.showBlueBadge == true) ||
         (author?.showGoldBadge == true);
     final photo = author?.photoUrl ?? reel.authorPhotoUrl;
+    // Alt nav (extendBody) + sistem inset — "Ses" / @handle kesilmesin.
+    final bottomClear =
+        MediaQuery.viewPaddingOf(context).bottom + 72 + 10;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -404,7 +408,19 @@ class _ReelPageState extends State<_ReelPage> {
                       child: VideoPlayer(_vc!),
                     ),
                   )
-                : const ColoredBox(color: Colors.black)
+                : const ColoredBox(
+                    color: Colors.black,
+                    child: Center(
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.cyan,
+                        ),
+                      ),
+                    ),
+                  )
           else
             SafeNetworkImage(url: reel.mediaUrl, fit: BoxFit.cover),
           const DecoratedBox(
@@ -418,7 +434,7 @@ class _ReelPageState extends State<_ReelPage> {
                   Colors.transparent,
                   Colors.black87,
                 ],
-                stops: [0, 0.2, 0.55, 1],
+                stops: [0, 0.2, 0.5, 1],
               ),
             ),
           ),
@@ -431,11 +447,12 @@ class _ReelPageState extends State<_ReelPage> {
               ),
             ),
           Positioned(
-            left: 14,
-            right: 72,
-            bottom: 88,
+            left: 12,
+            right: 64,
+            bottom: bottomClear,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
@@ -446,10 +463,10 @@ class _ReelPageState extends State<_ReelPage> {
                       child: UserAvatar(
                         name: reel.authorName,
                         photoUrl: photo,
-                        radius: 18,
+                        radius: 16,
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Flexible(
                       child: GestureDetector(
                         onTap: () => context.push(
@@ -466,7 +483,8 @@ class _ReelPageState extends State<_ReelPage> {
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w800,
-                                  fontSize: 15,
+                                  fontSize: 14,
+                                  height: 1.15,
                                 ),
                               ),
                             ),
@@ -474,7 +492,7 @@ class _ReelPageState extends State<_ReelPage> {
                               const SizedBox(width: 4),
                               Icon(
                                 Icons.verified,
-                                size: 16,
+                                size: 15,
                                 color: author?.showGoldBadge == true
                                     ? AppColors.gold
                                     : const Color(0xFF1DA1F2),
@@ -485,15 +503,15 @@ class _ReelPageState extends State<_ReelPage> {
                       ),
                     ),
                     if (!isSelf && me != null) ...[
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       if (!following)
                         OutlinedButton(
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
                             side: const BorderSide(color: Colors.white70),
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 0),
-                            minimumSize: const Size(0, 30),
+                                horizontal: 10, vertical: 0),
+                            minimumSize: const Size(0, 28),
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                           onPressed: () => _toggleFollow(author),
@@ -503,38 +521,34 @@ class _ReelPageState extends State<_ReelPage> {
                                 : 'Takip et',
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
-                              fontSize: 12,
+                              fontSize: 11,
                             ),
-                          ),
-                        )
-                      else
-                        Text(
-                          'Takip',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
                           ),
                         ),
                     ],
                   ],
                 ),
                 if (reel.caption.isNotEmpty) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   Text(
                     reel.caption,
-                    maxLines: 3,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white, height: 1.35),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      height: 1.3,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ],
             ),
           ),
           Positioned(
-            right: 8,
-            bottom: 96,
+            right: 4,
+            bottom: bottomClear - 4,
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 _SideBtn(
                   icon: liked ? Icons.favorite : Icons.favorite_border,
@@ -546,7 +560,7 @@ class _ReelPageState extends State<_ReelPage> {
                           .read<ReelsProvider>()
                           .toggleLike(reel.id, me.id),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 8),
                 _SideBtn(
                   icon: Icons.chat_bubble_outline_rounded,
                   label: '${reel.commentCount}',
@@ -555,9 +569,11 @@ class _ReelPageState extends State<_ReelPage> {
                     _openComments();
                   },
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 8),
                 _SideBtn(
-                  icon: _muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                  icon: _muted
+                      ? Icons.volume_off_rounded
+                      : Icons.volume_up_rounded,
                   label: _muted ? 'Sessiz' : 'Ses',
                   onTap: reel.mediaType == ReelMediaType.video
                       ? _toggleMute
@@ -588,14 +604,21 @@ class _SideBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
           onPressed: onTap,
-          icon: Icon(icon, color: color, size: 30),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 40),
+          icon: Icon(icon, color: color, size: 28),
         ),
         Text(
           label,
-          style: const TextStyle(color: Colors.white70, fontSize: 12),
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 11,
+            height: 1.1,
+          ),
         ),
       ],
     );
@@ -684,154 +707,178 @@ class _ReelCommentsSheetState extends State<_ReelCommentsSheet> {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottom),
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.62,
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.border,
-                borderRadius: BorderRadius.circular(4),
+    const bg = Color(0xFF121212);
+    const muted = Color(0xFF9AA0A6);
+    return Material(
+      color: bg,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottom),
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * 0.58,
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(4),
+                ),
               ),
-            ),
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text(
-                'Yorumlar',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text(
+                  'Yorumlar',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
+                ),
               ),
-            ),
-            Expanded(
-              child: StreamBuilder<List<ReelComment>>(
-                stream:
-                    context.read<ReelsProvider>().commentsStream(widget.reel.id),
-                builder: (context, snap) {
-                  final list = snap.data ?? const [];
-                  if (list.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        'Henüz yorum yok — ilkini sen yaz.',
-                        style: TextStyle(color: AppColors.textSecondary),
-                      ),
-                    );
-                  }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                    itemCount: list.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
-                    itemBuilder: (context, i) {
-                      final c = list[i];
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          GestureDetector(
-                            onTap: () => context.push(
-                              '/user/${Uri.encodeComponent(c.authorId)}',
-                            ),
-                            child: UserAvatar(
-                              name: c.authorName,
-                              photoUrl: c.authorPhotoUrl,
-                              radius: 16,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      c.displayHandle,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    if (c.authorVerified) ...[
-                                      const SizedBox(width: 4),
-                                      const Icon(Icons.verified,
-                                          size: 14, color: Color(0xFF1DA1F2)),
-                                    ],
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(c.content),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-            if (_suggestions.isNotEmpty)
-              SizedBox(
-                height: 56,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  itemCount: _suggestions.length,
-                  itemBuilder: (context, i) {
-                    final u = _suggestions[i];
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ActionChip(
-                        avatar: UserAvatar(
-                          name: u.fullName,
-                          photoUrl: u.photoUrl,
-                          radius: 12,
+              Expanded(
+                child: StreamBuilder<List<ReelComment>>(
+                  stream: context
+                      .read<ReelsProvider>()
+                      .commentsStream(widget.reel.id),
+                  builder: (context, snap) {
+                    final list = snap.data ?? const [];
+                    if (list.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'Henüz yorum yok — ilkini sen yaz.',
+                          style: TextStyle(color: muted),
                         ),
-                        label: Text(MentionUtils.displayHandle(u.handle)),
-                        onPressed: () => _applyMention(u),
-                      ),
+                      );
+                    }
+                    return ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      itemCount: list.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) {
+                        final c = list[i];
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            GestureDetector(
+                              onTap: () => context.push(
+                                '/user/${Uri.encodeComponent(c.authorId)}',
+                              ),
+                              child: UserAvatar(
+                                name: c.authorName,
+                                photoUrl: c.authorPhotoUrl,
+                                radius: 16,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        c.displayHandle,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 13,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      if (c.authorVerified) ...[
+                                        const SizedBox(width: 4),
+                                        const Icon(Icons.verified,
+                                            size: 14,
+                                            color: Color(0xFF1DA1F2)),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    c.content,
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     );
                   },
                 ),
               ),
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 8, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _ctrl,
-                        focusNode: _focus,
-                        onChanged: _onChanged,
-                        decoration: InputDecoration(
-                          hintText: 'Yorum yaz… @kullanici',
-                          filled: true,
-                          fillColor: AppColors.background,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(22),
-                            borderSide: BorderSide.none,
+              if (_suggestions.isNotEmpty)
+                SizedBox(
+                  height: 52,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    itemCount: _suggestions.length,
+                    itemBuilder: (context, i) {
+                      final u = _suggestions[i];
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ActionChip(
+                          backgroundColor: Colors.white12,
+                          labelStyle: const TextStyle(color: Colors.white),
+                          avatar: UserAvatar(
+                            name: u.fullName,
+                            photoUrl: u.photoUrl,
+                            radius: 12,
                           ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
+                          label: Text(MentionUtils.displayHandle(u.handle)),
+                          onPressed: () => _applyMention(u),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 8, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _ctrl,
+                          focusNode: _focus,
+                          onChanged: _onChanged,
+                          style: const TextStyle(color: Colors.white),
+                          cursorColor: AppColors.cyan,
+                          decoration: InputDecoration(
+                            hintText: 'Yorum yaz… @kullanici',
+                            hintStyle: const TextStyle(color: muted),
+                            filled: true,
+                            fillColor: Colors.white10,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(22),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: _send,
-                      icon: const Icon(Icons.send_rounded,
-                          color: AppColors.cyan),
-                    ),
-                  ],
+                      IconButton(
+                        onPressed: _send,
+                        icon: const Icon(Icons.send_rounded,
+                            color: AppColors.cyan),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

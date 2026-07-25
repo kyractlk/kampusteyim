@@ -280,13 +280,41 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                     IconButton(
                       tooltip: 'Sil',
                       onPressed: () async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            backgroundColor: const Color(0xFF1A1A1A),
+                            title: const Text(
+                              'Hikâyeyi sil?',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            content: const Text(
+                              'Bu hikâye kalıcı olarak silinecek.',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Vazgeç'),
+                              ),
+                              FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppColors.crimson,
+                                ),
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Sil'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (ok != true || !context.mounted) return;
                         final stories = context.read<StoriesProvider>();
                         await stories.deleteStory(item.id);
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         final remaining = stories.storyForUser(widget.userId);
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         if (remaining == null || remaining.items.isEmpty) {
-                          if (context.mounted) context.pop();
+                          context.pop();
                         } else {
                           setState(() {
                             _index = 0;
