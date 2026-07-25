@@ -2,8 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- false: ProMotion 120Hz yolu VSyncClient crash’ini (iOS 26.5 review) tetiklemesin -->
+	<!-- ProMotion 120Hz yolu VSyncClient crash’ini tetiklemesin (flutter#183900) -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<false/>
+	<!-- Impeller opsiyonel; motor crash’inden bağımsız, stabilite için kapalı -->
+	<key>FLTEnableImpeller</key>
 	<false/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
@@ -27,25 +30,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
-		<key>UIApplicationSupportsMultipleScenes</key>
-		<false/>
-		<key>UISceneConfigurations</key>
-		<dict>
-			<key>UIWindowSceneSessionRoleApplication</key>
-			<array>
-				<dict>
-					<key>UISceneClassName</key>
-					<string>UIWindowScene</string>
-					<key>UISceneConfigurationName</key>
-					<string>flutter</string>
-					<key>UISceneDelegateClassName</key>
-					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
-				</dict>
-			</array>
-		</dict>
-	</dict>
+	<!-- Standart HTTPS/TLS — Missing Compliance atlanır -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!-- UIScene KALDIRILDI: App Store review cihazlarında UIScene + ProMotion VSync SIGSEGV -->
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -63,7 +51,6 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<!-- FCM / APNs arka plan: remote-notification + fetch (tek ayar değil) -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

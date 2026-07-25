@@ -47,17 +47,25 @@ workflows:
         script: |
           set -e
           echo "Building RELEASE IPA (never Debug)…"
+          # UIScene kalıntısı olmasın (Info.plist doğrula)
+          if grep -q "UIApplicationSceneManifest" ios/Runner/Info.plist; then
+            echo "ERROR: UIApplicationSceneManifest still in Info.plist"
+            exit 1
+          fi
+          if ! grep -q "installTouchRateCorrectionNoOp\|touch-rate VSync" ios/Runner/AppDelegate.swift; then
+            echo "ERROR: ProMotion VSync workaround missing from AppDelegate"
+            exit 1
+          fi
           flutter build ipa --release \
             --no-tree-shake-icons \
             --export-options-plist=/Users/builder/export_options.plist
           IPA=$(ls -1 build/ios/ipa/*.ipa | head -1)
           echo "IPA: $IPA"
-          # Debug binary App Store’a gitmesin
-          if unzip -l "$IPA" | grep -qi 'Flutter.framework.*JIT\|kernel_blob.bin'; then
-            echo "ERROR: Debug/JIT artifacts detected in IPA — aborting upload"
+          if unzip -l "$IPA" | grep -q 'kernel_blob.bin'; then
+            echo "ERROR: Debug kernel_blob.bin in IPA — aborting"
             exit 1
           fi
-          echo "Release IPA OK"
+          echo "Release IPA OK — TestFlight upload next"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

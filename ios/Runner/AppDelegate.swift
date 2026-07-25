@@ -1,21 +1,60 @@
 import Flutter
+import ObjectiveC
 import UIKit
 import UserNotifications
 
-/// Klasik FlutterAppDelegate — FlutterImplicitEngineDelegate KULLANILMIYOR.
-/// iOS 26.5 + ProMotion’da implicit engine, App Store incelemesinde
-/// VSyncClient SIGSEGV ile anında çöküyor (Flutter #183900 / #187565).
+/// iOS 26.5 + ProMotion App Store review: Flutter engine SIGSEGV in
+/// `-[VSyncClient initWithTaskRunner:]` via
+/// `createTouchRateCorrectionVSyncClientIfNeeded` (flutter/flutter#187565).
+///
+/// Strateji:
+/// 1) UIScene YOK — klasik AppDelegate lifecycle (race kaynağını kaldırır)
+/// 2) Explicit FlutterEngine, VC’den önce run
+/// 3) Touch-rate VSync client metodunu no-op swizzle (ProMotion null task runner)
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  private let flutterEngine = FlutterEngine(name: "kampusteyim_engine")
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    Self.installTouchRateCorrectionNoOp()
+
+    flutterEngine.run()
+    GeneratedPluginRegistrant.register(with: flutterEngine)
+
+    let flutterVC = FlutterViewController(
+      engine: flutterEngine,
+      nibName: nil,
+      bundle: nil
+    )
+    window = UIWindow(frame: UIScreen.main.bounds)
+    window?.rootViewController = flutterVC
+    window?.makeKeyAndVisible()
+
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
     }
     application.registerForRemoteNotifications()
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  /// ProMotion cihazlarda engine shell hazır olmadan VSyncClient oluşmasını engeller.
+  private static func installTouchRateCorrectionNoOp() {
+    let sel = NSSelectorFromString("createTouchRateCorrectionVSyncClientIfNeeded")
+    guard
+      let method = class_getInstanceMethod(FlutterViewController.self, sel)
+    else {
+      NSLog("[KampüsteyimAPP] touch-rate VSync selector missing — skip swizzle")
+      return
+    }
+    let block: @convention(block) (AnyObject) -> Void = { _ in
+      // intentionally empty
+    }
+    method_setImplementation(method, imp_implementationWithBlock(block))
+    NSLog("[KampüsteyimAPP] touch-rate VSync client disabled (iOS 26.5 ProMotion workaround)")
   }
 
   override func application(
