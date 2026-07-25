@@ -12,7 +12,8 @@ import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
-import '../home/home_shell.dart' show kReelsBottomNavHeight;
+import '../home/home_shell.dart'
+    show kReelsBottomNavHeight, shellBottomNavInset;
 import '../notifications/notification_provider.dart';
 import '../stories/campus_camera_screen.dart';
 import 'reel_models.dart';
@@ -389,9 +390,9 @@ class _ReelPageState extends State<_ReelPage> {
         (author?.showBlueBadge == true) ||
         (author?.showGoldBadge == true);
     final photo = author?.photoUrl ?? reel.authorPhotoUrl;
-    // İnce Reels nav ile birebir aynı blok yüksekliği + Ses/etiket nefes payı.
+    // Nav ile aynı %30 kısaltılmış inset + bar yüksekliği + Ses/handle payı.
     final bottomClear =
-        MediaQuery.viewPaddingOf(context).bottom + kReelsBottomNavHeight + 22;
+        shellBottomNavInset(context) + kReelsBottomNavHeight + 22;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,

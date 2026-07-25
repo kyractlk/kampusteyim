@@ -18,6 +18,10 @@ import '../reels/reels_provider.dart';
 /// Reels alt menü — içerik yüksekliği (home indicator / sistem inset hariç).
 const double kReelsBottomNavHeight = 50;
 
+/// Alt menü altındaki sistem boşluğu — %30 azaltılmış (menü aşağı iner).
+double shellBottomNavInset(BuildContext context) =>
+    MediaQuery.viewPaddingOf(context).bottom * 0.70;
+
 class HomeShell extends StatelessWidget {
   const HomeShell({super.key, required this.navigationShell});
 
@@ -94,58 +98,12 @@ class HomeShell extends StatelessWidget {
           extendBody: reelsMode,
           backgroundColor: reelsMode ? Colors.black : null,
           body: navigationShell,
-          bottomNavigationBar: reelsMode
-              ? _ReelsBottomNav(
-                  index: index,
-                  onTap: (i) => _onTap(context, i),
-                  destinations: _destinations(loggedIn),
-                )
-              : Theme(
-                  data: Theme.of(context).copyWith(
-                    navigationBarTheme: NavigationBarThemeData(
-                      backgroundColor: AppColors.surface,
-                      indicatorColor:
-                          AppColors.cyan.withValues(alpha: 0.18),
-                      surfaceTintColor: Colors.transparent,
-                      elevation: 0,
-                      shadowColor: Colors.transparent,
-                      height: 68,
-                      labelTextStyle:
-                          WidgetStateProperty.resolveWith((states) {
-                        final selected =
-                            states.contains(WidgetState.selected);
-                        return TextStyle(
-                          fontSize: 12,
-                          fontWeight:
-                              selected ? FontWeight.w700 : FontWeight.w500,
-                          color: selected
-                              ? AppColors.navy
-                              : AppColors.textSecondary,
-                        );
-                      }),
-                      iconTheme: WidgetStateProperty.resolveWith((states) {
-                        final selected =
-                            states.contains(WidgetState.selected);
-                        return IconThemeData(
-                          size: 24,
-                          color: selected
-                              ? AppColors.navy
-                              : AppColors.textSecondary,
-                        );
-                      }),
-                    ),
-                  ),
-                  child: NavigationBar(
-                    selectedIndex: index,
-                    onDestinationSelected: (i) => _onTap(context, i),
-                    backgroundColor: AppColors.surface,
-                    indicatorColor:
-                        AppColors.cyan.withValues(alpha: 0.18),
-                    labelBehavior:
-                        NavigationDestinationLabelBehavior.alwaysShow,
-                    destinations: _destinations(loggedIn),
-                  ),
-                ),
+          bottomNavigationBar: _ShellBottomNavBar(
+            index: index,
+            reelsMode: reelsMode,
+            onTap: (i) => _onTap(context, i),
+            destinations: _destinations(loggedIn),
+          ),
         ),
       );
     }
@@ -251,62 +209,78 @@ class HomeShell extends StatelessWidget {
       ];
 }
 
-/// Reels: ince siyah bant — menüleri alta yapıştırır, SafeArea şişirmez.
-class _ReelsBottomNav extends StatelessWidget {
-  const _ReelsBottomNav({
+/// Mobil alt menü — Reels + normal; alttaki sistem boşluğu %30 kısaltılır.
+class _ShellBottomNavBar extends StatelessWidget {
+  const _ShellBottomNavBar({
     required this.index,
+    required this.reelsMode,
     required this.onTap,
     required this.destinations,
   });
 
   final int index;
+  final bool reelsMode;
   final ValueChanged<int> onTap;
   final List<NavigationDestination> destinations;
 
   @override
   Widget build(BuildContext context) {
-    final systemBottom = MediaQuery.viewPaddingOf(context).bottom;
+    final inset = shellBottomNavInset(context);
+    final bg = reelsMode ? Colors.black : AppColors.surface;
+    final indicator = reelsMode
+        ? Colors.white.withValues(alpha: 0.16)
+        : AppColors.cyan.withValues(alpha: 0.18);
+    final barH = reelsMode ? kReelsBottomNavHeight : 68.0;
+
     return ColoredBox(
-      color: Colors.black,
+      color: bg,
       child: Padding(
-        padding: EdgeInsets.only(bottom: systemBottom),
+        padding: EdgeInsets.only(bottom: inset),
         child: MediaQuery.removePadding(
           context: context,
           removeBottom: true,
           child: Theme(
             data: Theme.of(context).copyWith(
               navigationBarTheme: NavigationBarThemeData(
-                backgroundColor: Colors.black,
-                indicatorColor: Colors.white.withValues(alpha: 0.16),
+                backgroundColor: bg,
+                indicatorColor: indicator,
                 surfaceTintColor: Colors.transparent,
                 elevation: 0,
                 shadowColor: Colors.transparent,
-                height: kReelsBottomNavHeight,
+                height: barH,
                 labelTextStyle: WidgetStateProperty.resolveWith((states) {
                   final selected = states.contains(WidgetState.selected);
                   return TextStyle(
-                    fontSize: 10,
+                    fontSize: reelsMode ? 10 : 12,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    height: 1.0,
-                    color: selected ? Colors.white : Colors.white60,
+                    height: reelsMode ? 1.0 : null,
+                    color: reelsMode
+                        ? (selected ? Colors.white : Colors.white60)
+                        : (selected
+                            ? AppColors.navy
+                            : AppColors.textSecondary),
                   );
                 }),
                 iconTheme: WidgetStateProperty.resolveWith((states) {
                   final selected = states.contains(WidgetState.selected);
                   return IconThemeData(
-                    size: 22,
-                    color: selected ? Colors.white : Colors.white60,
+                    size: reelsMode ? 22 : 24,
+                    color: reelsMode
+                        ? (selected ? Colors.white : Colors.white60)
+                        : (selected
+                            ? AppColors.navy
+                            : AppColors.textSecondary),
                   );
                 }),
               ),
             ),
             child: SizedBox(
-              height: kReelsBottomNavHeight,
+              height: barH,
               child: NavigationBar(
                 selectedIndex: index,
                 onDestinationSelected: onTap,
-                backgroundColor: Colors.black,
-                indicatorColor: Colors.white.withValues(alpha: 0.16),
+                backgroundColor: bg,
+                indicatorColor: indicator,
                 labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
                 destinations: destinations,
               ),
