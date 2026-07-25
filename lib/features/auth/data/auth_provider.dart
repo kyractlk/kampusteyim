@@ -1161,6 +1161,132 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Gelen takip isteğini kabul et → requester beni takip eder.
+  Future<bool> acceptFollowRequest(String requesterId) async {
+    if (_user == null || requesterId.trim().isEmpty) return false;
+    final requester =
+        findUser(requesterId) ?? await ensureUserLoaded(requesterId);
+    if (requester == null) return false;
+    final canonical = requester.id;
+    final myIncoming = List<String>.from(_user!.incomingFollowRequests)
+      ..removeWhere((id) => idsFor(canonical).contains(id));
+    final myFollowers = List<String>.from(_user!.followers);
+    if (!myFollowers.any(idsFor(canonical).contains)) {
+      myFollowers.add(canonical);
+    }
+    final theirOutgoing = List<String>.from(requester.outgoingFollowRequests)
+      ..removeWhere((id) => idsFor(_user!.id).contains(id));
+    final theirFollowing = List<String>.from(requester.following);
+    if (!theirFollowing.any(idsFor(_user!.id).contains)) {
+      theirFollowing.add(_user!.id);
+    }
+    _user = _user!.copyWith(
+      incomingFollowRequests: myIncoming,
+      followers: myFollowers,
+    );
+    _upsert(_user!);
+    _upsert(
+      requester.copyWith(
+        outgoingFollowRequests: theirOutgoing,
+        following: theirFollowing,
+      ),
+    );
+    notifyListeners();
+    try {
+      final myUid = fa.FirebaseAuth.instance.currentUser?.uid ?? _user!.id;
+      var requesterDocId = canonical;
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(canonical)
+          .get();
+      if (!snap.exists) {
+        final q = await FirebaseFirestore.instance
+            .collection('users')
+            .where('stableId', isEqualTo: canonical)
+            .limit(1)
+            .get();
+        if (q.docs.isNotEmpty) requesterDocId = q.docs.first.id;
+      }
+      final batch = FirebaseFirestore.instance.batch();
+      batch.set(
+        FirebaseFirestore.instance.collection('users').doc(myUid),
+        {
+          'incomingFollowRequests': FieldValue.arrayRemove([canonical]),
+          'followers': FieldValue.arrayUnion([canonical]),
+          'updatedAt': DateTime.now().toIso8601String(),
+        },
+        SetOptions(merge: true),
+      );
+      batch.set(
+        FirebaseFirestore.instance.collection('users').doc(requesterDocId),
+        {
+          'outgoingFollowRequests': FieldValue.arrayRemove([_user!.id, myUid]),
+          'following': FieldValue.arrayUnion([_user!.id, myUid]),
+          'updatedAt': DateTime.now().toIso8601String(),
+        },
+        SetOptions(merge: true),
+      );
+      await batch.commit();
+    } catch (e) {
+      debugPrint('[auth] acceptFollowRequest: $e');
+    }
+    return true;
+  }
+
+  /// Gelen takip isteğini reddet.
+  Future<void> rejectFollowRequest(String requesterId) async {
+    if (_user == null || requesterId.trim().isEmpty) return;
+    final requester =
+        findUser(requesterId) ?? await ensureUserLoaded(requesterId);
+    final canonical = requester?.id ?? requesterId;
+    final myIncoming = List<String>.from(_user!.incomingFollowRequests)
+      ..removeWhere((id) => idsFor(canonical).contains(id));
+    _user = _user!.copyWith(incomingFollowRequests: myIncoming);
+    if (requester != null) {
+      final theirOutgoing = List<String>.from(requester.outgoingFollowRequests)
+        ..removeWhere((id) => idsFor(_user!.id).contains(id));
+      _upsert(requester.copyWith(outgoingFollowRequests: theirOutgoing));
+    }
+    _upsert(_user!);
+    notifyListeners();
+    try {
+      final myUid = fa.FirebaseAuth.instance.currentUser?.uid ?? _user!.id;
+      var requesterDocId = canonical;
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(canonical)
+          .get();
+      if (!snap.exists) {
+        final q = await FirebaseFirestore.instance
+            .collection('users')
+            .where('stableId', isEqualTo: canonical)
+            .limit(1)
+            .get();
+        if (q.docs.isNotEmpty) requesterDocId = q.docs.first.id;
+      }
+      final batch = FirebaseFirestore.instance.batch();
+      batch.set(
+        FirebaseFirestore.instance.collection('users').doc(myUid),
+        {
+          'incomingFollowRequests': FieldValue.arrayRemove([canonical]),
+          'updatedAt': DateTime.now().toIso8601String(),
+        },
+        SetOptions(merge: true),
+      );
+      batch.set(
+        FirebaseFirestore.instance.collection('users').doc(requesterDocId),
+        {
+          'outgoingFollowRequests': FieldValue.arrayRemove([_user!.id, myUid]),
+          'updatedAt': DateTime.now().toIso8601String(),
+        },
+        SetOptions(merge: true),
+      );
+      await batch.commit();
+    } catch (e) {
+      debugPrint('[auth] rejectFollowRequest: $e');
+    }
+  }
+
   Future<void> toggleFollow(String targetId) async {
     if (_user == null || _user!.id == targetId) return;
     if (_user!.isSpectatorMode) return;

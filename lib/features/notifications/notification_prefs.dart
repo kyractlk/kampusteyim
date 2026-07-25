@@ -37,6 +37,8 @@ class NotificationPrefs {
       case 'comment':
         return comments;
       case 'follow':
+      case 'follow_request':
+      case 'follow_accepted':
         return follows;
       case 'repost':
         return reposts;

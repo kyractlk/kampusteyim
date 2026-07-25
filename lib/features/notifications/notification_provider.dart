@@ -132,6 +132,22 @@ class NotificationProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
+  Future<void> markRead(String id) async {
+    final i = _items.indexWhere((n) => n.id == id);
+    if (i < 0) return;
+    _items[i] = _items[i].copyWith(read: true);
+    notifyListeners();
+    if (_userId == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_userId)
+          .collection('notifications')
+          .doc(id)
+          .set({'read': true}, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
   Future<void> pushSocial({
     required String toUserId,
     required String title,

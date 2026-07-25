@@ -647,10 +647,12 @@ class FeedProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleCommentLike(String commentId, {String? parentId}) {
+  /// Beğeni sonrası bildirim için: yeni beğenildiyse yorumu döner.
+  Comment? toggleCommentLike(String commentId, {String? parentId}) {
+    Comment? newlyLiked;
     if (parentId == null) {
       final i = _comments.indexWhere((c) => c.id == commentId);
-      if (i < 0) return;
+      if (i < 0) return null;
       final c = _comments[i];
       final liked = !c.isLiked;
       final updated = c.copyWith(
@@ -659,13 +661,14 @@ class FeedProvider extends ChangeNotifier {
       );
       _comments[i] = updated;
       _writeComment(updated);
+      if (liked) newlyLiked = updated;
     } else {
       final i = _comments.indexWhere((c) => c.id == parentId);
-      if (i < 0) return;
+      if (i < 0) return null;
       final parent = _comments[i];
       final replies = [...parent.replies];
       final ri = replies.indexWhere((r) => r.id == commentId);
-      if (ri < 0) return;
+      if (ri < 0) return null;
       final r = replies[ri];
       final liked = !r.isLiked;
       replies[ri] = r.copyWith(
@@ -675,8 +678,26 @@ class FeedProvider extends ChangeNotifier {
       final updated = parent.copyWith(replies: replies);
       _comments[i] = updated;
       _writeComment(updated);
+      if (liked) newlyLiked = replies[ri];
     }
     notifyListeners();
+    return newlyLiked;
+  }
+
+  Comment? commentById(String commentId, {String? parentId}) {
+    if (parentId == null) {
+      for (final c in _comments) {
+        if (c.id == commentId) return c;
+      }
+      return null;
+    }
+    for (final c in _comments) {
+      if (c.id != parentId) continue;
+      for (final r in c.replies) {
+        if (r.id == commentId) return r;
+      }
+    }
+    return null;
   }
 
   void pinComment(String postId, String commentId) {

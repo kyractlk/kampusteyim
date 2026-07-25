@@ -68,11 +68,23 @@ class NotificationCopy {
   static (String title, String body, String emoji) like(String who) =>
       ('Yeni beğeni', '$who gönderini beğendi', '❤️');
 
+  static (String title, String body, String emoji) commentLike(String who) =>
+      ('Yeni beğeni', '$who yorumunu beğendi', '❤️');
+
   static (String title, String body, String emoji) comment(String who) =>
       ('Yeni yorum', '$who gönderine yorum yaptı', '💬');
 
+  static (String title, String body, String emoji) commentReply(String who) =>
+      ('Yeni yanıt', '$who yorumuna yanıt verdi', '💬');
+
   static (String title, String body, String emoji) follow(String who) =>
       ('Yeni takipçi', '$who seni takip etmeye başladı', '✨');
+
+  static (String title, String body, String emoji) followRequest(String who) =>
+      ('Takip isteği', '$who seni takip etmek istiyor', '✨');
+
+  static (String title, String body, String emoji) followAccepted(String who) =>
+      ('İstek kabul edildi', '$who takip isteğini kabul etti', '✨');
 
   static (String title, String body, String emoji) repost(String who) =>
       ('Yeniden paylaşım', '$who gönderini repostladı', '🔁');

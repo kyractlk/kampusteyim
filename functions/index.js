@@ -249,6 +249,8 @@ function userAllowsPush(userData, type) {
     case 'comment':
       return prefs.comments !== false;
     case 'follow':
+    case 'follow_request':
+    case 'follow_accepted':
       return prefs.follows !== false;
     case 'repost':
       return prefs.reposts !== false;

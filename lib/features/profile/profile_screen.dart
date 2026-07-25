@@ -358,7 +358,17 @@ class _UserProfileViewState extends State<UserProfileView> {
                             await auth.cancelFollowRequest(user.id);
                           } else {
                             await auth.requestFollow(user.id);
-                            if (context.mounted) {
+                            if (context.mounted && me != null) {
+                              context.read<NotificationProvider>().pushSocial(
+                                    toUserId: user.id,
+                                    title: 'Takip isteği',
+                                    body:
+                                        '${me.fullName} seni takip etmek istiyor',
+                                    emoji: '✨',
+                                    type: 'follow_request',
+                                    actorId: me.id,
+                                    targetId: me.id,
+                                  );
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text('Takip isteği gönderildi'),
@@ -379,6 +389,7 @@ class _UserProfileViewState extends State<UserProfileView> {
                                 emoji: 'FOLLOW',
                                 type: 'follow',
                                 actorId: me.id,
+                                targetId: me.id,
                               );
                         }
                       },

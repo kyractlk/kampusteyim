@@ -85,6 +85,15 @@ class _FollowListScreenState extends State<FollowListScreen>
       } else {
         await auth.requestFollow(target.id);
         if (!mounted) return;
+        context.read<NotificationProvider>().pushSocial(
+              toUserId: target.id,
+              title: 'Takip isteği',
+              body: '${me.fullName} seni takip etmek istiyor',
+              emoji: '✨',
+              type: 'follow_request',
+              actorId: me.id,
+              targetId: me.id,
+            );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Takip isteği gönderildi')),
         );
@@ -102,6 +111,7 @@ class _FollowListScreenState extends State<FollowListScreen>
             emoji: 'FOLLOW',
             type: 'follow',
             actorId: me.id,
+            targetId: me.id,
           );
     }
   }

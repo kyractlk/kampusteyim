@@ -169,7 +169,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         )) {
                           return;
                         }
-                        feed.toggleCommentLike(id, parentId: parentId);
+                        final me = auth.user;
+                        if (me == null) return;
+                        final liked = feed.toggleCommentLike(
+                          id,
+                          parentId: parentId,
+                        );
+                        if (liked != null && liked.authorId != me.id) {
+                          context.read<NotificationProvider>().pushSocial(
+                                toUserId: liked.authorId,
+                                title: 'Yeni beğeni',
+                                body: '${me.fullName} yorumunu beğendi',
+                                emoji: '❤️',
+                                type: 'like',
+                                actorId: me.id,
+                                targetId: post.id,
+                              );
+                        }
                       },
                       onPin: () {
                         if (!AuthGate.requireAuth(
@@ -293,17 +309,45 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             content: text,
                             parentId: _replyToId,
                           );
-                          if (post.authorId != auth.user!.id) {
-                            context.read<NotificationProvider>().pushSocial(
-                                  toUserId: post.authorId,
-                                  title: 'Yeni yorum',
-                                  body:
-                                      '${auth.user!.fullName} gönderine yorum yaptı',
-                                  emoji: 'CMT',
-                                  type: 'comment',
-                                  actorId: auth.user!.id,
-                                  targetId: post.id,
-                                );
+                          final me = auth.user!;
+                          final notif = context.read<NotificationProvider>();
+                          final replyParentId = _replyToId;
+                          if (replyParentId != null) {
+                            final parent = feed.commentById(replyParentId);
+                            if (parent != null && parent.authorId != me.id) {
+                              notif.pushSocial(
+                                toUserId: parent.authorId,
+                                title: 'Yeni yanıt',
+                                body: '${me.fullName} yorumuna yanıt verdi',
+                                emoji: '💬',
+                                type: 'comment',
+                                actorId: me.id,
+                                targetId: post.id,
+                              );
+                            }
+                            if (post.authorId != me.id &&
+                                post.authorId != parent?.authorId) {
+                              notif.pushSocial(
+                                toUserId: post.authorId,
+                                title: 'Yeni yorum',
+                                body:
+                                    '${me.fullName} gönderine yorum yaptı',
+                                emoji: '💬',
+                                type: 'comment',
+                                actorId: me.id,
+                                targetId: post.id,
+                              );
+                            }
+                          } else if (post.authorId != me.id) {
+                            notif.pushSocial(
+                              toUserId: post.authorId,
+                              title: 'Yeni yorum',
+                              body: '${me.fullName} gönderine yorum yaptı',
+                              emoji: '💬',
+                              type: 'comment',
+                              actorId: me.id,
+                              targetId: post.id,
+                            );
                           }
                           _commentCtrl.clear();
                           setState(() {
