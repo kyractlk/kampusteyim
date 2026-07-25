@@ -18,9 +18,9 @@ import '../reels/reels_provider.dart';
 /// Reels alt menü — içerik yüksekliği (home indicator / sistem inset hariç).
 const double kReelsBottomNavHeight = 50;
 
-/// Alt menü altındaki sistem boşluğu — %30 azaltılmış (menü aşağı iner).
+/// Alt menü altındaki sistem boşluğu — önce %30, sonra bir %20 daha kısaltıldı.
 double shellBottomNavInset(BuildContext context) =>
-    MediaQuery.viewPaddingOf(context).bottom * 0.70;
+    MediaQuery.viewPaddingOf(context).bottom * 0.56;
 
 class HomeShell extends StatelessWidget {
   const HomeShell({super.key, required this.navigationShell});
