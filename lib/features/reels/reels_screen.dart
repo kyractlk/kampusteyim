@@ -388,9 +388,10 @@ class _ReelPageState extends State<_ReelPage> {
         (author?.showBlueBadge == true) ||
         (author?.showGoldBadge == true);
     final photo = author?.photoUrl ?? reel.authorPhotoUrl;
-    // Alt nav (extendBody + SafeArea) + sistem inset — handle / açıklama / Ses üstte kalsın.
+    // extendBody: video nav altına uzar. Overlay = sistem inset + nav (68) + nefes payı.
+    // (Çifte SafeArea yok — aksi halde yazılar bara gömülüyordu.)
     final bottomClear =
-        MediaQuery.viewPaddingOf(context).bottom + 66 + 36;
+        MediaQuery.viewPaddingOf(context).bottom + 68 + 28;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,

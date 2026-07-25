@@ -102,13 +102,13 @@ class HomeShell extends StatelessWidget {
                 surfaceTintColor: Colors.transparent,
                 elevation: 0,
                 shadowColor: Colors.transparent,
-                height: reelsMode ? 66 : 68,
+                // Profil ile aynı yükseklik — boyut değiştirme.
+                height: 68,
                 labelTextStyle: WidgetStateProperty.resolveWith((states) {
                   final selected = states.contains(WidgetState.selected);
                   return TextStyle(
-                    fontSize: reelsMode ? 11 : 12,
+                    fontSize: 12,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    height: 1.1,
                     color: reelsMode
                         ? (selected ? Colors.white : Colors.white60)
                         : (selected ? AppColors.navy : AppColors.textSecondary),
@@ -125,20 +125,18 @@ class HomeShell extends StatelessWidget {
                 }),
               ),
             ),
-            child: SafeArea(
-              top: false,
-              minimum: EdgeInsets.zero,
-              child: NavigationBar(
-                selectedIndex: index,
-                onDestinationSelected: (i) => _onTap(context, i),
-                backgroundColor:
-                    reelsMode ? Colors.black : AppColors.surface,
-                indicatorColor: reelsMode
-                    ? Colors.white.withValues(alpha: 0.16)
-                    : AppColors.cyan.withValues(alpha: 0.18),
-                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-                destinations: _destinations(loggedIn),
-              ),
+            // SafeArea yok: NavigationBar zaten sistem inset’i yönetir;
+            // ekstra SafeArea çifte padding + overlay çakışması yapıyordu.
+            child: NavigationBar(
+              selectedIndex: index,
+              onDestinationSelected: (i) => _onTap(context, i),
+              backgroundColor:
+                  reelsMode ? Colors.black : AppColors.surface,
+              indicatorColor: reelsMode
+                  ? Colors.white.withValues(alpha: 0.16)
+                  : AppColors.cyan.withValues(alpha: 0.18),
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+              destinations: _destinations(loggedIn),
             ),
           ),
         ),
