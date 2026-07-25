@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/icons/mt_icons.dart';
 import '../../core/storage/media_upload.dart';
@@ -69,7 +68,10 @@ class FeedScreen extends StatelessWidget {
               ),
         color: wide ? AppColors.surface : null,
       ),
-      child: CustomScrollView(
+      child: GestureDetector(
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        behavior: HitTestBehavior.deferToChild,
+        child: CustomScrollView(
         slivers: [
           SliverAppBar(
             pinned: true,
@@ -190,6 +192,7 @@ class FeedScreen extends StatelessWidget {
           ),
         ],
       ),
+      ),
     );
   }
 }
@@ -225,14 +228,36 @@ class _ComposerCardState extends State<_ComposerCard> {
   void initState() {
     super.initState();
     _controller.addListener(_onComposeChanged);
+    _focus.addListener(_onFocusChanged);
   }
 
   @override
   void dispose() {
     _controller.removeListener(_onComposeChanged);
+    _focus.removeListener(_onFocusChanged);
     _controller.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  void _onFocusChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (!_focus.hasFocus && _mentionQuery != null) {
+      setState(() {
+        _mentionQuery = null;
+        _mentionHits = const [];
+      });
+    }
+  }
+
+  void _dismissCompose() {
+    _focus.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _mentionQuery = null;
+      _mentionHits = const [];
+    });
   }
 
   void _onComposeChanged() {
@@ -380,6 +405,7 @@ class _ComposerCardState extends State<_ComposerCard> {
       final blocked = result != null && !result.startsWith('WARN:');
       if (!blocked) {
         _controller.clear();
+        _dismissCompose();
         setState(() {
           _imageFile = null;
           _videoFile = null;
@@ -423,6 +449,9 @@ class _ComposerCardState extends State<_ComposerCard> {
                 maxLines: 3,
                 minLines: 2,
                 onChanged: (_) => setState(() {}),
+                onTapOutside: (_) => _dismissCompose(),
+                textInputAction: TextInputAction.done,
+                onEditingComplete: _dismissCompose,
                 decoration: InputDecoration(
                   hintText: widget.enabled
                       ? 'Kampüste neler oluyor? @etiket · #hashtag'
@@ -435,6 +464,19 @@ class _ComposerCardState extends State<_ComposerCard> {
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
+              if (_focus.hasFocus)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _dismissCompose,
+                    icon: const Icon(Icons.keyboard_hide_outlined, size: 18),
+                    label: const Text('Kapat'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textSecondary,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ),
               if (showMentions)
                 Container(
                   margin: const EdgeInsets.only(bottom: 8),
@@ -842,7 +884,14 @@ class PostCard extends StatelessWidget {
                           padding: const EdgeInsets.only(top: 8),
                           child: ListTile(
                             contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.insert_drive_file_outlined),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: const BorderSide(color: AppColors.border),
+                            ),
+                            leading: const Padding(
+                              padding: EdgeInsets.only(left: 8),
+                              child: Icon(Icons.insert_drive_file_outlined),
+                            ),
                             title: Text(
                               m.fileName ?? 'Dosya',
                               maxLines: 1,
@@ -850,13 +899,28 @@ class PostCard extends StatelessWidget {
                               style:
                                   const TextStyle(fontWeight: FontWeight.w700),
                             ),
-                            subtitle: const Text('Ders notu / ek dosya'),
+                            subtitle: const Text('İndir · ders notu / ek'),
                             trailing: IconButton(
-                              tooltip: 'Aç',
-                              onPressed: () => launchUrl(
-                                Uri.parse(m.url),
-                                mode: LaunchMode.externalApplication,
-                              ),
+                              tooltip: 'İndir',
+                              onPressed: () async {
+                                try {
+                                  await MediaUpload.downloadOrShareFile(
+                                    url: m.url,
+                                    fileName: m.fileName,
+                                  );
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Dosya hazır · kaydet / paylaş'),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('İndirilemedi: $e')),
+                                  );
+                                }
+                              },
                               icon: const Icon(Icons.download_rounded),
                             ),
                           ),

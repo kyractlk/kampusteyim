@@ -1,14 +1,11 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../theme/app_colors.dart';
 import 'safe_network_image.dart';
 
-/// Tam ekran foto / video görüntüleyici + indir.
+/// Tam ekran foto / video görüntüleyici (indirme yok — dosyalar feed chip’ten).
 Future<void> openMediaViewer(
   BuildContext context, {
   required List<String> urls,
@@ -49,7 +46,6 @@ class MediaViewerPage extends StatefulWidget {
 class _MediaViewerPageState extends State<MediaViewerPage> {
   late final PageController _page;
   late int _index;
-  bool _busy = false;
 
   @override
   void initState() {
@@ -64,55 +60,6 @@ class _MediaViewerPageState extends State<MediaViewerPage> {
     super.dispose();
   }
 
-  Future<void> _download() async {
-    final url = widget.urls[_index];
-    setState(() => _busy = true);
-    try {
-      if (kIsWeb) {
-        final uri = Uri.tryParse(url);
-        if (uri != null) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-      } else {
-        final res = await http.get(Uri.parse(url));
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          throw Exception('İndirme başarısız (${res.statusCode})');
-        }
-        final ext = widget.isVideo[_index]
-            ? 'mp4'
-            : (url.contains('.png') ? 'png' : 'jpg');
-        final mime = widget.isVideo[_index]
-            ? 'video/mp4'
-            : (ext == 'png' ? 'image/png' : 'image/jpeg');
-        await SharePlus.instance.share(
-          ShareParams(
-            files: [
-              XFile.fromData(
-                res.bodyBytes,
-                mimeType: mime,
-                name: 'mt_media.$ext',
-              ),
-            ],
-            text: 'KampüsteyimAPP medya',
-          ),
-        );
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Medya hazır · paylaş / kaydet')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('İndirilemedi: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -121,19 +68,6 @@ class _MediaViewerPageState extends State<MediaViewerPage> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: Text('${_index + 1} / ${widget.urls.length}'),
-        actions: [
-          IconButton(
-            tooltip: 'İndir / paylaş',
-            onPressed: _busy ? null : _download,
-            icon: _busy
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.download_rounded),
-          ),
-        ],
       ),
       body: PageView.builder(
         controller: _page,

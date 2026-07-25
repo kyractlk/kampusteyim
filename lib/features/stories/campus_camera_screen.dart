@@ -989,6 +989,21 @@ class _PublishPanelState extends State<_PublishPanel> {
                   maxLines: 3,
                   minLines: 2,
                   cursorColor: AppColors.cyan,
+                  onTapOutside: (_) {
+                    _focus.unfocus();
+                    setState(() {
+                      _mentionQuery = null;
+                      _mentionHits = const [];
+                    });
+                  },
+                  textInputAction: TextInputAction.done,
+                  onEditingComplete: () {
+                    _focus.unfocus();
+                    setState(() {
+                      _mentionQuery = null;
+                      _mentionHits = const [];
+                    });
+                  },
                   decoration: InputDecoration(
                     hintText:
                         'Açıklama · @kullanıcı / @topluluk · #hashtag',
@@ -1001,6 +1016,23 @@ class _PublishPanelState extends State<_PublishPanel> {
                     ),
                   ),
                 ),
+                if (_focus.hasFocus)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () {
+                        _focus.unfocus();
+                        setState(() {
+                          _mentionQuery = null;
+                          _mentionHits = const [];
+                        });
+                      },
+                      child: const Text(
+                        'Klavye kapat',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ),
                 if (showMentions)
                   Container(
                     margin: const EdgeInsets.only(top: 8),

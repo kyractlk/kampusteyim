@@ -12,6 +12,7 @@ class StoryItem {
     required this.createdAt,
     required this.expiresAt,
     this.likedBy = const [],
+    this.viewedBy = const [],
     this.hiddenFrom = const [],
     this.archived = false,
     this.deletedAt,
@@ -27,6 +28,8 @@ class StoryItem {
   final DateTime createdAt;
   final DateTime expiresAt;
   final List<String> likedBy;
+  /// Hikâyeyi gören kullanıcı id’leri (sahip hariç kaydedilir).
+  final List<String> viewedBy;
   final List<String> hiddenFrom;
   final bool archived;
   final DateTime? deletedAt;
@@ -53,6 +56,7 @@ class StoryItem {
     String? mediaUrl,
     MediaType? mediaType,
     List<String>? likedBy,
+    List<String>? viewedBy,
     List<String>? hiddenFrom,
     bool? archived,
     DateTime? deletedAt,
@@ -69,6 +73,7 @@ class StoryItem {
       createdAt: createdAt,
       expiresAt: expiresAt,
       likedBy: likedBy ?? this.likedBy,
+      viewedBy: viewedBy ?? this.viewedBy,
       hiddenFrom: hiddenFrom ?? this.hiddenFrom,
       archived: archived ?? this.archived,
       deletedAt: clearDeleted ? null : (deletedAt ?? this.deletedAt),
@@ -85,6 +90,7 @@ class StoryItem {
         'createdAt': createdAt.toIso8601String(),
         'expiresAt': expiresAt.toIso8601String(),
         'likedBy': likedBy,
+        'viewedBy': viewedBy,
         'hiddenFrom': hiddenFrom,
         'archived': archived,
         'deletedAt': deletedAt?.toIso8601String(),
@@ -104,6 +110,7 @@ class StoryItem {
       expiresAt: DateTime.tryParse('${m['expiresAt'] ?? ''}') ??
           DateTime.now().add(const Duration(hours: 24)),
       likedBy: _stringList(m['likedBy']),
+      viewedBy: _stringList(m['viewedBy']),
       hiddenFrom: _stringList(m['hiddenFrom']),
       archived: m['archived'] == true,
       deletedAt: DateTime.tryParse('${m['deletedAt'] ?? ''}'),

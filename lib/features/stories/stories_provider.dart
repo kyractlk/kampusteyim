@@ -261,6 +261,29 @@ class StoriesProvider extends ChangeNotifier {
     }
   }
 
+  /// İzleyici kaydı — sahip kendi hikâyesine bakınca yazılmaz.
+  Future<void> recordView(String storyId, String viewerId) async {
+    if (viewerId.isEmpty) return;
+    final i = _items.indexWhere((s) => s.id == storyId);
+    if (i < 0) return;
+    final item = _items[i];
+    if (item.authorId == viewerId) return;
+    if (item.viewedBy.contains(viewerId)) return;
+    final viewed = List<String>.from(item.viewedBy)..add(viewerId);
+    _items[i] = item.copyWith(viewedBy: viewed);
+    notifyListeners();
+    try {
+      await FirebaseFirestore.instance.collection('stories').doc(storyId).set(
+        {
+          'viewedBy': FieldValue.arrayUnion([viewerId]),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (e) {
+      debugPrint('[stories] view: $e');
+    }
+  }
+
   Future<void> deleteStory(String storyId) async {
     final i = _items.indexWhere((s) => s.id == storyId);
     if (i < 0) return;

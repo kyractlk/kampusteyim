@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../permissions/app_permissions.dart';
 import 'web_file_pick.dart';
@@ -215,6 +218,42 @@ class MediaUpload {
       default:
         return 'application/octet-stream';
     }
+  }
+
+  /// Paylaşılan dosyayı indir / paylaş (foto-video değil).
+  static Future<void> downloadOrShareFile({
+    required String url,
+    String? fileName,
+  }) async {
+    final name = (fileName == null || fileName.trim().isEmpty)
+        ? 'kampusteyim_dosya'
+        : fileName.trim();
+    if (kIsWeb) {
+      final uri = Uri.tryParse(url);
+      if (uri != null) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
+    final res = await http.get(Uri.parse(url));
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw StateError('İndirme başarısız (${res.statusCode})');
+    }
+    final ext = name.contains('.')
+        ? name.split('.').last.toLowerCase()
+        : 'bin';
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [
+          XFile.fromData(
+            res.bodyBytes,
+            mimeType: _docMime(ext),
+            name: name.contains('.') ? name : '$name.$ext',
+          ),
+        ],
+        text: 'KampüsteyimAPP dosya',
+      ),
+    );
   }
 
   static Future<String> uploadBytes({

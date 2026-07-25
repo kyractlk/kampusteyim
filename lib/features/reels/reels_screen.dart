@@ -15,6 +15,7 @@ import '../auth/data/auth_provider.dart';
 import '../home/home_shell.dart'
     show kReelsBottomNavHeight, shellBottomNavInset;
 import '../notifications/notification_provider.dart';
+import '../plus/plus_widgets.dart';
 import '../stories/campus_camera_screen.dart';
 import 'reel_models.dart';
 import 'reels_provider.dart';
@@ -476,9 +477,6 @@ class _ReelPageState extends State<_ReelPage> {
     final liked = me != null && reel.likedByUser(me.id);
     final following = me != null && auth.follows(reel.authorId);
     final isSelf = me != null && auth.idsFor(reel.authorId).contains(me.id);
-    final verified = reel.authorVerified ||
-        (author?.showBlueBadge == true) ||
-        (author?.showGoldBadge == true);
     final photo = author?.photoUrl ?? reel.authorPhotoUrl;
     // Nav ile aynı %30 kısaltılmış inset + bar yüksekliği + Ses/handle payı.
     final bottomClear =
@@ -580,16 +578,8 @@ class _ReelPageState extends State<_ReelPage> {
                                 ),
                               ),
                             ),
-                            if (verified) ...[
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.verified,
-                                size: 15,
-                                color: author?.showGoldBadge == true
-                                    ? AppColors.gold
-                                    : const Color(0xFF1DA1F2),
-                              ),
-                            ],
+                            const SizedBox(width: 4),
+                            UserVerificationBadges(user: author, size: 15),
                           ],
                         ),
                       ),
@@ -675,9 +665,27 @@ class _ReelPageState extends State<_ReelPage> {
                   label: '${reel.likedBy.length}',
                   onTap: me == null
                       ? null
-                      : () => context
-                          .read<ReelsProvider>()
-                          .toggleLike(reel.id, me.id),
+                      : () {
+                          final wasLiked = liked;
+                          unawaited(() async {
+                            await context
+                                .read<ReelsProvider>()
+                                .toggleLike(reel.id, me.id);
+                            if (!wasLiked &&
+                                reel.authorId != me.id &&
+                                context.mounted) {
+                              context.read<NotificationProvider>().pushSocial(
+                                    toUserId: reel.authorId,
+                                    title: 'Reels beğenisi',
+                                    body: '${me.fullName} Reels’ini beğendi',
+                                    emoji: 'LIKE',
+                                    type: 'reel_like',
+                                    actorId: me.id,
+                                    targetId: reel.id,
+                                  );
+                            }
+                          }());
+                        },
                 ),
                 const SizedBox(height: 8),
                 _SideBtn(
@@ -853,7 +861,7 @@ class _ReelCommentsSheetState extends State<_ReelCommentsSheet> {
             title: 'Yeni yorum',
             body: '${me.fullName} Reels’ine yorum yaptı',
             emoji: '💬',
-            type: 'comment',
+            type: 'reel_comment',
             actorId: me.id,
             targetId: widget.reel.id,
           );
@@ -945,12 +953,13 @@ class _ReelCommentsSheetState extends State<_ReelCommentsSheet> {
                                           color: Colors.white,
                                         ),
                                       ),
-                                      if (c.authorVerified) ...[
-                                        const SizedBox(width: 4),
-                                        const Icon(Icons.verified,
-                                            size: 14,
-                                            color: Color(0xFF1DA1F2)),
-                                      ],
+                                      const SizedBox(width: 4),
+                                      UserVerificationBadges(
+                                        user: context
+                                            .read<AuthProvider>()
+                                            .findUser(c.authorId),
+                                        size: 13,
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 2),

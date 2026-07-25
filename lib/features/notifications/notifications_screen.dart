@@ -34,6 +34,16 @@ class NotificationsScreen extends StatelessWidget {
           context.push('/post/${Uri.encodeComponent(targetId)}');
         }
         return;
+      case 'reel_like':
+      case 'reel_comment':
+        context.go('/reels');
+        return;
+      case 'story_like':
+        final me = context.read<AuthProvider>().user?.id;
+        if (me != null && me.isNotEmpty) {
+          context.push('/stories/view/${Uri.encodeComponent(me)}');
+        }
+        return;
       case 'job':
       case 'application':
         context.push('/jobs');

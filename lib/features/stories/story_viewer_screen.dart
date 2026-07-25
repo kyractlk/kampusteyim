@@ -6,8 +6,11 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/safe_network_image.dart';
+import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
+import '../notifications/notification_provider.dart';
+import '../plus/plus_widgets.dart';
 import 'stories_provider.dart';
 import 'story_models.dart';
 
@@ -26,6 +29,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   double _progress = 0;
   String? _boundStoryKey;
   bool _started = false;
+  String? _recordedViewId;
 
   @override
   void dispose() {
@@ -75,6 +79,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     }
   }
 
+  void _recordViewIfNeeded(StoryItem item, String meId) {
+    if (item.authorId == meId) return;
+    if (_recordedViewId == item.id) return;
+    _recordedViewId = item.id;
+    unawaited(context.read<StoriesProvider>().recordView(item.id, meId));
+  }
+
   Future<void> _report(StoryItem item) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -102,6 +113,152 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Şikayet alındı')),
     );
+  }
+
+  Future<void> _toggleLike(StoryItem item, AppUser me) async {
+    final wasLiked = item.isLikedBy(me.id);
+    await context.read<StoriesProvider>().likeStory(item.id, me.id);
+    if (!wasLiked && item.authorId != me.id && mounted) {
+      context.read<NotificationProvider>().pushSocial(
+            toUserId: item.authorId,
+            title: 'Hikâye beğenisi',
+            body: '${me.fullName} hikâyeni beğendi',
+            emoji: 'LIKE',
+            type: 'story_like',
+            actorId: me.id,
+            targetId: item.authorId,
+          );
+    }
+  }
+
+  Future<void> _openViewers(StoryItem item) async {
+    _timer?.cancel();
+    final auth = context.read<AuthProvider>();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        final viewers = item.viewedBy;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Görüntüleyenler · ${viewers.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Beğenenlerde kalp işareti görünür',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                if (viewers.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'Henüz kimse bakmadı',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(ctx).height * 0.45,
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: viewers.length,
+                      separatorBuilder: (_, _) =>
+                          const Divider(height: 1, color: Colors.white12),
+                      itemBuilder: (_, i) {
+                        final uid = viewers[i];
+                        final u = auth.findUser(uid);
+                        final name = u?.fullName ?? 'Kullanıcı';
+                        final handle = u?.handle ?? '@$uid';
+                        final liked = item.likedBy.contains(uid);
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: UserAvatar(
+                            name: name,
+                            photoUrl: u?.communityLogoUrl ?? u?.photoUrl,
+                            isCommunity: u?.isCommunity == true,
+                            radius: 20,
+                          ),
+                          title: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              UserVerificationBadges(user: u, size: 14),
+                            ],
+                          ),
+                          subtitle: Text(
+                            handle,
+                            style: const TextStyle(color: Colors.white54),
+                          ),
+                          trailing: liked
+                              ? const Icon(
+                                  Icons.favorite,
+                                  color: AppColors.crimson,
+                                  size: 22,
+                                )
+                              : const Icon(
+                                  Icons.favorite_border,
+                                  color: Colors.white24,
+                                  size: 22,
+                                ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            context.push(
+                              '/user/${Uri.encodeComponent(uid)}',
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (mounted) {
+      final story = context.read<StoriesProvider>().storyForUser(widget.userId);
+      if (story != null) _startTimer(story);
+    }
   }
 
   @override
@@ -173,6 +330,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     final item = story.items[safeIndex];
     final liked = item.isLikedBy(me.id);
     final isOwner = item.authorId == me.id;
+    _recordViewIfNeeded(item, me.id);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -237,14 +395,25 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          '${story.authorName}  ${story.authorHandle}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                '${story.authorName}  ${story.authorHandle}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            UserVerificationBadges(
+                              user: auth.findUser(story.authorId),
+                              size: 15,
+                            ),
+                          ],
                         ),
                       ),
                       IconButton(
@@ -262,19 +431,69 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
               bottom: 20,
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () => context
-                        .read<StoriesProvider>()
-                        .likeStory(item.id, me.id),
-                    icon: Icon(
-                      liked ? Icons.favorite : Icons.favorite_border,
-                      color: liked ? AppColors.crimson : Colors.white,
+                  if (isOwner)
+                    InkWell(
+                      onTap: () => _openViewers(item),
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black45,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.visibility_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${item.viewedBy.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            if (item.likedBy.isNotEmpty) ...[
+                              const SizedBox(width: 10),
+                              const Icon(
+                                Icons.favorite,
+                                color: AppColors.crimson,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${item.likedBy.length}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    )
+                  else ...[
+                    IconButton(
+                      onPressed: () => _toggleLike(item, me),
+                      icon: Icon(
+                        liked ? Icons.favorite : Icons.favorite_border,
+                        color: liked ? AppColors.crimson : Colors.white,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${item.likedBy.length}',
-                    style: const TextStyle(color: Colors.white),
-                  ),
+                    Text(
+                      '${item.likedBy.length}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ],
                   const Spacer(),
                   if (isOwner)
                     IconButton(
@@ -320,6 +539,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                             _index = 0;
                             _boundStoryKey = null;
                             _started = false;
+                            _recordedViewId = null;
                           });
                         }
                       },
