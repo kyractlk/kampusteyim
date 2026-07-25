@@ -61,6 +61,12 @@ android/*.keystore
 **/*.jks
 **/*.keystore
 
+# iOS Codemagic cert private key (asla commit etme)
+ios/signing/
+**/*.pem
+**/*.p12
+**/*.p8
+
 # Release binaries
 /release/
 *.apk
