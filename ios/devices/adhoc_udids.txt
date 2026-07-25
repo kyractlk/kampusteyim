@@ -1,0 +1,3 @@
+# Ad Hoc test cihazları (Apple Developer / Codemagic)
+# Format: UDID<TAB>isim
+00008120-000631242151A01E	Kayra-iPhone15-Plus
