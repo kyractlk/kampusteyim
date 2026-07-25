@@ -41,8 +41,8 @@ workflows:
       - name: Build number
         script: |
           # App Store’da son yüklenen cfBundleVersion = 12 → her zaman daha yüksek olmalı
-          BN="${BUILD_NUMBER:-13}"
-          if [ "$BN" -le 12 ]; then BN=13; fi
+          BN="${BUILD_NUMBER:-14}"
+          if [ "$BN" -le 13 ]; then BN=14; fi
           sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Flutter IPA RELEASE only
@@ -111,12 +111,35 @@ workflows:
             --udid "$DEVICE_UDID"
           echo "Device register exit: $? (already registered = OK)"
           set -e
+          echo "Registered / confirmed UDID: $DEVICE_UDID"
       - name: Disable Swift Package Manager
         script: flutter config --no-enable-swift-package-manager
       - name: Fetch / create Ad Hoc signing + profiles
         script: |
-          # Yeni UDID profilde olsun diye --create
+          set -e
           keychain initialize
+          # Eski Ad Hoc profil UDID’siz kalmasın → sil + yeniden oluştur
+          set +e
+          app-store-connect profiles list --type ad_hoc --json > /tmp/adhoc_profiles.json 2>/dev/null
+          python3 - <<'PY' || true
+          import json, subprocess, os
+          try:
+            data = json.load(open("/tmp/adhoc_profiles.json"))
+          except Exception:
+            raise SystemExit(0)
+          bid = os.environ.get("BUNDLE_ID", "com.aystech.mtMobil")
+          items = data if isinstance(data, list) else data.get("profiles") or data.get("data") or []
+          for p in items:
+            if isinstance(p, dict):
+              name = str(p.get("name") or p.get("attributes", {}).get("name") or "")
+              pid = str(p.get("id") or p.get("profileId") or "")
+              bundle = str(p.get("bundleId") or p.get("attributes", {}).get("bundleId") or "")
+              if bid in name or bid in bundle or "ad hoc" in name.lower() or "adhoc" in name.lower().replace("-", ""):
+                if pid:
+                  print(f"Deleting old profile {pid} ({name})")
+                  subprocess.call(["app-store-connect", "profiles", "delete", pid])
+          PY
+          set -e
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type ad_hoc \
             --create
@@ -133,8 +156,8 @@ workflows:
           pod install --repo-update
       - name: Build number
         script: |
-          BN="${BUILD_NUMBER:-13}"
-          if [ "$BN" -le 12 ]; then BN=13; fi
+          BN="${BUILD_NUMBER:-14}"
+          if [ "$BN" -le 13 ]; then BN=14; fi
           sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Flutter Ad Hoc RELEASE IPA
@@ -149,6 +172,23 @@ workflows:
             echo "ERROR: Debug IPA"
             exit 1
           fi
+          # UDID gerçekten IPA içinde mi? (bütünlük hatasının #1 sebebi)
+          TMP=$(mktemp -d)
+          unzip -q "$IPA" -d "$TMP"
+          PROV=$(find "$TMP" -name embedded.mobileprovision | head -1)
+          if [ -z "$PROV" ]; then
+            echo "ERROR: embedded.mobileprovision yok — App Store IPA olabilir, Ad Hoc değil"
+            exit 1
+          fi
+          security cms -D -i "$PROV" > /tmp/provision.plist
+          echo "----- ProvisionedDevices -----"
+          plutil -extract ProvisionedDevices xml1 -o - /tmp/provision.plist 2>/dev/null || true
+          if ! grep -q "$DEVICE_UDID" /tmp/provision.plist; then
+            echo "ERROR: UDID $DEVICE_UDID bu IPA'nın Ad Hoc profilinde YOK"
+            echo "InstallOnAir 'bütünlük' hatası bundan olur. Profil yeniden oluşturulmalı."
+            exit 1
+          fi
+          echo "OK: UDID profilde — InstallOnAir/Diawi ile kurulabilir"
           ls -lh build/ios/ipa/
     artifacts:
       - build/ios/ipa/*.ipa
