@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../core/storage/media_upload.dart';
 import '../../core/theme/app_colors.dart';
@@ -204,11 +205,18 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
         if (mounted) setState(() => _status = 'Kamera bulunamadı');
         return;
       }
-      // Ön kamera tercih (hikâye tarzı), yoksa ilk.
-      final front = _cameras.indexWhere(
-        (c) => c.lensDirection == CameraLensDirection.front,
-      );
-      _cameraIndex = front >= 0 ? front : 0;
+      // Reels: arka kamera (maks kalite). Hikâye: ön kamera.
+      if (_mode == CampusShareMode.reels) {
+        final back = _cameras.indexWhere(
+          (c) => c.lensDirection == CameraLensDirection.back,
+        );
+        _cameraIndex = back >= 0 ? back : 0;
+      } else {
+        final front = _cameras.indexWhere(
+          (c) => c.lensDirection == CameraLensDirection.front,
+        );
+        _cameraIndex = front >= 0 ? front : 0;
+      }
       await _openCamera(_cameras[_cameraIndex]);
     } catch (e) {
       debugPrint('[camera] init: $e');
@@ -217,25 +225,46 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
   }
 
   Future<void> _openCamera(CameraDescription desc) async {
-    await _disposeCam();
-    final c = CameraController(
-      desc,
+    const presets = <ResolutionPreset>[
+      ResolutionPreset.max,
+      ResolutionPreset.ultraHigh,
+      ResolutionPreset.veryHigh,
       ResolutionPreset.high,
-      enableAudio: true,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
-    _cam = c;
-    try {
-      await c.initialize();
-      if (!mounted) return;
-      setState(() {
-        _ready = true;
-        _status = null;
-      });
-    } catch (e) {
-      debugPrint('[camera] open: $e');
-      if (mounted) setState(() => _status = 'Kamera hazır değil');
+    ];
+    Object? lastError;
+    for (final preset in presets) {
+      await _disposeCam();
+      final c = CameraController(
+        desc,
+        preset,
+        enableAudio: true,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      _cam = c;
+      try {
+        await c.initialize();
+        try {
+          await c.setFocusMode(FocusMode.auto);
+        } catch (_) {}
+        try {
+          await c.setExposureMode(ExposureMode.auto);
+        } catch (_) {}
+        if (!mounted) return;
+        setState(() {
+          _ready = true;
+          _status = null;
+        });
+        debugPrint('[camera] ready preset=$preset');
+        return;
+      } catch (e) {
+        lastError = e;
+        debugPrint('[camera] preset $preset failed: $e');
+      }
     }
+    if (mounted) {
+      setState(() => _status = 'Kamera hazır değil');
+    }
+    debugPrint('[camera] open failed: $lastError');
   }
 
   Future<void> _flipCamera() async {
@@ -624,10 +653,68 @@ class _CameraPreviewFill extends StatelessWidget {
   }
 }
 
-class _CapturedPreview extends StatelessWidget {
+class _CapturedPreview extends StatefulWidget {
   const _CapturedPreview({required this.file, required this.isVideo});
   final XFile file;
   final bool isVideo;
+
+  @override
+  State<_CapturedPreview> createState() => _CapturedPreviewState();
+}
+
+class _CapturedPreviewState extends State<_CapturedPreview> {
+  VideoPlayerController? _vc;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isVideo && !kIsWeb) {
+      unawaited(_initVideo());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CapturedPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.file.path != widget.file.path ||
+        oldWidget.isVideo != widget.isVideo) {
+      unawaited(_disposeVc());
+      if (widget.isVideo && !kIsWeb) {
+        unawaited(_initVideo());
+      }
+    }
+  }
+
+  Future<void> _initVideo() async {
+    try {
+      final c = VideoPlayerController.file(File(widget.file.path));
+      _vc = c;
+      await c.initialize();
+      await c.setLooping(true);
+      await c.setVolume(1);
+      await c.play();
+      if (mounted) setState(() => _ready = true);
+    } catch (e) {
+      debugPrint('[camera] preview video: $e');
+    }
+  }
+
+  Future<void> _disposeVc() async {
+    final c = _vc;
+    _vc = null;
+    _ready = false;
+    try {
+      await c?.pause();
+      await c?.dispose();
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    unawaited(_disposeVc());
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -636,33 +723,38 @@ class _CapturedPreview extends StatelessWidget {
         color: Colors.black,
         child: Center(
           child: Icon(
-            isVideo ? Icons.videocam_rounded : Icons.photo_rounded,
+            widget.isVideo ? Icons.videocam_rounded : Icons.photo_rounded,
             size: 80,
             color: AppColors.cyan,
           ),
         ),
       );
     }
-    if (isVideo) {
-      return ColoredBox(
-        color: Colors.black,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.play_circle_fill,
-                  size: 72, color: Colors.white70),
-              const SizedBox(height: 8),
-              Text(
-                file.name,
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-            ],
-          ),
+    if (!widget.isVideo) {
+      return Image.file(
+        File(widget.file.path),
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        filterQuality: FilterQuality.high,
+      );
+    }
+    if (_ready && _vc != null) {
+      return FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: _vc!.value.size.width,
+          height: _vc!.value.size.height,
+          child: VideoPlayer(_vc!),
         ),
       );
     }
-    return Image.file(File(file.path), fit: BoxFit.cover);
+    return const ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: CircularProgressIndicator(color: AppColors.cyan),
+      ),
+    );
   }
 }
 

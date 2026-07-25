@@ -8,6 +8,7 @@ import '../../core/storage/media_upload.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import 'reel_models.dart';
+import 'reels_video_cache.dart';
 
 /// Kampüs Reels — izlenenler sona, yeniler üste; gizli hesap filtresi.
 class ReelsProvider extends ChangeNotifier {
@@ -29,6 +30,14 @@ class ReelsProvider extends ChangeNotifier {
     if (_tabActive == active) return;
     _tabActive = active;
     notifyListeners();
+    if (active) {
+      unawaited(_prefetchFeed());
+    }
+  }
+
+  Future<void> _prefetchFeed() async {
+    final feed = feedFor(_auth?.user?.id);
+    await ReelsVideoCache.instance.prefetch(feed, count: 6);
   }
 
   void attachAuth(AuthProvider auth) {
@@ -71,6 +80,8 @@ class ReelsProvider extends ChangeNotifier {
         _loading = false;
         _error = null;
         notifyListeners();
+        // Uygulama açılır açılmaz ilk reels’leri ısıt.
+        unawaited(_prefetchFeed());
       },
       onError: (e) {
         debugPrint('[reels] bind: $e');
@@ -284,6 +295,7 @@ class ReelsProvider extends ChangeNotifier {
   void dispose() {
     _sub?.cancel();
     _auth?.removeListener(_onAuth);
+    unawaited(ReelsVideoCache.instance.clear());
     super.dispose();
   }
 }

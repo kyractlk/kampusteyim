@@ -33,6 +33,25 @@ class HomeShell extends StatelessWidget {
       }
     }
     context.read<ReelsProvider>().setTabActive(index == 1);
+    if (index == 1) {
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          systemNavigationBarColor: Colors.black,
+          systemNavigationBarIconBrightness: Brightness.light,
+        ),
+      );
+    } else {
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness: Brightness.dark,
+        ),
+      );
+    }
     navigationShell.goBranch(
       index,
       initialLocation: index == navigationShell.currentIndex,
@@ -63,18 +82,58 @@ class HomeShell extends StatelessWidget {
 
     // —— MOBİL: alt nav + tam genişlik içerik ——
     if (!wide) {
+      final reelsMode = index == 1;
       return PopScope(
         canPop: false,
         onPopInvokedWithResult: _onPop,
         child: Scaffold(
           resizeToAvoidBottomInset: true,
+          extendBody: reelsMode,
+          backgroundColor: reelsMode ? Colors.black : null,
           body: navigationShell,
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: index,
-            onDestinationSelected: (i) => _onTap(context, i),
-            backgroundColor: AppColors.surface,
-            indicatorColor: AppColors.cyan.withValues(alpha: 0.18),
-            destinations: _destinations(loggedIn),
+          bottomNavigationBar: Theme(
+            data: Theme.of(context).copyWith(
+              navigationBarTheme: NavigationBarThemeData(
+                backgroundColor:
+                    reelsMode ? Colors.black : AppColors.surface,
+                indicatorColor: reelsMode
+                    ? Colors.white.withValues(alpha: 0.16)
+                    : AppColors.cyan.withValues(alpha: 0.18),
+                surfaceTintColor: Colors.transparent,
+                elevation: 0,
+                shadowColor: Colors.transparent,
+                height: 68,
+                labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                  final selected = states.contains(WidgetState.selected);
+                  return TextStyle(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: reelsMode
+                        ? (selected ? Colors.white : Colors.white60)
+                        : (selected ? AppColors.navy : AppColors.textSecondary),
+                  );
+                }),
+                iconTheme: WidgetStateProperty.resolveWith((states) {
+                  final selected = states.contains(WidgetState.selected);
+                  return IconThemeData(
+                    size: 24,
+                    color: reelsMode
+                        ? (selected ? Colors.white : Colors.white60)
+                        : (selected ? AppColors.navy : AppColors.textSecondary),
+                  );
+                }),
+              ),
+            ),
+            child: NavigationBar(
+              selectedIndex: index,
+              onDestinationSelected: (i) => _onTap(context, i),
+              backgroundColor:
+                  reelsMode ? Colors.black : AppColors.surface,
+              indicatorColor: reelsMode
+                  ? Colors.white.withValues(alpha: 0.16)
+                  : AppColors.cyan.withValues(alpha: 0.18),
+              destinations: _destinations(loggedIn),
+            ),
           ),
         ),
       );

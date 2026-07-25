@@ -14,6 +14,7 @@ import '../notifications/notification_provider.dart';
 import '../stories/campus_camera_screen.dart';
 import 'reel_models.dart';
 import 'reels_provider.dart';
+import 'reels_video_cache.dart';
 
 class ReelsScreen extends StatefulWidget {
   const ReelsScreen({super.key});
@@ -86,6 +87,9 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 final uid = me?.id;
                 if (uid == null) return;
                 context.read<ReelsProvider>().markViewed(feed[i].id, uid);
+                // Sonraki 2–3 reel’i ısıt.
+                final slice = feed.skip(i).take(4).toList();
+                ReelsVideoCache.instance.prefetch(slice, count: 4);
               },
               itemBuilder: (context, i) => _ReelPage(
                 key: ValueKey(feed[i].id),
@@ -144,6 +148,7 @@ class _ReelPageState extends State<_ReelPage> {
   bool _paused = false;
   bool _muted = false;
   bool _showPauseIcon = false;
+  bool _ownedLocally = false;
 
   @override
   void initState() {
@@ -158,7 +163,7 @@ class _ReelPageState extends State<_ReelPage> {
       _syncPlayback();
     }
     if (oldWidget.reel.id != widget.reel.id) {
-      _disposeVc();
+      _detachVc();
       _paused = false;
       _initVideo();
     }
@@ -166,9 +171,23 @@ class _ReelPageState extends State<_ReelPage> {
 
   Future<void> _initVideo() async {
     if (widget.reel.mediaType != ReelMediaType.video) return;
-    final c = VideoPlayerController.networkUrl(Uri.parse(widget.reel.mediaUrl));
-    _vc = c;
+    final cached = await ReelsVideoCache.instance.obtain(
+      reelId: widget.reel.id,
+      url: widget.reel.mediaUrl,
+    );
+    if (!mounted) return;
+    if (cached != null) {
+      _vc = cached;
+      _ownedLocally = false;
+      setState(() => _ready = true);
+      _syncPlayback();
+      return;
+    }
+    // Cache başarısızsa yerel fallback.
     try {
+      final c = VideoPlayerController.networkUrl(Uri.parse(widget.reel.mediaUrl));
+      _vc = c;
+      _ownedLocally = true;
       await c.initialize();
       await c.setLooping(true);
       await c.setVolume(_muted ? 0 : 1);
@@ -184,6 +203,7 @@ class _ReelPageState extends State<_ReelPage> {
     final c = _vc;
     if (c == null || !_ready) return;
     if (widget.isActive && !_paused) {
+      c.setVolume(_muted ? 0 : 1);
       c.play();
     } else {
       c.pause();
@@ -208,19 +228,27 @@ class _ReelPageState extends State<_ReelPage> {
     c?.setVolume(_muted ? 0 : 1);
   }
 
-  void _disposeVc() {
+  void _detachVc() {
     final c = _vc;
     _vc = null;
     _ready = false;
-    try {
-      c?.pause();
-      c?.dispose();
-    } catch (_) {}
+    if (_ownedLocally && c != null) {
+      try {
+        c.pause();
+        c.dispose();
+      } catch (_) {}
+    } else {
+      // Paylaşımlı cache — sadece pause.
+      try {
+        c?.pause();
+      } catch (_) {}
+    }
+    _ownedLocally = false;
   }
 
   @override
   void dispose() {
-    _disposeVc();
+    _detachVc();
     super.dispose();
   }
 
@@ -333,7 +361,7 @@ class _ReelPageState extends State<_ReelPage> {
           Positioned(
             left: 14,
             right: 72,
-            bottom: 28,
+            bottom: 88,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -433,7 +461,7 @@ class _ReelPageState extends State<_ReelPage> {
           ),
           Positioned(
             right: 8,
-            bottom: 36,
+            bottom: 96,
             child: Column(
               children: [
                 _SideBtn(

@@ -64,10 +64,10 @@ class MediaUpload {
       if (!ok) throw StateError('Galeri / dosya izni gerekli');
     }
     try {
+      // Sıkıştırma yok — orijinal kaliteye yakın.
       return await _picker.pickImage(
         source: source,
-        imageQuality: 88,
-        maxWidth: 2400,
+        imageQuality: 100,
       );
     } catch (e) {
       debugPrint('[media] pickImage: $e');
