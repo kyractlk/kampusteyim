@@ -19,6 +19,9 @@ import 'admin_permissions.dart';
 import 'admin_provider.dart';
 import 'admin_registrations_tab.dart';
 import 'admin_study_rooms_tab.dart';
+import 'admin_leads_tab.dart';
+import 'admin_promo_hub_tab.dart';
+import 'admin_cv_ai_limits_tab.dart';
 
 class _AdminTab {
   const _AdminTab({
@@ -117,6 +120,13 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           required: const [AdminPermission.manageUsers],
           builder: () => const AdminRegistrationsTab(),
         ),
+      if (admin.can(me, AdminPermission.manageUsers))
+        _AdminTab(
+          label: 'CV-AI limit',
+          icon: const Icon(Icons.auto_awesome_outlined),
+          required: const [AdminPermission.manageUsers],
+          builder: () => const AdminCvAiLimitsTab(),
+        ),
       if (admin.can(me, AdminPermission.reviewReports))
         _AdminTab(
           label: 'Şikayetler',
@@ -185,6 +195,20 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           icon: const Icon(Icons.timer_outlined, size: 22),
           required: const [AdminPermission.reviewStudyRooms],
           builder: () => const AdminStudyRoomsTab(),
+        ),
+      if (admin.can(me, AdminPermission.reviewLeads))
+        _AdminTab(
+          label: 'Başvurular',
+          icon: const Icon(Icons.handshake_outlined, size: 22),
+          required: const [AdminPermission.reviewLeads],
+          builder: () => const AdminLeadsTab(),
+        ),
+      if (admin.can(me, AdminPermission.managePromo))
+        _AdminTab(
+          label: 'Tanıtım',
+          icon: const Icon(Icons.campaign_outlined, size: 22),
+          required: const [AdminPermission.managePromo],
+          builder: () => const AdminPromoHubTab(),
         ),
       if (admin.can(me, AdminPermission.manageLegalTexts))
         _AdminTab(

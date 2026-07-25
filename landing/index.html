@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="KampüsteyimAPP — üniversite öğrencileri için sosyal ağ. CV, staj, çalışma odaları ve AI asistan." />
+  <meta name="theme-color" content="#0B1F3A" />
+  <title>KampüsteyimAPP</title>
+  <link rel="icon" href="./kampusteyim_icon.png" type="image/png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy: #0B1F3A;
+      --navy2: #061426;
+      --cyan: #00D4C8;
+      --lime: #89C741;
+      --soft: #F4F7FB;
+      --muted: #5B6B7C;
+      --line: #D7E0EB;
+      --ok: #0a8f6c;
+      --err: #C8102E;
+      --pad: max(1rem, env(safe-area-inset-left));
+      --pad-r: max(1rem, env(safe-area-inset-right));
+      --font-d: "Syne", system-ui, sans-serif;
+      --font-b: "Instrument Sans", system-ui, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--font-b);
+      color: var(--navy);
+      background: var(--soft);
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+    img { max-width: 100%; height: auto; display: block; }
+    a { color: inherit; }
+    button, input, select, textarea {
+      font: inherit;
+      font-size: 16px; /* iOS zoom önleme */
+    }
+
+    .wrap {
+      width: 100%;
+      max-width: 960px;
+      margin: 0 auto;
+      padding-left: var(--pad);
+      padding-right: var(--pad-r);
+    }
+
+    /* —— Top bar —— */
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: rgba(6, 20, 38, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding-top: env(safe-area-inset-top);
+    }
+    .top-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      min-height: 56px;
+      gap: 0.5rem 0.75rem;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      text-decoration: none;
+      color: #fff;
+      font-family: var(--font-d);
+      font-weight: 700;
+      font-size: 0.95rem;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .brand img {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      flex-shrink: 0;
+    }
+    .menu-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 12px;
+      background: transparent;
+      color: #fff;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .menu-btn span {
+      display: block;
+      width: 18px;
+      height: 2px;
+      background: currentColor;
+      position: relative;
+    }
+    .menu-btn span::before,
+    .menu-btn span::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      width: 18px;
+      height: 2px;
+      background: currentColor;
+    }
+    .menu-btn span::before { top: -6px; }
+    .menu-btn span::after { top: 6px; }
+
+    .drawer {
+      display: none;
+      width: 100%;
+      flex-basis: 100%;
+      padding: 0.25rem 0 0.85rem;
+      order: 3;
+    }
+    .drawer.open { display: block; }
+    .drawer a {
+      display: block;
+      padding: 0.85rem 0.25rem;
+      color: rgba(255,255,255,0.88);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-weight: 600;
+    }
+    .drawer a:last-child { border-bottom: 0; color: var(--cyan); }
+
+    /* Masaüstü menü yalnızca geniş ekranda */
+    @media (min-width: 900px) {
+      .menu-btn { display: none; }
+      .top-inner { flex-wrap: nowrap; }
+      .drawer {
+        display: flex !important;
+        width: auto;
+        flex-basis: auto;
+        order: 0;
+        padding: 0;
+        gap: 1.25rem;
+        align-items: center;
+      }
+      .drawer a {
+        display: inline;
+        padding: 0;
+        border: 0;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: rgba(255,255,255,0.75);
+      }
+    }
+
+    /* —— Hero —— */
+    .hero {
+      background:
+        radial-gradient(ellipse 90% 55% at 20% 0%, rgba(0,212,200,0.28), transparent 55%),
+        radial-gradient(ellipse 70% 45% at 100% 20%, rgba(137,199,65,0.18), transparent 50%),
+        linear-gradient(165deg, #061426, #0B1F3A 55%, #123456);
+      color: #fff;
+      min-height: calc(100svh - 56px - env(safe-area-inset-top, 0px));
+      display: flex;
+      align-items: center;
+      padding: 2rem 0 2.75rem;
+    }
+    @media (min-width: 768px) {
+      .hero { padding: 3rem 0 4rem; }
+    }
+    .hero-logo {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      margin-bottom: 1rem;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+    }
+    @media (min-width: 768px) {
+      .hero-logo { width: 72px; height: 72px; border-radius: 18px; }
+    }
+    .hero h1 {
+      font-family: var(--font-d);
+      font-weight: 800;
+      font-size: clamp(1.65rem, 8.2vw, 3.5rem);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin: 0 0 0.9rem;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .hero h1 span { color: var(--cyan); }
+    .hero .lead {
+      margin: 0 0 0.65rem;
+      font-size: clamp(0.98rem, 3.5vw, 1.15rem);
+      font-weight: 500;
+      color: rgba(255,255,255,0.92);
+    }
+    .hero .sub {
+      margin: 0 0 1.35rem;
+      color: rgba(255,255,255,0.65);
+      font-size: 0.95rem;
+    }
+    .cta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      width: 100%;
+    }
+    @media (min-width: 560px) {
+      .cta { flex-direction: row; flex-wrap: wrap; }
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0.75rem 1.25rem;
+      border-radius: 999px;
+      font-weight: 700;
+      text-decoration: none;
+      border: 1px solid transparent;
+      cursor: pointer;
+      width: 100%;
+    }
+    @media (min-width: 560px) {
+      .btn { width: auto; min-width: 9.5rem; }
+    }
+    .btn-cyan { background: var(--cyan); color: var(--navy); }
+    .btn-ghost {
+      background: transparent;
+      color: #fff;
+      border-color: rgba(255,255,255,0.35);
+    }
+    .btn-lime {
+      background: var(--lime);
+      color: var(--navy);
+      width: 100%;
+      border-radius: 12px;
+      border: 0;
+    }
+    .btn-lime:disabled { opacity: 0.65; }
+
+    /* —— Sections —— */
+    section { padding: 2.25rem 0; }
+    @media (min-width: 768px) { section { padding: 3.5rem 0; } }
+    .sec-dark { background: var(--navy); color: #fff; }
+    .sec-soft { background: var(--soft); }
+    .sec-white { background: #fff; }
+    .eyebrow {
+      margin: 0 0 0.4rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--cyan);
+    }
+    .sec-dark .eyebrow { color: var(--lime); }
+    h2 {
+      font-family: var(--font-d);
+      font-size: clamp(1.45rem, 5vw, 2rem);
+      letter-spacing: -0.03em;
+      margin: 0 0 0.5rem;
+      line-height: 1.15;
+    }
+    .sec-lead {
+      margin: 0 0 1.5rem;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+    .sec-dark .sec-lead { color: rgba(255,255,255,0.65); }
+
+    /* Download */
+    .dl-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      align-items: stretch;
+    }
+    @media (min-width: 720px) {
+      .dl-stack {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 2rem;
+      }
+    }
+    .stores {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .store-link,
+    .soon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 156px;
+      height: 48px;
+      flex-shrink: 0;
+      line-height: 0;
+      text-decoration: none;
+    }
+    .store-badge {
+      width: 156px;
+      height: 48px;
+      object-fit: contain;
+      object-position: center;
+    }
+    .soon {
+      border-radius: 10px;
+      border: 1px dashed rgba(255,255,255,0.25);
+      color: rgba(255,255,255,0.45);
+      font-weight: 600;
+      font-size: 0.85rem;
+      line-height: 1.2;
+      text-align: center;
+      padding: 0 0.5rem;
+    }
+    @media (min-width: 480px) {
+      .store-link,
+      .soon,
+      .store-badge {
+        width: 168px;
+        height: 52px;
+      }
+    }
+    .dl-status {
+      margin: 0.75rem 0 0;
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.55);
+    }
+    .qr-box { text-align: center; }
+    .qr-frame {
+      display: inline-block;
+      padding: 0.75rem;
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.3);
+    }
+    .qr-frame canvas,
+    .qr-frame img {
+      width: 160px !important;
+      height: 160px !important;
+      display: block;
+    }
+    .qr-cap {
+      margin: 0.75rem auto 0;
+      max-width: 16rem;
+      font-size: 0.82rem;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* Features */
+    .feats {
+      display: grid;
+      gap: 1rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    @media (min-width: 640px) {
+      .feats { grid-template-columns: 1fr 1fr; gap: 1.15rem 1.5rem; }
+    }
+    .feats li {
+      display: grid;
+      grid-template-columns: 10px 1fr;
+      gap: 0.75rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--line);
+    }
+    .feats h3 {
+      margin: 0 0 0.25rem;
+      font-size: 1rem;
+      font-family: var(--font-d);
+    }
+    .feats p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      margin-top: 0.35rem;
+      border-radius: 50%;
+      background: var(--cyan);
+    }
+    .dot.lime { background: var(--lime); }
+
+    /* Accordion */
+    .acc {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      margin-bottom: 0.65rem;
+      overflow: hidden;
+    }
+    .acc summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 1rem 1.1rem;
+      font-weight: 700;
+      font-family: var(--font-d);
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      min-height: 52px;
+    }
+    .acc summary::-webkit-details-marker { display: none; }
+    .acc summary::after {
+      content: "+";
+      font-size: 1.35rem;
+      color: var(--cyan);
+      font-weight: 700;
+      line-height: 1;
+    }
+    .acc[open] summary::after { content: "−"; }
+    .acc .body {
+      padding: 0 1.1rem 1.15rem;
+      border-top: 1px solid var(--line);
+    }
+    .hint {
+      margin: 0.85rem 0 1rem;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+    .fields {
+      display: grid;
+      gap: 0.75rem;
+    }
+    @media (min-width: 560px) {
+      .fields.two { grid-template-columns: 1fr 1fr; }
+    }
+    label {
+      display: grid;
+      gap: 0.3rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--navy);
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.75rem 0.85rem;
+      background: var(--soft);
+      color: var(--navy);
+      min-height: 48px;
+    }
+    textarea { min-height: 96px; resize: vertical; }
+    .hp {
+      position: absolute !important;
+      left: -9999px !important;
+      height: 1px !important;
+      width: 1px !important;
+      opacity: 0 !important;
+    }
+    .form-msg {
+      margin: 0.65rem 0 0;
+      font-size: 0.88rem;
+      min-height: 1.2em;
+    }
+    .form-msg.ok { color: var(--ok); font-weight: 600; }
+    .form-msg.err { color: var(--err); font-weight: 600; }
+
+    footer {
+      background: var(--navy2);
+      color: rgba(255,255,255,0.7);
+      padding: 1.75rem 0 calc(1.75rem + env(safe-area-inset-bottom));
+      font-size: 0.85rem;
+    }
+    .foot {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    @media (min-width: 720px) {
+      .foot {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+    }
+    .foot nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem 1rem;
+    }
+    .foot a { color: rgba(255,255,255,0.75); text-decoration: none; }
+    .foot a:hover { color: var(--cyan); }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="brand" href="#ust">
+        <img src="./kampusteyim_icon.png" width="34" height="34" alt="" />
+        KampüsteyimAPP
+      </a>
+      <button class="menu-btn" type="button" id="menu-btn" aria-expanded="false" aria-controls="drawer" aria-label="Menü">
+        <span></span>
+      </button>
+      <nav class="drawer" id="drawer">
+        <a href="#ozellikler">Özellikler</a>
+        <a href="#basvuru">Başvuru</a>
+        <a href="#indir">İndir</a>
+        <a href="https://app.kampusteyim.app" rel="noopener">Uygulama</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero" id="ust">
+    <div class="wrap">
+      <img class="hero-logo" src="./kampusteyim_icon.png" width="72" height="72" alt="KampüsteyimAPP" />
+      <h1>Kampüsteyim<span>APP</span></h1>
+      <p class="lead">Türkiye’nin üniversite öğrencileri için geliştirdiği sosyal ağ — üniversiteleri ve firmaları bağlar; CV oluşturucu, staj kovalayıcı ve AI öğrenci asistanı içeride.</p>
+      <p class="sub">Doğrulanmış kampüs topluluğu. Mobilde ve web’de.</p>
+      <div class="cta">
+        <a class="btn btn-cyan" href="https://app.kampusteyim.app" rel="noopener">Uygulamaya gir</a>
+        <a class="btn btn-ghost" href="#indir">İndir</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec-soft" id="ozellikler">
+    <div class="wrap">
+      <p class="eyebrow">Özellikler</p>
+      <h2>Kampüs için tasarlandı</h2>
+      <p class="sec-lead">Öğrencinin gerçekten kullandığı araçlar.</p>
+      <ul class="feats">
+        <li><span class="dot"></span><div><h3>Sosyal akış</h3><p>Gönderi, etkinlik ve kampüs sohbeti.</p></div></li>
+        <li><span class="dot lime"></span><div><h3>Doğrulanmış öğrenci</h3><p>Kart / belge ile güvenli üyelik.</p></div></li>
+        <li><span class="dot"></span><div><h3>CV &amp; staj</h3><p>CV-AI ve staj / ilan kovalama.</p></div></li>
+        <li><span class="dot lime"></span><div><h3>AI asistan</h3><p>@aystechbot içeride yardımcı olur.</p></div></li>
+        <li><span class="dot"></span><div><h3>Çalışma odaları</h3><p>Odak seansı ve ortak timer.</p></div></li>
+        <li><span class="dot lime"></span><div><h3>Firma &amp; topluluk</h3><p>Markalar ve öğrenci kulüpleri aynı ağda.</p></div></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec-white" id="basvuru">
+    <div class="wrap">
+      <p class="eyebrow">Birlikte büyüyelim</p>
+      <h2>Başvuru &amp; destek</h2>
+      <p class="sec-lead">Aşağıdan tip seç, formu doldur. Biz size dönelim.</p>
+
+      <details class="acc" open>
+        <summary>Üniversite topluluğu</summary>
+        <div class="body">
+          <p class="hint">İl ve üniversiteni seç, topluluk hesabı için başvur.</p>
+          <form data-type="community">
+            <input class="hp" tabindex="-1" autocomplete="off" name="website_url" />
+            <div class="fields two">
+              <label>Ad soyad<input required name="name" autocomplete="name" /></label>
+              <label>E-posta<input required type="email" name="email" autocomplete="email" /></label>
+              <label>Telefon<input name="phone" type="tel" autocomplete="tel" /></label>
+              <label>Topluluk adı<input required name="orgName" /></label>
+              <label>İl
+                <select required name="city" id="cm-city">
+                  <option value="">İl seçin</option>
+                </select>
+              </label>
+              <label>Üniversite
+                <select required name="university" id="cm-uni" disabled>
+                  <option value="">Önce il seçin</option>
+                </select>
+              </label>
+            </div>
+            <label style="margin-top:0.75rem">Mesaj<textarea name="message" rows="3"></textarea></label>
+            <p class="form-msg"></p>
+            <button class="btn btn-lime" type="submit" style="margin-top:0.75rem">Gönder</button>
+          </form>
+        </div>
+      </details>
+
+      <details class="acc">
+        <summary>Şirket hesabı</summary>
+        <div class="body">
+          <p class="hint">Firma hesabı ve/veya reklam için.</p>
+          <form data-type="company">
+            <input class="hp" tabindex="-1" autocomplete="off" name="website_url" />
+            <div class="fields two">
+              <label>Yetkili adı<input required name="name" /></label>
+              <label>E-posta<input required type="email" name="email" /></label>
+              <label>Telefon<input name="phone" type="tel" /></label>
+              <label>Şirket adı<input required name="orgName" /></label>
+              <label>Web<input name="website" type="url" placeholder="https://" /></label>
+              <label>İstek
+                <select name="interest">
+                  <option value="account">Hesap</option>
+                  <option value="ads">Reklam</option>
+                  <option value="both">İkisi</option>
+                </select>
+              </label>
+            </div>
+            <label style="margin-top:0.75rem">Mesaj<textarea name="message" rows="3"></textarea></label>
+            <p class="form-msg"></p>
+            <button class="btn btn-lime" type="submit" style="margin-top:0.75rem">Gönder</button>
+          </form>
+        </div>
+      </details>
+
+      <details class="acc">
+        <summary>Reklam &amp; iş ortaklığı</summary>
+        <div class="body">
+          <form data-type="advertising">
+            <input class="hp" tabindex="-1" autocomplete="off" name="website_url" />
+            <div class="fields two">
+              <label>Yetkili adı<input required name="name" /></label>
+              <label>E-posta<input required type="email" name="email" /></label>
+              <label>Telefon<input name="phone" type="tel" /></label>
+              <label>Marka / şirket<input required name="orgName" /></label>
+              <label>Web<input name="website" type="url" placeholder="https://" /></label>
+            </div>
+            <label style="margin-top:0.75rem">Mesaj<textarea name="message" rows="3"></textarea></label>
+            <p class="form-msg"></p>
+            <button class="btn btn-lime" type="submit" style="margin-top:0.75rem">Gönder</button>
+          </form>
+        </div>
+      </details>
+
+      <details class="acc">
+        <summary>Destek</summary>
+        <div class="body">
+          <p class="hint">E-posta ve telefonunu bırak, talebini yaz.</p>
+          <form data-type="support">
+            <input class="hp" tabindex="-1" autocomplete="off" name="website_url" />
+            <div class="fields two">
+              <label>Ad soyad<input required name="name" /></label>
+              <label>E-posta<input required type="email" name="email" /></label>
+              <label>Telefon<input required name="phone" type="tel" /></label>
+            </div>
+            <label style="margin-top:0.75rem">Talebin<textarea required name="message" rows="3"></textarea></label>
+            <p class="form-msg"></p>
+            <button class="btn btn-lime" type="submit" style="margin-top:0.75rem">Destek talebi gönder</button>
+          </form>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="sec-dark" id="indir">
+    <div class="wrap">
+      <p class="eyebrow">İndir</p>
+      <h2>Telefona indir</h2>
+      <p class="sec-lead">Play / App Store veya QR — cihazın doğru mağazaya gider.</p>
+      <div class="dl-stack">
+        <div>
+          <div class="stores" id="store-row">
+            <span class="soon" id="play-soon">Play yakında</span>
+            <span class="soon" id="app-soon">App Store yakında</span>
+          </div>
+          <p class="dl-status" id="dl-status">Bağlantılar yükleniyor…</p>
+        </div>
+        <div class="qr-box">
+          <div class="qr-frame">
+            <canvas id="qr-canvas" width="160" height="160" aria-label="İndirme QR kodu"></canvas>
+          </div>
+          <p class="qr-cap">QR’ı okut → iOS App Store, Android Google Play</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap foot">
+      <p>© KampüsteyimAPP · AYS Tech · Kayra Çatalkaya</p>
+      <nav>
+        <a href="https://app.kampusteyim.app/privacy.html">Gizlilik</a>
+        <a href="https://app.kampusteyim.app/terms.html">Şartlar</a>
+        <a href="https://app.kampusteyim.app/child-safety.html">Çocuk güvenliği</a>
+        <a href="https://app.kampusteyim.app">Uygulama</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script>
+(function () {
+  const PROMO_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/getPromoPublic';
+  const LEAD_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/submitLeadApplication';
+  const QR_FALLBACK = 'https://kampusteyim.app/get.html';
+  const PLAY_BADGE = 'https://play.google.com/intl/en_us/badges/static/images/badges/tr_badge_web_generic.png';
+  const APP_BADGE = 'https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/tr-tr?size=250x83&releaseDate=0';
+
+  const menuBtn = document.getElementById('menu-btn');
+  const drawer = document.getElementById('drawer');
+  menuBtn.addEventListener('click', () => {
+    const open = drawer.classList.toggle('open');
+    menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  drawer.querySelectorAll('a').forEach((a) => {
+    a.addEventListener('click', () => {
+      drawer.classList.remove('open');
+      menuBtn.setAttribute('aria-expanded', 'false');
+    });
+  });
+
+  document.querySelectorAll('details.acc').forEach((d) => {
+    d.addEventListener('toggle', () => {
+      if (!d.open) return;
+      document.querySelectorAll('details.acc').forEach((o) => {
+        if (o !== d) o.open = false;
+      });
+    });
+  });
+
+  const canvas = document.getElementById('qr-canvas');
+  function setQr(url) {
+    const target = (url && String(url).trim()) || QR_FALLBACK;
+    if (window.QRCode) {
+      QRCode.toCanvas(canvas, target, {
+        width: 160,
+        margin: 1,
+        color: { dark: '#0B1F3A', light: '#ffffff' },
+      }, function () {});
+    }
+  }
+  setQr(QR_FALLBACK);
+
+  const playSoon = document.getElementById('play-soon');
+  const appSoon = document.getElementById('app-soon');
+  const dlStatus = document.getElementById('dl-status');
+
+  function storeLink(url, badgeSrc, alt, soonEl) {
+    if (!url) return;
+    const a = document.createElement('a');
+    a.className = 'store-link';
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    const img = document.createElement('img');
+    img.className = 'store-badge';
+    img.src = badgeSrc;
+    img.alt = alt;
+    a.appendChild(img);
+    soonEl.replaceWith(a);
+  }
+
+  fetch(PROMO_URL)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data || !data.ok) throw new Error('promo');
+      storeLink((data.playStoreUrl || '').trim(), PLAY_BADGE, 'Google Play', playSoon);
+      storeLink((data.appStoreUrl || '').trim(), APP_BADGE, 'App Store', appSoon);
+      setQr(data.qrTargetUrl || QR_FALLBACK);
+      const parts = [];
+      if ((data.playStoreUrl || '').trim()) parts.push('Play hazır');
+      if ((data.appStoreUrl || '').trim()) parts.push('App Store hazır');
+      dlStatus.textContent = parts.length ? parts.join(' · ') : 'Mağaza linkleri yakında.';
+    })
+    .catch(() => {
+      dlStatus.textContent = 'Linkler yüklenemedi; QR yine de çalışır.';
+      setQr(QR_FALLBACK);
+    });
+
+  const citySelect = document.getElementById('cm-city');
+  const uniSelect = document.getElementById('cm-uni');
+  let uniData = { cities: [], byCity: {} };
+
+  fetch('./data/universities-tr.json')
+    .then((r) => r.json())
+    .then((data) => {
+      uniData = data || uniData;
+      (uniData.cities || []).forEach((c) => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        citySelect.appendChild(opt);
+      });
+    })
+    .catch(() => {});
+
+  citySelect.addEventListener('change', () => {
+    const city = citySelect.value;
+    uniSelect.innerHTML = '';
+    if (!city) {
+      uniSelect.disabled = true;
+      uniSelect.innerHTML = '<option value="">Önce il seçin</option>';
+      return;
+    }
+    uniSelect.disabled = false;
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = 'Üniversite seçin';
+    uniSelect.appendChild(ph);
+    ((uniData.byCity && uniData.byCity[city]) || []).forEach((u) => {
+      const opt = document.createElement('option');
+      opt.value = u;
+      opt.textContent = u;
+      uniSelect.appendChild(opt);
+    });
+  });
+
+  document.querySelectorAll('form[data-type]').forEach((form) => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msgEl = form.querySelector('.form-msg');
+      const btn = form.querySelector('button[type="submit"]');
+      msgEl.className = 'form-msg';
+      msgEl.textContent = '';
+      const hp = form.querySelector('input[name="website_url"]');
+      if (hp && hp.value.trim()) {
+        msgEl.className = 'form-msg ok';
+        msgEl.textContent = 'Başvurun alındı. Biz size dönelim.';
+        form.reset();
+        return;
+      }
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+      const fd = new FormData(form);
+      const type = form.getAttribute('data-type');
+      const payload = {
+        type,
+        name: String(fd.get('name') || '').trim(),
+        email: String(fd.get('email') || '').trim(),
+        phone: String(fd.get('phone') || '').trim(),
+        message: String(fd.get('message') || '').trim(),
+      };
+      if (type === 'community') {
+        payload.city = String(fd.get('city') || '').trim();
+        payload.university = String(fd.get('university') || '').trim();
+        payload.orgName = String(fd.get('orgName') || '').trim();
+      } else if (type === 'company') {
+        payload.orgName = String(fd.get('orgName') || '').trim();
+        payload.interest = String(fd.get('interest') || '').trim();
+        payload.website = String(fd.get('website') || '').trim();
+      } else if (type === 'advertising') {
+        payload.orgName = String(fd.get('orgName') || '').trim();
+        payload.website = String(fd.get('website') || '').trim();
+      }
+      btn.disabled = true;
+      msgEl.textContent = 'Gönderiliyor…';
+      try {
+        const res = await fetch(LEAD_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Gönderilemedi');
+        msgEl.className = 'form-msg ok';
+        msgEl.textContent = 'Başvurun alındı. Biz size dönelim.';
+        form.reset();
+        if (type === 'community') {
+          uniSelect.disabled = true;
+          uniSelect.innerHTML = '<option value="">Önce il seçin</option>';
+        }
+      } catch (err) {
+        msgEl.className = 'form-msg err';
+        msgEl.textContent = err.message || 'Hata oluştu.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+})();
+  </script>
+</body>
+</html>

@@ -24,6 +24,9 @@ class StudyRoom {
     this.postId,
     this.isCommunity = false,
     this.chatOpen = true,
+    this.hostLeftAt,
+    this.endedAt,
+    this.endReason,
   });
 
   final String id;
@@ -43,6 +46,11 @@ class StudyRoom {
   final String? postId;
   final bool isCommunity;
   final bool chatOpen;
+  /// Host odadan çıktığında set edilir; 1 saat sonra CF kapatır.
+  final DateTime? hostLeftAt;
+  final DateTime? endedAt;
+  /// manual | host_left_timeout | …
+  final String? endReason;
 
   bool get isHostActive => status != 'ended';
   bool isHost(String uid) => hostId == uid;
@@ -89,6 +97,9 @@ class StudyRoom {
       postId: m['postId'] as String?,
       isCommunity: m['isCommunity'] == true,
       chatOpen: m['chatOpen'] != false,
+      hostLeftAt: parse(m['hostLeftAt']),
+      endedAt: parse(m['endedAt']),
+      endReason: m['endReason'] as String?,
     );
   }
 
@@ -109,6 +120,9 @@ class StudyRoom {
         'postId': postId,
         'isCommunity': isCommunity,
         'chatOpen': chatOpen,
+        if (hostLeftAt != null) 'hostLeftAt': hostLeftAt!.toIso8601String(),
+        if (endedAt != null) 'endedAt': endedAt!.toIso8601String(),
+        if (endReason != null) 'endReason': endReason,
       };
 }
 
@@ -263,7 +277,14 @@ class StudyRoomService {
       // Host doğrudan üye; diğerleri pending’e düşer.
       if (room.isHost(user.id)) {
         final parts = {...room.participantIds, user.id}.toList();
-        tx.set(ref, {'participantIds': parts}, SetOptions(merge: true));
+        tx.set(
+          ref,
+          {
+            'participantIds': parts,
+            'hostLeftAt': FieldValue.delete(),
+          },
+          SetOptions(merge: true),
+        );
         return;
       }
       final pending = {...room.pendingIds, user.id}.toList();
@@ -434,15 +455,55 @@ class StudyRoomService {
     });
   }
 
-  static Future<void> endSession(String roomId, String hostId) async {
+  static Future<void> endSession(
+    String roomId,
+    String hostId, {
+    String reason = 'manual',
+  }) async {
     final ref = _db.collection('study_rooms').doc(roomId);
     await ref.set({
       'status': 'ended',
       'endedAt': DateTime.now().toIso8601String(),
       'chatOpen': false,
+      'endReason': reason,
+      'hostLeftAt': FieldValue.delete(),
     }, SetOptions(merge: true));
     await ref.collection('events').add({
       'type': 'ended',
+      'actorId': hostId,
+      'reason': reason,
+      'at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Host odadan ayrılınca 1 saatlik kapanma zamanlayıcısını başlatır.
+  static Future<void> markHostLeft(String roomId, String hostId) async {
+    final snap = await _db.collection('study_rooms').doc(roomId).get();
+    if (!snap.exists) return;
+    final room = StudyRoom.fromMap(snap.id, snap.data()!);
+    if (room.hostId != hostId || room.status == 'ended') return;
+    if (room.hostLeftAt != null) return;
+    final now = DateTime.now().toIso8601String();
+    await snap.reference.set({'hostLeftAt': now}, SetOptions(merge: true));
+    await snap.reference.collection('events').add({
+      'type': 'host_left',
+      'actorId': hostId,
+      'at': now,
+    });
+  }
+
+  /// Host odaya geri dönünce zamanlayıcıyı iptal eder.
+  static Future<void> clearHostLeft(String roomId, String hostId) async {
+    final snap = await _db.collection('study_rooms').doc(roomId).get();
+    if (!snap.exists) return;
+    final room = StudyRoom.fromMap(snap.id, snap.data()!);
+    if (room.hostId != hostId || room.hostLeftAt == null) return;
+    await snap.reference.set(
+      {'hostLeftAt': FieldValue.delete()},
+      SetOptions(merge: true),
+    );
+    await snap.reference.collection('events').add({
+      'type': 'host_returned',
       'actorId': hostId,
       'at': DateTime.now().toIso8601String(),
     });
@@ -501,7 +562,7 @@ class StudyRoomService {
     }
   }
 
-  static Future<List<StudyRoom>> listRecentForAdmin({int limit = 80}) async {
+  static Future<List<StudyRoom>> listRecentForAdmin({int limit = 200}) async {
     final snap = await _db
         .collection('study_rooms')
         .orderBy('createdAt', descending: true)

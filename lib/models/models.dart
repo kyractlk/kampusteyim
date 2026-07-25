@@ -63,6 +63,7 @@ class AppUser {
     this.studentVerificationType,
     this.studentIdFrontUrl,
     this.studentIdBackUrl,
+    this.registrationRejectReason = '',
     this.hideFromSearch = false,
     this.isPrivateAccount = false,
     this.isSpectatorMode = false,
@@ -122,6 +123,8 @@ class AppUser {
   final String? studentIdFrontUrl;
   /// Öğrenci kartı arka yüz.
   final String? studentIdBackUrl;
+  /// Red sebebi (varsa).
+  final String registrationRejectReason;
   /// Aramada görünmez.
   final bool hideFromSearch;
   /// Instagram tarzı gizli hesap (takip isteği).
@@ -246,6 +249,7 @@ class AppUser {
     String? studentVerificationType,
     String? studentIdFrontUrl,
     String? studentIdBackUrl,
+    String? registrationRejectReason,
     bool? hideFromSearch,
     bool? isPrivateAccount,
     bool? isSpectatorMode,
@@ -313,6 +317,8 @@ class AppUser {
       studentIdBackUrl: clearStudentIdDoc
           ? null
           : (studentIdBackUrl ?? this.studentIdBackUrl),
+      registrationRejectReason:
+          registrationRejectReason ?? this.registrationRejectReason,
       hideFromSearch: hideFromSearch ?? this.hideFromSearch,
       isPrivateAccount: isPrivateAccount ?? this.isPrivateAccount,
       isSpectatorMode: isSpectatorMode ?? this.isSpectatorMode,

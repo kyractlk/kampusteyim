@@ -5,11 +5,22 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../auth/data/auth_provider.dart';
+import 'campus_camera_screen.dart';
 import 'stories_provider.dart';
-import 'story_compose_sheet.dart';
 
 class StoryRingBar extends StatelessWidget {
   const StoryRingBar({super.key});
+
+  Future<void> _onSelfTap(BuildContext context, {required bool hasOwn}) async {
+    if (hasOwn) {
+      final me = context.read<AuthProvider>().user;
+      if (me != null) {
+        await context.push('/stories/view/${me.id}');
+      }
+      return;
+    }
+    await openCampusCamera(context);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +45,7 @@ class StoryRingBar extends StatelessWidget {
             return _AddStoryRing(
               name: me.fullName,
               photoUrl: me.photoUrl,
-              onTap: () => showStoryComposeSheet(context),
+              onTap: () => _onSelfTap(context, hasOwn: false),
             );
           }
           final ring = rings[hasOwn ? index : index - 1];
@@ -43,8 +54,14 @@ class StoryRingBar extends StatelessWidget {
             name: isSelf ? 'Hikâyen' : ring.authorName.split(' ').first,
             photoUrl: ring.authorPhotoUrl,
             isSelf: isSelf,
-            onTap: () => context.push('/stories/view/${ring.authorId}'),
-            onAdd: isSelf ? () => showStoryComposeSheet(context) : null,
+            onTap: () {
+              if (isSelf) {
+                _onSelfTap(context, hasOwn: true);
+              } else {
+                context.push('/stories/view/${ring.authorId}');
+              }
+            },
+            onAdd: isSelf ? () => openCampusCamera(context) : null,
           );
         },
       ),

@@ -117,6 +117,15 @@ service cloud.firestore {
         (signedIn() && isAuthorById(resource.data.authorId));
     }
 
+    /// Kampüs Reels (dikey klip).
+    match /reels/{reelId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if isAdmin() ||
+        (signedIn() && isAuthorById(resource.data.authorId));
+    }
+
     match /staff_roles/{id} {
       allow read: if signedIn();
       allow write: if isAdmin();
@@ -156,6 +165,17 @@ service cloud.firestore {
     match /feedback/{id} {
       allow create: if signedIn();
       allow read, update, delete: if isAdmin();
+    }
+
+    /// Landing başvuruları — yalnızca Cloud Functions yazar; admin okur.
+    match /lead_applications/{id} {
+      allow read, update, delete: if isAdmin();
+      allow create: if false;
+    }
+
+    match /promo_scans/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     /// Hesap silme kodları — yalnızca Cloud Functions.

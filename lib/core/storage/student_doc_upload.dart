@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
@@ -95,10 +98,13 @@ class StudentDocUpload {
       throw StateError('Kart için fotoğraf seçmelisin.');
     }
 
+    final rand =
+        '${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}'
+        '${Random().nextInt(0xffffff).toRadixString(16)}';
     final fileName = MediaUpload.buildFileName(
       firstName: firstName.isEmpty ? 'aday' : firstName,
       lastName: lastName.isEmpty ? 'ogrenci' : lastName,
-      studentNo: studentNo.isEmpty ? 'pending' : studentNo,
+      studentNo: studentNo.isEmpty ? 'pending' : '${studentNo}_$rand',
       extension: '${side}_${StudentDocGuard.extension(kind)}',
     );
     final path = 'student_ids/$fileName';
@@ -113,7 +119,31 @@ class StudentDocUpload {
       cacheControl: 'private, max-age=0',
     );
     debugPrint('[student-doc] putData $path (${bytes.length}b)');
-    await ref.putData(bytes, meta);
-    return ref.getDownloadURL();
+    try {
+      final task = ref.putData(bytes, meta);
+      await task.timeout(
+        const Duration(seconds: 90),
+        onTimeout: () {
+          unawaited(task.cancel());
+          throw StateError(
+            'Yükleme zaman aşımı. Bağlantını kontrol edip tekrar dene.',
+          );
+        },
+      );
+      return await ref.getDownloadURL().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw StateError(
+          'İndirme linki alınamadı. Tekrar dene.',
+        ),
+      );
+    } on FirebaseException catch (e) {
+      debugPrint('[student-doc] FirebaseException ${e.code}: ${e.message}');
+      if (e.code == 'unauthorized' || e.code == 'permission-denied') {
+        throw StateError(
+          'Depolama izni reddedildi. Sayfayı yenileyip tekrar dene.',
+        );
+      }
+      throw StateError(e.message ?? 'Yükleme başarısız (${e.code}).');
+    }
   }
 }

@@ -70,7 +70,8 @@ class _AdminRegistrationsTabState extends State<AdminRegistrationsTab> {
           (u) =>
               u.accountStatus == 'pending' && !u.isCommunity && !u.isCompany,
         )
-        .toList();
+        .toList()
+      ..sort((a, b) => a.fullName.compareTo(b.fullName));
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
@@ -86,6 +87,11 @@ class _AdminRegistrationsTabState extends State<AdminRegistrationsTab> {
           'Bekleyen kayıtlar (${pending.length})',
           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
         ),
+        const SizedBox(height: 6),
+        const Text(
+          'Öğrenci adına dokununca belgeler açılır.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
         const SizedBox(height: 10),
         if (pending.isEmpty)
           const Padding(
@@ -94,7 +100,7 @@ class _AdminRegistrationsTabState extends State<AdminRegistrationsTab> {
           )
         else
           ...pending.map((u) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: _PendingCard(user: u),
               )),
       ],
@@ -212,35 +218,46 @@ class _PendingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final type = user.studentVerificationType;
     final typeLabel = switch (type) {
-      'card' => 'Öğrenci kartı',
-      'document' => 'PDF belge',
+      'card' => 'Kart',
+      'document' => 'PDF',
       _ => 'Belge',
     };
 
     return Material(
       color: AppColors.surface,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: const BorderSide(color: AppColors.border),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              user.fullName,
-              style: const TextStyle(fontWeight: FontWeight.w800),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          title: Text(
+            user.fullName,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: Text(
+            '${user.studentNo} · $typeLabel · ${user.university}',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
             ),
-            const SizedBox(height: 4),
-            Text(
-              '${user.studentNo} · ${user.university}\n${user.email}\nTip: $typeLabel',
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                height: 1.35,
+          ),
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                user.email,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             if (type == 'card') ...[
               Row(
                 children: [
@@ -268,8 +285,12 @@ class _PendingCard extends StatelessWidget {
                 icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
                 label: const Text('PDF belgesini aç'),
               ),
-            ],
-            const SizedBox(height: 10),
+            ] else
+              const Text(
+                'Belge bulunamadı',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -334,7 +355,10 @@ class _PendingCard extends StatelessWidget {
       if (!context.mounted) return;
       final auth = context.read<AuthProvider>();
       auth.upsertUser(
-        u.copyWith(accountStatus: approve ? 'approved' : 'rejected'),
+        u.copyWith(
+          accountStatus: approve ? 'approved' : 'rejected',
+          registrationRejectReason: approve ? '' : (reason ?? ''),
+        ),
       );
       context.read<AdminProvider>().status =
           approve ? 'Kayıt onaylandı' : 'Kayıt reddedildi';

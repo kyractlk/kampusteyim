@@ -33,6 +33,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   bool _sending = false;
   bool _playedEnd = false;
   bool _warned5min = false;
+  bool _intentionalLeave = false;
+  bool _isHostSession = false;
+  String? _sessionUserId;
   Timer? _uiTick;
 
   @override
@@ -58,6 +61,11 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     _chatCtrl.dispose();
     _player.dispose();
     _scroll.dispose();
+    if (!_intentionalLeave && _isHostSession && _sessionUserId != null) {
+      unawaited(
+        StudyRoomService.markHostLeft(widget.roomId, _sessionUserId!),
+      );
+    }
     if (!kIsWeb) {
       unawaited(WakelockPlus.disable());
       SystemChrome.setPreferredOrientations(DeviceOrientation.values);
@@ -70,6 +78,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final auth = context.read<AuthProvider>();
     final user = auth.user;
     if (user == null) return;
+    _sessionUserId = user.id;
     setState(() => _joining = true);
     try {
       final room = await StudyRoomService.get(widget.roomId);
@@ -77,6 +86,12 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       if (room.isKicked(user.id)) throw StateError('Bu odadan çıkarıldın');
       if (!room.isMember(user.id) && !room.isPending(user.id)) {
         await StudyRoomService.join(widget.roomId, user);
+      }
+      if (room.isHost(user.id) && room.status != 'ended') {
+        _isHostSession = true;
+        await StudyRoomService.clearHostLeft(widget.roomId, user.id);
+      } else {
+        _isHostSession = room.isHost(user.id);
       }
     } catch (e) {
       if (!mounted) return;
@@ -176,7 +191,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Odadan çık'),
-        content: const Text('Odak seansından ayrılmak istiyor musun?'),
+        content: const Text(
+          'Odak seansından ayrılmak istiyor musun?\n\n'
+          'Oturum sahibiysen 1 saat içinde geri dönmezsen oda otomatik kapanır.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -189,7 +207,21 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
         ],
       ),
     );
-    if (ok == true && mounted) AppNav.back(context);
+    if (ok != true || !mounted) return;
+    _intentionalLeave = true;
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+    if (user != null) {
+      try {
+        final room = await StudyRoomService.get(widget.roomId);
+        if (room != null && room.isHost(user.id) && room.status != 'ended') {
+          await StudyRoomService.markHostLeft(widget.roomId, user.id);
+        }
+      } catch (e) {
+        debugPrint('[study] markHostLeft: $e');
+      }
+    }
+    if (mounted) AppNav.back(context);
   }
 
   Future<void> _send(StudyRoom room) async {

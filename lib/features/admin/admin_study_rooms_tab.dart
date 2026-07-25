@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
 import '../study/study_models.dart';
 
-/// Admin · çalışma odası oturum + chat kayıtları.
+/// Admin · çalışma odası oturum + chat + dinamik filtre.
 class AdminStudyRoomsTab extends StatefulWidget {
   const AdminStudyRoomsTab({super.key});
 
@@ -19,10 +19,20 @@ class _AdminStudyRoomsTabState extends State<AdminStudyRoomsTab> {
   List<StudyChatMessage> _msgs = [];
   bool _loadingMsgs = false;
 
+  final _search = TextEditingController();
+  String _status = 'all'; // all | waiting | active | ended | host_away
+  bool? _communityOnly; // null = all, true = community, false = student
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -37,6 +47,30 @@ class _AdminStudyRoomsTabState extends State<AdminStudyRoomsTab> {
       }
     }
     if (mounted) setState(() => _loading = false);
+  }
+
+  List<StudyRoom> get _filtered {
+    final q = _search.text.trim().toLowerCase();
+    return _rooms.where((r) {
+      if (_status == 'host_away') {
+        if (r.hostLeftAt == null || r.status == 'ended') return false;
+      } else if (_status != 'all' && r.status != _status) {
+        return false;
+      }
+      if (_communityOnly == true && !r.isCommunity) return false;
+      if (_communityOnly == false && r.isCommunity) return false;
+      if (q.isEmpty) return true;
+      final hay = [
+        r.code,
+        r.title,
+        r.hostName,
+        r.hostId,
+        r.id,
+        r.status,
+        if (r.endReason != null) r.endReason!,
+      ].join(' ').toLowerCase();
+      return hay.contains(q);
+    }).toList();
   }
 
   Future<void> _openChat(String roomId) async {
@@ -66,27 +100,109 @@ class _AdminStudyRoomsTabState extends State<AdminStudyRoomsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final list = _filtered;
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Expanded(
-                child: Text(
-                  'Oturumlar güvenlik için saklanır',
-                  style: TextStyle(color: AppColors.textSecondary),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Kod / host adı / host id ile ara. Host çıkınca 1 saat sonra otomatik kapanır.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                  IconButton.filledTonal(
+                    onPressed: _loading ? null : _load,
+                    icon: _loading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Ara: host, kod, başlık, id…',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _search.text.isEmpty
+                      ? null
+                      : IconButton(
+                          onPressed: () {
+                            _search.clear();
+                            setState(() {});
+                          },
+                          icon: const Icon(Icons.clear, size: 18),
+                        ),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
-              IconButton.filledTonal(
-                onPressed: _loading ? null : _load,
-                icon: _loading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _chip('Tümü', _status == 'all', () {
+                      setState(() => _status = 'all');
+                    }),
+                    _chip('Bekleyen', _status == 'waiting', () {
+                      setState(() => _status = 'waiting');
+                    }),
+                    _chip('Aktif', _status == 'active', () {
+                      setState(() => _status = 'active');
+                    }),
+                    _chip('Bitti', _status == 'ended', () {
+                      setState(() => _status = 'ended');
+                    }),
+                    _chip('Host çıktı', _status == 'host_away', () {
+                      setState(() => _status = 'host_away');
+                    }),
+                    _chip(
+                      _communityOnly == true
+                          ? 'Topluluk ✓'
+                          : _communityOnly == false
+                              ? 'Öğrenci ✓'
+                              : 'Tür',
+                      _communityOnly != null,
+                      () {
+                        setState(() {
+                          if (_communityOnly == null) {
+                            _communityOnly = true;
+                          } else if (_communityOnly == true) {
+                            _communityOnly = false;
+                          } else {
+                            _communityOnly = null;
+                          }
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${list.length} / ${_rooms.length} oda',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
               ),
             ],
           ),
@@ -94,23 +210,27 @@ class _AdminStudyRoomsTabState extends State<AdminStudyRoomsTab> {
         Expanded(
           child: _loading && _rooms.isEmpty
               ? const Center(child: CircularProgressIndicator())
-              : _rooms.isEmpty
-                  ? const Center(child: Text('Henüz çalışma odası yok'))
+              : list.isEmpty
+                  ? const Center(child: Text('Eşleşen çalışma odası yok'))
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                      itemCount: _rooms.length,
+                      itemCount: list.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, i) {
-                        final r = _rooms[i];
+                        final r = list[i];
                         final open = _openId == r.id;
+                        final hostGone = r.hostLeftAt != null &&
+                            r.status != 'ended';
                         return Material(
                           color: AppColors.surface,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                             side: BorderSide(
-                              color: r.status == 'active'
-                                  ? AppColors.cyan.withValues(alpha: 0.5)
-                                  : AppColors.border,
+                              color: hostGone
+                                  ? AppColors.crimson.withValues(alpha: 0.45)
+                                  : r.status == 'active'
+                                      ? AppColors.cyan.withValues(alpha: 0.5)
+                                      : AppColors.border,
                             ),
                           ),
                           child: ExpansionTile(
@@ -130,10 +250,15 @@ class _AdminStudyRoomsTabState extends State<AdminStudyRoomsTab> {
                                   const TextStyle(fontWeight: FontWeight.w800),
                             ),
                             subtitle: Text(
-                              '${r.hostName} · ${r.status} · ${r.minutes} dk · '
-                              '${r.participantIds.length} kişi · '
+                              'Host: ${r.hostName}\n'
+                              'id: ${r.hostId}\n'
+                              '${r.status}'
+                              '${hostGone ? ' · host ayrıldı' : ''}'
+                              '${r.endReason != null ? ' · ${r.endReason}' : ''}'
+                              ' · ${r.minutes} dk · ${r.participantIds.length} kişi · '
                               '${DateFormat('d MMM HH:mm', 'tr').format(r.createdAt)}'
                               '${r.isCommunity ? ' · topluluk' : ''}',
+                              style: const TextStyle(height: 1.35, fontSize: 12),
                             ),
                             childrenPadding:
                                 const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -183,6 +308,18 @@ class _AdminStudyRoomsTabState extends State<AdminStudyRoomsTab> {
                     ),
         ),
       ],
+    );
+  }
+
+  Widget _chip(String label, bool selected, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: FilterChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        visualDensity: VisualDensity.compact,
+      ),
     );
   }
 }

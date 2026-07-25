@@ -85,19 +85,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required Future<XFile?> Function() pick,
     required bool expectPdf,
   }) async {
+    if (_uploading) return;
     try {
+      // Spinner sadece dosya seçildikten sonra — iptalde takılma olmasın.
+      final file = await pick();
+      if (file == null || !mounted) return;
+
       setState(() {
         _uploading = true;
         _busySide = side;
       });
-      final file = await pick();
-      if (file == null) {
-        setState(() {
-          _uploading = false;
-          _busySide = null;
-        });
-        return;
-      }
       final url = await StudentDocUpload.uploadSecure(
         file: file,
         side: side,
@@ -107,6 +104,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         security: _security,
         expectPdf: expectPdf,
       );
+      if (!mounted) return;
       setState(() {
         if (side == 'front') _frontUrl = url;
         if (side == 'back') _backUrl = url;
@@ -115,14 +113,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _busySide = null;
       });
     } catch (e) {
-      setState(() {
-        _uploading = false;
-        _busySide = null;
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e')),
-      );
+      if (mounted) {
+        setState(() {
+          _uploading = false;
+          _busySide = null;
+        });
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
+      }
     }
   }
 
@@ -251,12 +251,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
                     if (_step < 4)
-                      AppPrimaryButton(label: 'Devam', onPressed: _next)
+                      AppPrimaryButton(
+                        label: 'Devam',
+                        onPressed: _uploading ? null : _next,
+                      )
                     else
                       AppPrimaryButton(
                         label: 'Kaydı Tamamla',
-                        loading: busy,
-                        onPressed: _submit,
+                        loading: busy || _uploading,
+                        onPressed: (!_docsOk || _uploading || busy)
+                            ? null
+                            : _submit,
                       ),
                     if (_step > 0) ...[
                       const SizedBox(height: 8),
@@ -542,16 +547,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
             label: 'Ön yüz',
             done: _frontUrl != null,
             busy: _uploading && _busySide == 'front',
-            onCamera: () => _runUpload(
-              side: 'front',
-              pick: StudentDocUpload.captureCardImage,
-              expectPdf: false,
-            ),
-            onGallery: () => _runUpload(
-              side: 'front',
-              pick: StudentDocUpload.pickCardImage,
-              expectPdf: false,
-            ),
+            onCamera: _uploading
+                ? null
+                : () => _runUpload(
+                      side: 'front',
+                      pick: StudentDocUpload.captureCardImage,
+                      expectPdf: false,
+                    ),
+            onGallery: _uploading
+                ? null
+                : () => _runUpload(
+                      side: 'front',
+                      pick: StudentDocUpload.pickCardImage,
+                      expectPdf: false,
+                    ),
           ),
           if (_security.requireCardBothSides) ...[
             const SizedBox(height: 10),
@@ -559,16 +568,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
               label: 'Arka yüz',
               done: _backUrl != null,
               busy: _uploading && _busySide == 'back',
-              onCamera: () => _runUpload(
-                side: 'back',
-                pick: StudentDocUpload.captureCardImage,
-                expectPdf: false,
-              ),
-              onGallery: () => _runUpload(
-                side: 'back',
-                pick: StudentDocUpload.pickCardImage,
-                expectPdf: false,
-              ),
+              onCamera: _uploading
+                  ? null
+                  : () => _runUpload(
+                        side: 'back',
+                        pick: StudentDocUpload.captureCardImage,
+                        expectPdf: false,
+                      ),
+              onGallery: _uploading
+                  ? null
+                  : () => _runUpload(
+                        side: 'back',
+                        pick: StudentDocUpload.pickCardImage,
+                        expectPdf: false,
+                      ),
             ),
           ],
         ],
@@ -580,11 +593,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
             busy: _uploading && _busySide == 'pdf',
             pdfOnly: true,
             onCamera: null,
-            onGallery: () => _runUpload(
-              side: 'pdf',
-              pick: StudentDocUpload.pickPdf,
-              expectPdf: true,
-            ),
+            onGallery: _uploading
+                ? null
+                : () => _runUpload(
+                      side: 'pdf',
+                      pick: StudentDocUpload.pickPdf,
+                      expectPdf: true,
+                    ),
           ),
         ],
       ],
@@ -669,7 +684,7 @@ class _SideUploadCard extends StatelessWidget {
   final bool done;
   final bool busy;
   final VoidCallback? onCamera;
-  final VoidCallback onGallery;
+  final VoidCallback? onGallery;
   final bool pdfOnly;
 
   @override
@@ -709,19 +724,22 @@ class _SideUploadCard extends StatelessWidget {
             const SizedBox(height: 10),
             if (!pdfOnly && onCamera != null)
               FilledButton.icon(
-                onPressed: () => onCamera!(),
+                onPressed: onCamera,
                 icon: const Icon(Icons.photo_camera_outlined, size: 18),
                 label: const Text('Kamera'),
               ),
             if (!pdfOnly && onCamera != null) const SizedBox(height: 6),
-            OutlinedButton.icon(
-              onPressed: onGallery,
-              icon: Icon(
-                pdfOnly ? Icons.picture_as_pdf_outlined : Icons.photo_library_outlined,
-                size: 18,
+            if (onGallery != null)
+              OutlinedButton.icon(
+                onPressed: onGallery,
+                icon: Icon(
+                  pdfOnly
+                      ? Icons.picture_as_pdf_outlined
+                      : Icons.photo_library_outlined,
+                  size: 18,
+                ),
+                label: Text(pdfOnly ? 'PDF seç' : 'Galeriden seç'),
               ),
-              label: Text(pdfOnly ? 'PDF seç' : 'Galeriden seç'),
-            ),
           ],
         ],
       ),

@@ -76,3 +76,6 @@ ios/signing/
 # Temp exports
 _tmp_*
 
+# Üniversite ham veri (build script çıktısı universities-tr.json commit edilir)
+landing/data/raw_*.json
+

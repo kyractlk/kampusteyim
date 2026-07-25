@@ -124,7 +124,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                 Text(
                                   'Hesap varsa ${_email.text.trim()} adresine '
                                   'kısa bir KampüsteyimAPP linki gitti '
-                                  '(ör. gaunengineering.com.tr/r/…). '
+                                  '(ör. app.kampusteyim.app/r/…). '
                                   'Tıklanmazsa tarayıcıya yapıştırabilirsin.',
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(

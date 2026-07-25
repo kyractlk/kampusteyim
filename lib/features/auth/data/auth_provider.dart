@@ -782,9 +782,11 @@ class AuthProvider extends ChangeNotifier {
         if (snap.docs.length < 100) break;
       }
       notifyListeners();
-      debugPrint('[auth] directory sync: $loaded kullanıcı');
+      if (kDebugMode) {
+        debugPrint('[auth] directory sync: $loaded kullanıcı');
+      }
     } catch (e) {
-      debugPrint('[auth] syncDirectory: $e');
+      if (kDebugMode) debugPrint('[auth] syncDirectory: $e');
     } finally {
       _directorySyncing = false;
     }
@@ -846,6 +848,7 @@ class AuthProvider extends ChangeNotifier {
       studentVerificationType: m['studentVerificationType'] as String?,
       studentIdFrontUrl: m['studentIdFrontUrl'] as String?,
       studentIdBackUrl: m['studentIdBackUrl'] as String?,
+      registrationRejectReason: '${m['registrationRejectReason'] ?? ''}',
       hideFromSearch: m['hideFromSearch'] == true,
       isPrivateAccount: m['isPrivateAccount'] == true,
       isSpectatorMode: m['isSpectatorMode'] == true,
@@ -890,6 +893,55 @@ class AuthProvider extends ChangeNotifier {
     _upsert(_user!);
     _syncProfileToFirestore(_user!);
     notifyListeners();
+  }
+
+  /// Reddedilen / bekleyen kullanıcı yeni belge yükler → tekrar pending.
+  Future<bool> resubmitStudentVerification({
+    required String verificationType,
+    String? studentIdFrontUrl,
+    String? studentIdBackUrl,
+    String? studentIdDocUrl,
+  }) async {
+    final me = _user;
+    final fb = fa.FirebaseAuth.instance.currentUser;
+    if (me == null || fb == null) {
+      _error = 'Oturum bulunamadı.';
+      notifyListeners();
+      return false;
+    }
+    _busy = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final updated = me.copyWith(
+        accountStatus: 'pending',
+        studentVerificationType: verificationType,
+        studentIdFrontUrl: studentIdFrontUrl,
+        studentIdBackUrl: studentIdBackUrl,
+        studentIdDocUrl: studentIdDocUrl ?? studentIdFrontUrl,
+        registrationRejectReason: '',
+      );
+      await FirebaseFirestore.instance.collection('users').doc(fb.uid).set({
+        'accountStatus': 'pending',
+        'studentVerificationType': verificationType,
+        'studentIdFrontUrl': studentIdFrontUrl,
+        'studentIdBackUrl': studentIdBackUrl,
+        'studentIdDocUrl': studentIdDocUrl ?? studentIdFrontUrl,
+        'registrationRejectReason': null,
+        'registrationResubmittedAt': DateTime.now().toIso8601String(),
+        'updatedAt': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+      _user = updated;
+      _upsert(updated);
+      _busy = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Belge güncellenemedi: $e';
+      _busy = false;
+      notifyListeners();
+      return false;
+    }
   }
 
   void updateNotificationPrefs(NotificationPrefs prefs) {

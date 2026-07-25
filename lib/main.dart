@@ -21,6 +21,7 @@ import 'features/maintenance/maintenance_provider.dart';
 import 'features/maintenance/maintenance_screen.dart';
 import 'features/notifications/notification_provider.dart';
 import 'features/notifications/push_service.dart';
+import 'features/reels/reels_provider.dart';
 import 'features/stories/stories_provider.dart';
 import 'firebase_options.dart';
 import 'routing/app_router.dart';
@@ -104,6 +105,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
   late final AdminProvider _admin;
   late final MaintenanceProvider _maintenance;
   late final StoriesProvider _stories;
+  late final ReelsProvider _reels;
   late final router = createRouter(_auth);
 
   @override
@@ -118,12 +120,16 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _admin = AdminProvider();
     _maintenance = MaintenanceProvider();
     _stories = StoriesProvider()..attachAuth(_auth);
+    _reels = ReelsProvider()..attachAuth(_auth);
     _auth.addListener(_onAuth);
   }
 
   void _onAuth() {
     _notifications.bindUser(_auth.user?.id, profile: _auth.user);
     final u = _auth.user;
+    if (u != null) {
+      unawaited(_admin.loadRolesFromFirestore());
+    }
     if (u != null && u.isCompany) {
       unawaited(_jobs.bindCompanyFromUser(u));
     } else {
@@ -141,6 +147,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _admin.dispose();
     _maintenance.dispose();
     _stories.dispose();
+    _reels.dispose();
     super.dispose();
   }
 
@@ -155,6 +162,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
         ChangeNotifierProvider.value(value: _admin),
         ChangeNotifierProvider.value(value: _maintenance),
         ChangeNotifierProvider.value(value: _stories),
+        ChangeNotifierProvider.value(value: _reels),
       ],
       child: MaterialApp.router(
         title: AppInfo.appName,

@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fa;
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -17,7 +18,10 @@ import 'admin_permissions.dart';
 class AdminProvider extends ChangeNotifier {
   AdminProvider() {
     _roles = StaffRole.defaults();
-    unawaited(loadRolesFromFirestore());
+    // staff_roles okuması signedIn ister — oturum yokken çağırma (console gürültüsü).
+    if (fa.FirebaseAuth.instance.currentUser != null) {
+      unawaited(loadRolesFromFirestore());
+    }
   }
 
   final List<ContentReport> reports = [];
@@ -71,6 +75,12 @@ class AdminProvider extends ChangeNotifier {
   }
 
   Future<void> loadRolesFromFirestore() async {
+    if (fa.FirebaseAuth.instance.currentUser == null) {
+      _roles = StaffRole.defaults();
+      rolesLoading = false;
+      notifyListeners();
+      return;
+    }
     rolesLoading = true;
     notifyListeners();
     try {
@@ -98,8 +108,14 @@ class AdminProvider extends ChangeNotifier {
         _roles[i] =
             _roles[i].copyWith(permissions: {...AdminPermission.values});
       }
+    } on FirebaseException catch (e) {
+      // Beklenen: oturum yok / yetkisiz — güvenlik çalışıyor, release'de loglama.
+      if (kDebugMode && e.code != 'permission-denied') {
+        debugPrint('[admin] loadRoles: $e');
+      }
+      _roles = StaffRole.defaults();
     } catch (e) {
-      debugPrint('[admin] loadRoles: $e');
+      if (kDebugMode) debugPrint('[admin] loadRoles: $e');
       _roles = StaffRole.defaults();
     }
     rolesLoading = false;

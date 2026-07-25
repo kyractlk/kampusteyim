@@ -2,6 +2,17 @@
   "projects": {
     "default": "ayskampuss"
   },
-  "targets": {},
+  "targets": {
+    "ayskampuss": {
+      "hosting": {
+        "app": [
+          "ayskampuss"
+        ],
+        "landing": [
+          "kampusteyim-landing"
+        ]
+      }
+    }
+  },
   "etags": {}
 }

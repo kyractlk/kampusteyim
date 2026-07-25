@@ -26,9 +26,10 @@ class HashtagText extends StatelessWidget {
   final TextStyle? style;
 
   static bool _isAppHost(String host) {
-    return host.contains('gaunengineering.com.tr') ||
+    return host.contains('kampusteyim.app') ||
         host.contains('ayskampuss.web.app') ||
-        host.contains('ayskampuss.firebaseapp.com');
+        host.contains('ayskampuss.firebaseapp.com') ||
+        host.contains('gaunengineering.com.tr');
   }
 
   static String linkLabel(String raw) {

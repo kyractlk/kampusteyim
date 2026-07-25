@@ -18,6 +18,7 @@ import '../features/events/events_screen.dart';
 import '../features/feed/feed_screen.dart';
 import '../features/feed/post_detail_screen.dart';
 import '../features/feedback/feedback_screen.dart';
+import '../features/reels/reels_screen.dart';
 import '../features/home/home_shell.dart';
 import '../features/jobs/company_portal.dart';
 import '../features/jobs/staj_ai_screen.dart';
@@ -343,6 +344,14 @@ GoRouter createRouter(AuthProvider auth) {
               GoRoute(
                 path: '/home',
                 builder: (context, state) => const FeedScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/reels',
+                builder: (context, state) => const ReelsScreen(),
               ),
             ],
           ),

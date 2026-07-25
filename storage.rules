@@ -36,18 +36,27 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
-    // Öğrenci belgesi — kayıt (auth öncesi) + sıkı tip/boyut limiti.
+    // Öğrenci belgesi — kayıt auth öncesi; getDownloadURL için read şart.
+    // Dosya adları rastgele; yalnızca JPEG/PNG/PDF ve 12MB altı.
     match /student_ids/{allPaths=**} {
-      allow read: if signedIn();
+      allow read: if true;
       allow write: if request.resource.size < 12 * 1024 * 1024
         && (
-          request.resource.contentType.matches('image/jpeg')
-          || request.resource.contentType.matches('image/png')
+          request.resource.contentType == 'image/jpeg'
+          || request.resource.contentType == 'image/png'
           || request.resource.contentType == 'application/pdf'
         );
     }
 
     match /stories/{userId}/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && underSize()
+        && isMedia();
+    }
+
+    match /reels/{userId}/{allPaths=**} {
       allow read: if signedIn();
       allow write: if signedIn()
         && request.auth.uid == userId

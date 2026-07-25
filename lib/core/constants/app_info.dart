@@ -8,11 +8,16 @@ class AppInfo {
   static const author = 'Kayra Çatalkaya';
   static const supportEmail = 'info@gaunengineering.com.tr';
   static const versionLabel = '1.1.0';
-  /// Paylaşılabilir derin linkler (Hosting SPA).
-  static const webBaseUrl = 'https://ayskampuss.web.app';
-  static const privacyUrl = 'https://ayskampuss.web.app/privacy.html';
-  static const termsUrl = 'https://ayskampuss.web.app/terms.html';
-  static const deleteAccountUrl = 'https://ayskampuss.web.app/delete-account.html';
-  static const copyright =
-      '© KampüsteyimAPP · AYS Tech';
+
+  /// Tanıtım sitesi
+  static const marketingUrl = 'https://kampusteyim.app';
+
+  /// Uygulama (SPA) — paylaşım / derin linkler
+  static const webBaseUrl = 'https://app.kampusteyim.app';
+  static const privacyUrl = 'https://app.kampusteyim.app/privacy.html';
+  static const termsUrl = 'https://app.kampusteyim.app/terms.html';
+  static const deleteAccountUrl = 'https://app.kampusteyim.app/delete-account.html';
+  static const childSafetyUrl = 'https://app.kampusteyim.app/child-safety.html';
+
+  static const copyright = '© KampüsteyimAPP · AYS Tech';
 }

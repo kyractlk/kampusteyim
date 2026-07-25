@@ -20,7 +20,8 @@ class HomeShell extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
 
   void _onTap(BuildContext context, int index) {
-    if (index == 3) {
+    // Profil sekmesi (son index)
+    if (index == 4) {
       final auth = context.read<AuthProvider>();
       if (!auth.isAuthenticated) {
         AuthGate.requireAuth(
@@ -149,9 +150,14 @@ class HomeShell extends StatelessWidget {
           label: 'Akış',
         ),
         const NavigationDestination(
+          icon: Icon(Icons.movie_filter_outlined),
+          selectedIcon: Icon(Icons.movie_filter_rounded),
+          label: 'Reels',
+        ),
+        const NavigationDestination(
           icon: Icon(Icons.campaign_outlined),
           selectedIcon: Icon(Icons.campaign_rounded),
-          label: 'Duyurular',
+          label: 'Duyuru',
         ),
         const NavigationDestination(
           icon: Icon(Icons.event_outlined),
@@ -217,27 +223,35 @@ class _DesktopRail extends StatelessWidget {
           ),
           _RailItem(
             selected: selectedIndex == 1,
-            icon: Icons.campaign_outlined,
-            selectedIcon: Icons.campaign_rounded,
-            label: 'Duyurular',
+            icon: Icons.movie_filter_outlined,
+            selectedIcon: Icons.movie_filter_rounded,
+            label: 'Reels',
             showLabel: showLabels,
             onTap: () => onSelect(1),
           ),
           _RailItem(
             selected: selectedIndex == 2,
-            icon: Icons.event_outlined,
-            selectedIcon: Icons.event_rounded,
-            label: 'Etkinlik',
+            icon: Icons.campaign_outlined,
+            selectedIcon: Icons.campaign_rounded,
+            label: 'Duyurular',
             showLabel: showLabels,
             onTap: () => onSelect(2),
           ),
           _RailItem(
             selected: selectedIndex == 3,
+            icon: Icons.event_outlined,
+            selectedIcon: Icons.event_rounded,
+            label: 'Etkinlik',
+            showLabel: showLabels,
+            onTap: () => onSelect(3),
+          ),
+          _RailItem(
+            selected: selectedIndex == 4,
             icon: loggedIn ? Icons.person_outline : Icons.login_rounded,
             selectedIcon: loggedIn ? Icons.person_rounded : Icons.login_rounded,
             label: loggedIn ? 'Profil' : 'Giriş',
             showLabel: showLabels,
-            onTap: () => onSelect(3),
+            onTap: () => onSelect(4),
           ),
           const SizedBox(height: 4),
           _RailItem(

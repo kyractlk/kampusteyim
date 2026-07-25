@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/storage/media_upload.dart';
@@ -74,6 +75,8 @@ class StoriesProvider extends ChangeNotifier {
         _loading = false;
         _error = null;
         notifyListeners();
+        // Görselleri önbelleğe al (hikâye halkası hızı)
+        unawaited(_prefetchVisibleMedia());
       },
       onError: (e) {
         debugPrint('[stories] bind: $e');
@@ -106,7 +109,37 @@ class StoriesProvider extends ChangeNotifier {
     }).toList(growable: false);
   }
 
-  /// Halka çubuğu: yazar bazında gruplanmış aktif hikâyeler.
+  Future<void> _prefetchVisibleMedia() async {
+    final urls = visibleItemsForViewer()
+        .where((s) => s.mediaType != MediaType.video)
+        .map((s) => s.mediaUrl)
+        .where((u) => u.startsWith('http'))
+        .take(40);
+    for (final url in urls) {
+      try {
+        final stream = NetworkImage(url).resolve(ImageConfiguration.empty);
+        final completer = Completer<void>();
+        late ImageStreamListener listener;
+        listener = ImageStreamListener(
+          (info, sync) {
+            if (!completer.isCompleted) completer.complete();
+            stream.removeListener(listener);
+          },
+          onError: (e, st) {
+            if (!completer.isCompleted) completer.complete();
+            stream.removeListener(listener);
+          },
+        );
+        stream.addListener(listener);
+        await completer.future.timeout(
+          const Duration(seconds: 4),
+          onTimeout: () {},
+        );
+      } catch (_) {}
+    }
+  }
+
+  /// Halka çubuğu: yazar bazında gruplanmış aktif hikâyeler (en yeni üste).
   List<Story> storyRings() {
     final visible = visibleItemsForViewer();
     final byAuthor = <String, List<StoryItem>>{};

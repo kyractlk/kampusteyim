@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#0B1F3A" />
+  <title>KampüsteyimAPP · Yönlendiriliyor…</title>
+  <link rel="icon" href="./kampusteyim_icon.png" type="image/png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy: #0B1F3A;
+      --navy-deep: #061426;
+      --cyan: #00D4C8;
+      --lime: #89C741;
+      --font-display: "Syne", system-ui, sans-serif;
+      --font-body: "Instrument Sans", system-ui, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      overflow-x: hidden;
+    }
+    body {
+      min-height: 100svh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-body);
+      color: #fff;
+      background:
+        radial-gradient(ellipse 70% 50% at 20% 30%, rgba(0, 212, 200, 0.28), transparent 55%),
+        radial-gradient(ellipse 60% 45% at 85% 20%, rgba(137, 199, 65, 0.2), transparent 50%),
+        linear-gradient(155deg, #061426 0%, #0B1F3A 50%, #123456 100%);
+      padding: 1.5rem;
+      text-align: center;
+    }
+    .card {
+      max-width: 22rem;
+    }
+    .logo {
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+      margin: 0 auto 1.25rem;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+      animation: float 2.8s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: clamp(1.35rem, 5vw, 1.65rem);
+      letter-spacing: -0.03em;
+      margin: 0 0 0.5rem;
+      line-height: 1.2;
+    }
+    h1 span { color: var(--cyan); }
+    .status {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 0.98rem;
+      font-weight: 500;
+    }
+    .dots::after {
+      content: "";
+      animation: dots 1.2s steps(4, end) infinite;
+    }
+    @keyframes dots {
+      0% { content: ""; }
+      25% { content: "."; }
+      50% { content: ".."; }
+      75% { content: "..."; }
+    }
+    .fallback {
+      margin-top: 1.5rem;
+      font-size: 0.88rem;
+    }
+    .fallback a {
+      color: var(--cyan);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .fallback a:hover { text-decoration: underline; }
+    @media (prefers-reduced-motion: reduce) {
+      .logo, .dots::after { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card" role="status" aria-live="polite">
+    <img class="logo" src="./kampusteyim_icon.png" width="72" height="72" alt="KampüsteyimAPP" />
+    <h1>Kampüsteyim<span>APP</span></h1>
+    <p class="status">Yönlendiriliyor<span class="dots" aria-hidden="true"></span></p>
+    <p class="fallback">
+      <a id="manual" href="https://app.kampusteyim.app">Uygulamaya git</a>
+    </p>
+  </div>
+
+  <script>
+(function () {
+  const TRACK_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/trackPromoScan';
+  const PROMO_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/getPromoPublic';
+  const APP_FALLBACK = 'https://app.kampusteyim.app';
+  const TIMEOUT_MS = 2500;
+
+  const ua = navigator.userAgent || '';
+  let platform = 'other';
+  if (/iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && 'ontouchend' in document)) {
+    platform = 'ios';
+  } else if (/android/i.test(ua)) {
+    platform = 'android';
+  }
+
+  let redirected = false;
+  function go(url) {
+    if (redirected) return;
+    const target = (url && String(url).trim()) || APP_FALLBACK;
+    redirected = true;
+    location.href = target;
+  }
+
+  document.getElementById('manual').href = APP_FALLBACK;
+
+  const timer = setTimeout(() => go(APP_FALLBACK), TIMEOUT_MS);
+
+  function pickFromPromo(cfg) {
+    if (!cfg) return APP_FALLBACK;
+    if (platform === 'ios') return cfg.appStoreUrl || cfg.playStoreUrl || APP_FALLBACK;
+    if (platform === 'android') return cfg.playStoreUrl || cfg.appStoreUrl || APP_FALLBACK;
+    return cfg.playStoreUrl || cfg.appStoreUrl || APP_FALLBACK;
+  }
+
+  function fetchJson(url, opts, ms) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms);
+    return fetch(url, { ...opts, signal: ctrl.signal })
+      .then((r) => r.json())
+      .finally(() => clearTimeout(t));
+  }
+
+  fetchJson(
+    TRACK_URL,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, source: 'qr' }),
+    },
+    TIMEOUT_MS - 200,
+  )
+    .then((data) => {
+      if (data && data.ok) {
+        clearTimeout(timer);
+        const url =
+          data.redirectUrl ||
+          (platform === 'ios' ? data.appStoreUrl : data.playStoreUrl) ||
+          data.playStoreUrl ||
+          data.appStoreUrl;
+        go(url);
+        return;
+      }
+      throw new Error('track');
+    })
+    .catch(() => {
+      return fetchJson(PROMO_URL, { method: 'GET' }, 1200)
+        .then((data) => {
+          clearTimeout(timer);
+          go(pickFromPromo(data && data.ok ? data : null));
+        })
+        .catch(() => {
+          clearTimeout(timer);
+          go(APP_FALLBACK);
+        });
+    });
+})();
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, HttpsError, onRequest } = require('firebase-functions/v2/https');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { initializeApp } = require('firebase-admin/app');
@@ -83,8 +83,12 @@ async function sendMail({ to, subject, html }) {
 }
 
 const BRAND_LOGO =
-  'https://gaunengineering.com.tr/brand/ays-logo.png';
-const BRAND_HOME = 'https://gaunengineering.com.tr';
+  'https://ayskampuss.web.app/kampusteyim_icon.png';
+/** Uygulama (SPA) — e-posta CTA ve derin linkler */
+const BRAND_HOME = 'https://app.kampusteyim.app';
+/** Tanıtım sitesi */
+const BRAND_MARKETING = 'https://kampusteyim.app';
+const BRAND_LABEL = 'KampüsteyimAPP';
 
 /** Kısa, yapıştırılabilir sıfırlama kodu (token query string yok). */
 function makeShortResetCode() {
@@ -152,10 +156,6 @@ function passwordResetEmailHtml(link) {
     bodyHtml: `
       <p>KampüsteyimAPP hesabın için şifre sıfırlama talebi aldık.</p>
       <p>Aşağıdaki butona tıkla. Bağlantı <b>1 saat</b> geçerlidir.</p>
-      <p style="margin:20px 0 8px;font-size:13px;color:#64748b;">Buton çalışmazsa bu kısa adresi tarayıcıya yapıştır:</p>
-      <p style="margin:0;padding:14px 16px;background:#F1F5F9;border:1px dashed #94A3B8;border-radius:12px;text-align:center;word-break:break-all;">
-        <a href="${link}" style="color:#0B1F3A;font-weight:700;font-size:15px;text-decoration:none;letter-spacing:0.02em;">${link}</a>
-      </p>
     `,
     ctaLabel: 'Şifremi sıfırla',
     ctaUrl: link,
@@ -184,9 +184,6 @@ function brandedEmail({
           <a href="${safeCtaUrl}" style="display:inline-block;background:#0B1F3A;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:12px;font-weight:700;font-size:15px;">
             ${safeCtaLabel}
           </a>
-        </p>
-        <p style="margin:0 0 8px;text-align:center;font-size:12px;color:#6b7280;word-break:break-all;">
-          <a href="${safeCtaUrl}" style="color:#0EA5E9;text-decoration:none;">${safeCtaUrl}</a>
         </p>`
       : '';
   const note = footerNote
@@ -207,9 +204,9 @@ function brandedEmail({
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #E2E8F0;box-shadow:0 8px 28px rgba(11,31,58,0.08);">
           <tr>
             <td style="background:linear-gradient(135deg,#0B1F3A 0%,#12355C 100%);padding:28px 28px 22px;text-align:center;">
-              <img src="${BRAND_LOGO}" alt="AYS Tech" width="64" height="64" style="display:inline-block;border-radius:50%;background:#ffffff;padding:4px;"/>
+              <img src="${BRAND_LOGO}" alt="KampüsteyimAPP" width="64" height="64" style="display:inline-block;border-radius:16px;background:#ffffff;padding:4px;"/>
               <p style="margin:14px 0 0;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.2px;">KampüsteyimAPP</p>
-              <p style="margin:4px 0 0;color:#A8C5E2;font-size:13px;">AYS Tech · GAÜN Mühendislik Topluluğu</p>
+              <p style="margin:4px 0 0;color:#A8C5E2;font-size:13px;">AYS Tech · Kampüs sosyal ağı</p>
             </td>
           </tr>
           <tr>
@@ -224,10 +221,14 @@ function brandedEmail({
           <tr>
             <td style="padding:8px 28px 28px;">
               <hr style="border:none;border-top:1px solid #E2E8F0;margin:0 0 16px;"/>
-              <p style="margin:0;font-size:12px;color:#94A3B8;line-height:1.5;text-align:center;">
+              <p style="margin:0 0 14px;font-size:12px;color:#94A3B8;line-height:1.5;text-align:center;">
                 Bu mail KampüsteyimAPP platformundan gönderildi.<br/>
-                <a href="${BRAND_HOME}" style="color:#0EA5E9;text-decoration:none;">gaunengineering.com.tr</a>
-                · AYS Tech · Kayra Çatalkaya
+                AYS Tech · Kayra Çatalkaya
+              </p>
+              <p style="margin:0;text-align:center;">
+                <a href="${BRAND_HOME}" style="display:inline-block;background:#0EA5E9;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:10px;font-weight:700;font-size:13px;">
+                  ${BRAND_LABEL}’i aç
+                </a>
               </p>
             </td>
           </tr>
@@ -427,6 +428,47 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
   }
 
   const uid = request.auth.uid;
+
+  // User başı CV-AI kotası (app_config/cv_ai_limits) — 0 veya yok = sınırsız
+  try {
+    const limSnap = await db.collection('app_config').doc('cv_ai_limits').get();
+    const lim = limSnap.exists ? limSnap.data() || {} : {};
+    const perUser =
+      typeof lim.perUserDailyLimit === 'number' ? lim.perUserDailyLimit : null;
+    const enabled = lim.enabled !== false;
+    if (enabled && perUser != null && perUser >= 0 && Number.isFinite(perUser)) {
+      if (perUser === 0) {
+        // 0 = sınırsız (altyapı hazır, varsayılan)
+      } else {
+        const day = new Date().toISOString().slice(0, 10);
+        const usageRef = db
+          .collection('users')
+          .doc(uid)
+          .collection('cv_ai_usage')
+          .doc(day);
+        const usage = await usageRef.get();
+        const count = (usage.data() || {}).count || 0;
+        if (count >= perUser) {
+          throw new HttpsError(
+            'resource-exhausted',
+            `Günlük CV-AI limitine ulaştın (${perUser}). Yarın tekrar dene.`,
+          );
+        }
+        await usageRef.set(
+          {
+            count: count + 1,
+            updatedAt: new Date().toISOString(),
+            limit: perUser,
+          },
+          { merge: true },
+        );
+      }
+    }
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    console.warn('[generateAtsCv] quota check', e?.message || e);
+  }
+
   const {
     cvData,
     languageCode = 'tr',
@@ -1992,9 +2034,10 @@ async function runGuardPostReview({
     try {
       const h = new URL(u.startsWith('http') ? u : `https://${u}`).hostname;
       return (
-        h.includes('gaunengineering.com.tr') ||
+        h.includes('kampusteyim.app') ||
         h.includes('ayskampuss.web.app') ||
         h.includes('ayskampuss.firebaseapp.com') ||
+        h.includes('gaunengineering.com.tr') ||
         h.includes('aystech.com') ||
         h.includes('gantep.edu.tr') ||
         h.includes('picsum.photos') ||
@@ -2344,7 +2387,7 @@ exports.guardOnPostCreated = onDocumentCreated(
   },
 );
 
-const MT_LOGO = `${BRAND_HOME}/mt-logo.png`;
+const MT_LOGO = 'https://ayskampuss.web.app/mt-logo.png';
 const AYS_LOGO = BRAND_LOGO;
 
 function brandedEmailVariant({
@@ -2393,7 +2436,9 @@ function brandedEmailVariant({
           ${cta}${note}
         </td></tr>
         <tr><td style="padding:0 28px 28px;text-align:center;font-size:12px;color:#94A3B8;">
-          <a href="${BRAND_HOME}" style="color:#0EA5E9;text-decoration:none;">gaunengineering.com.tr</a>
+          <a href="${BRAND_HOME}" style="display:inline-block;background:#0EA5E9;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:10px;font-weight:700;font-size:13px;">
+            KampüsteyimAPP’i aç
+          </a>
         </td></tr>
       </table>
     </td></tr>
@@ -4003,25 +4048,44 @@ exports.reviewStudentRegistration = onCall(
       title,
       body,
       emoji: status === 'approved' ? '✅' : '❌',
-      type: 'admin_broadcast',
+      type: 'registration_review',
       read: false,
       createdAt: new Date().toISOString(),
     });
 
-    const tokens = u.fcmTokens || [];
-    if (tokens.length) {
-      try {
-        await sendFcmToUser(
-          userDoc.id,
-          tokens,
-          buildCampusPushPayload({
-            title: `KampüsteyimAPP · ${title}`,
-            body,
-            type: 'admin_broadcast',
-            data: { toUserId: userDoc.id },
-          }),
-        );
-      } catch (_) {}
+    // Token’ları taze oku (onay anında dizi boş/eski olabilir)
+    let tokens = [];
+    try {
+      const fresh = await userDoc.ref.get();
+      tokens = (fresh.data() || {}).fcmTokens || u.fcmTokens || [];
+    } catch (_) {
+      tokens = u.fcmTokens || [];
+    }
+    let push = { successCount: 0, failureCount: 0 };
+    try {
+      push = await sendFcmToUser(
+        userDoc.id,
+        tokens,
+        buildCampusPushPayload({
+          title: `KampüsteyimAPP · ${title}`,
+          body,
+          type: 'registration_review',
+          data: {
+            toUserId: userDoc.id,
+            status,
+            route: status === 'approved' ? '/home' : '/pending-approval',
+          },
+        }),
+      );
+    } catch (e) {
+      console.warn('[reviewStudentRegistration] push', e?.message || e);
+    }
+    if (!tokens.length) {
+      console.warn(
+        '[reviewStudentRegistration] no FCM tokens for',
+        userDoc.id,
+        '— inbox yazıldı, cihaz token kaydı yok',
+      );
     }
 
     const email = String(u.email || '').trim();
@@ -4044,7 +4108,358 @@ exports.reviewStudentRegistration = onCall(
       }
     }
 
-    return { ok: true, status };
+    return { ok: true, status, push };
+ * hostLeftAt alanı client'ta markHostLeft ile yazılır.
+ */
+exports.studyRoomHostTimeout = onSchedule(
+  {
+    schedule: 'every 10 minutes',
+    region: 'europe-west1',
+    timeoutSeconds: 120,
+  },
+  async () => {
+    const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    // Tek alan sorgusu — composite index gerekmez.
+    const snap = await db
+      .collection('study_rooms')
+      .where('hostLeftAt', '<=', cutoff)
+      .limit(100)
+      .get();
+
+    if (snap.empty) {
+      console.log('[studyRoomHostTimeout] none');
+      return null;
+    }
+
+    let closed = 0;
+    for (const doc of snap.docs) {
+      const d = doc.data() || {};
+      const status = String(d.status || '');
+      if (status === 'ended' || !d.hostLeftAt) continue;
+      const leftMs = new Date(d.hostLeftAt).getTime();
+      if (Number.isNaN(leftMs) || Date.now() - leftMs < 60 * 60 * 1000) continue;
+
+      const nowIso = new Date().toISOString();
+      await doc.ref.set(
+        {
+          status: 'ended',
+          endedAt: nowIso,
+          chatOpen: false,
+          endReason: 'host_left_timeout',
+          hostLeftAt: FieldValue.delete(),
+        },
+        { merge: true },
+      );
+      await doc.ref.collection('events').add({
+        type: 'ended',
+        actorId: 'system',
+        reason: 'host_left_timeout',
+        at: nowIso,
+      });
+      closed += 1;
+    }
+    console.log('[studyRoomHostTimeout] closed', closed);
+    return null;
+  },
+);
+
+/**
+ * Landing formları: topluluk / şirket hesabı / reklam başvuruları.
+ * Public POST → Firestore lead_applications + admin mail.
+ */
+exports.submitLeadApplication = onRequest(
+  {
+    region: 'europe-west1',
+    cors: true,
+    timeoutSeconds: 60,
+  },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json({ ok: false, error: 'POST gerekli' });
+      return;
+    }
+
+    try {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
+      const type = String(body.type || '').trim(); // community | company | advertising | support
+      const allowed = new Set(['community', 'company', 'advertising', 'support']);
+      if (!allowed.has(type)) {
+        res.status(400).json({ ok: false, error: 'Geçersiz başvuru tipi' });
+        return;
+      }
+
+      const name = sanitizePlainText(body.name || body.contactName || '', 80);
+      const email = String(body.email || '').trim().toLowerCase();
+      const phone = sanitizePlainText(body.phone || '', 40);
+      const orgName = sanitizePlainText(body.orgName || body.companyName || body.communityName || '', 120);
+      const city = sanitizePlainText(body.city || '', 60);
+      const university = sanitizePlainText(body.university || '', 160);
+      const message = sanitizePlainText(body.message || '', 2000);
+      const website = sanitizePlainText(body.website || '', 200);
+      const interest = sanitizePlainText(body.interest || '', 80); // company: account|ads|both
+
+      if (!name || name.length < 2) {
+        res.status(400).json({ ok: false, error: 'Ad soyad gerekli' });
+        return;
+      }
+      if (!isValidEmail(email)) {
+        res.status(400).json({ ok: false, error: 'Geçerli e-posta gerekli' });
+        return;
+      }
+      if (type === 'support' && !phone) {
+        res.status(400).json({ ok: false, error: 'Destek için telefon gerekli' });
+        return;
+      }
+      if (type === 'community' && (!city || !university || !orgName)) {
+        res.status(400).json({
+          ok: false,
+          error: 'Topluluk için il, üniversite ve topluluk adı gerekli',
+        });
+        return;
+      }
+      if (
+        (type === 'company' || type === 'advertising') &&
+        !orgName &&
+        type !== 'support'
+      ) {
+        res.status(400).json({ ok: false, error: 'Şirket / marka adı gerekli' });
+        return;
+      }
+
+      const recent = await db
+        .collection('lead_applications')
+        .where('email', '==', email)
+        .limit(5)
+        .get();
+      const recentCount = recent.docs.filter((d) => {
+        const t = new Date(d.data()?.createdAt || 0).getTime();
+        return Date.now() - t < 10 * 60 * 1000;
+      }).length;
+      if (recentCount >= 2) {
+        res.status(429).json({
+          ok: false,
+          error: 'Çok fazla deneme. Birkaç dakika sonra tekrar dene.',
+        });
+        return;
+      }
+
+      const nowIso = new Date().toISOString();
+      const doc = {
+        type,
+        status: 'open',
+        name,
+        email,
+        phone,
+        orgName,
+        city,
+        university,
+        website,
+        interest,
+        message,
+        source: 'landing',
+        userAgent: String(req.get('user-agent') || '').slice(0, 240),
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      const ref = await db.collection('lead_applications').add(doc);
+
+      const typeLabel =
+        type === 'community'
+          ? 'Topluluk başvurusu'
+          : type === 'advertising'
+            ? 'Reklam / iş ortaklığı'
+            : type === 'support'
+              ? 'Destek talebi'
+              : 'Şirket hesabı / reklam';
+
+      try {
+        const admins = await db.collection('users').limit(400).get();
+        const adminEmails = [];
+        for (const d of admins.docs) {
+          const u = d.data() || {};
+          if (u.isSuperAdmin === true || u.role === 'admin') {
+            const e = String(u.email || '').trim();
+            if (e.includes('@') && !e.includes('@invalid.local')) adminEmails.push(e);
+          }
+        }
+        const unique = [...new Set(adminEmails)].slice(0, 12);
+        await Promise.all(
+          unique.map((to) =>
+            sendMail({
+              to,
+              subject: `KampüsteyimAPP · Yeni ${typeLabel}`,
+              html: brandedEmail({
+                title: typeLabel,
+                greeting: 'Merhaba,',
+                bodyHtml: `
+                  <p><b>${escapeHtml(orgName || name)}</b> landing üzerinden başvuru bıraktı.</p>
+                  <ul>
+                    <li>İletişim: ${escapeHtml(name)} · ${escapeHtml(email)}${phone ? ` · ${escapeHtml(phone)}` : ''}</li>
+                    ${city ? `<li>İl: ${escapeHtml(city)}</li>` : ''}
+                    ${university ? `<li>Üniversite: ${escapeHtml(university)}</li>` : ''}
+                    ${interest ? `<li>İstek: ${escapeHtml(interest)}</li>` : ''}
+                    ${website ? `<li>Web: ${escapeHtml(website)}</li>` : ''}
+                    ${message ? `<li>Mesaj: ${escapeHtml(message)}</li>` : ''}
+                  </ul>
+                `,
+                ctaLabel: 'Admin paneli',
+                ctaUrl: `${BRAND_HOME}/admin`,
+              }),
+            }).catch(() => {}),
+          ),
+        );
+      } catch (e) {
+        console.warn('[submitLeadApplication] admin mail', e?.message || e);
+      }
+
+      res.status(200).json({ ok: true, id: ref.id });
+    } catch (e) {
+      console.error('[submitLeadApplication]', e);
+      res.status(500).json({ ok: false, error: 'Başvuru kaydedilemedi' });
+    }
+  },
+);
+
+const PROMO_DOC = 'app_config/promo';
+const PROMO_STATS = 'app_config/promo_stats';
+const DEFAULT_QR_LANDING = `${BRAND_MARKETING}/get.html`;
+
+async function readPromoConfig() {
+  const snap = await db.doc(PROMO_DOC).get();
+  const d = snap.exists ? snap.data() || {} : {};
+  return {
+    playStoreUrl: String(d.playStoreUrl || '').trim(),
+    appStoreUrl: String(d.appStoreUrl || '').trim(),
+    qrTargetUrl: String(d.qrTargetUrl || DEFAULT_QR_LANDING).trim() || DEFAULT_QR_LANDING,
+    updatedAt: d.updatedAt || null,
+  };
+}
+
+/** Public: landing indir butonları + QR hedefi */
+exports.getPromoPublic = onRequest(
+  { region: 'europe-west1', cors: true },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    try {
+      const cfg = await readPromoConfig();
+      const statsSnap = await db.doc(PROMO_STATS).get();
+      const s = statsSnap.exists ? statsSnap.data() || {} : {};
+      res.status(200).json({
+        ok: true,
+        ...cfg,
+        stats: {
+          total: Number(s.total || 0),
+          ios: Number(s.ios || 0),
+          android: Number(s.android || 0),
+          other: Number(s.other || 0),
+        },
+      });
+    } catch (e) {
+      console.error('[getPromoPublic]', e);
+      res.status(500).json({ ok: false, error: 'Okunamadı' });
+    }
+  },
+);
+
+/** QR /get sayfası: tarama logla + platform yönlendir */
+exports.trackPromoScan = onRequest(
+  { region: 'europe-west1', cors: true },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST' && req.method !== 'GET') {
+      res.status(405).json({ ok: false, error: 'GET/POST' });
+      return;
+    }
+    try {
+      const body =
+        req.method === 'GET'
+          ? req.query || {}
+          : typeof req.body === 'string'
+            ? JSON.parse(req.body || '{}')
+            : req.body || {};
+      let platform = String(body.platform || '').toLowerCase();
+      const ua = String(req.get('user-agent') || body.ua || '');
+      if (!platform) {
+        if (/iphone|ipad|ipod|macintosh.*mobile/i.test(ua)) platform = 'ios';
+        else if (/android/i.test(ua)) platform = 'android';
+        else platform = 'other';
+      }
+      if (!['ios', 'android', 'other'].includes(platform)) platform = 'other';
+
+      const cfg = await readPromoConfig();
+      const nowIso = new Date().toISOString();
+      await db.collection('promo_scans').add({
+        platform,
+        ua: ua.slice(0, 240),
+        source: String(body.source || 'qr').slice(0, 40),
+        createdAt: nowIso,
+      });
+      const inc = {
+        total: FieldValue.increment(1),
+        [platform]: FieldValue.increment(1),
+        updatedAt: nowIso,
+      };
+      await db.doc(PROMO_STATS).set(inc, { merge: true });
+
+      const redirectUrl =
+        platform === 'ios'
+          ? cfg.appStoreUrl || cfg.playStoreUrl || BRAND_HOME
+          : platform === 'android'
+            ? cfg.playStoreUrl || cfg.appStoreUrl || BRAND_HOME
+            : cfg.playStoreUrl || cfg.appStoreUrl || BRAND_HOME;
+
+      if (req.method === 'GET' && String(body.redirect || '1') !== '0') {
+        res.redirect(302, redirectUrl || BRAND_HOME);
+        return;
+      }
+      res.status(200).json({
+        ok: true,
+        platform,
+        redirectUrl,
+        playStoreUrl: cfg.playStoreUrl,
+        appStoreUrl: cfg.appStoreUrl,
+      });
+    } catch (e) {
+      console.error('[trackPromoScan]', e);
+      res.status(500).json({ ok: false, error: 'Kayıt başarısız' });
+    }
+  },
+);
+
+/** Admin: Play / App Store linklerini kaydet */
+exports.updatePromoConfig = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    const playStoreUrl = sanitizePlainText(request.data?.playStoreUrl || '', 400);
+    const appStoreUrl = sanitizePlainText(request.data?.appStoreUrl || '', 400);
+    const qrTargetUrl = sanitizePlainText(
+      request.data?.qrTargetUrl || DEFAULT_QR_LANDING,
+      400,
+    );
+    const nowIso = new Date().toISOString();
+    await db.doc(PROMO_DOC).set(
+      {
+        playStoreUrl,
+        appStoreUrl,
+        qrTargetUrl: qrTargetUrl || DEFAULT_QR_LANDING,
+        updatedAt: nowIso,
+        updatedBy: request.auth.uid,
+      },
+      { merge: true },
+    );
+    return { ok: true, playStoreUrl, appStoreUrl, qrTargetUrl: qrTargetUrl || DEFAULT_QR_LANDING };
   },
 );
 
