@@ -12,7 +12,7 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 120
     integrations:
-      app_store_connect: KampusteyimASC
+      app_store_connect: AYSCODEMAGIC
     environment:
       ios_signing:
         distribution_type: app_store
@@ -91,7 +91,7 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 120
     integrations:
-      app_store_connect: KampusteyimASC
+      app_store_connect: AYSCODEMAGIC
     environment:
       vars:
         BUNDLE_ID: com.aystech.mtMobil
