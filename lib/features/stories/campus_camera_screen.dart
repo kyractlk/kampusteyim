@@ -893,6 +893,9 @@ class _PublishPanelState extends State<_PublishPanel> {
   void initState() {
     super.initState();
     widget.captionCtrl.addListener(_onCaptionChanged);
+    _focus.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
