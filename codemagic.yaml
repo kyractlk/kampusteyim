@@ -93,6 +93,8 @@ workflows:
     integrations:
       app_store_connect: AYSCODEMAGIC
     environment:
+      groups:
+        - ios_code_signing
       vars:
         BUNDLE_ID: com.aystech.mtMobil
         DEVICE_UDID: 00008120-000631242151A01E
@@ -116,10 +118,10 @@ workflows:
           set -e
           if [ -z "$CERTIFICATE_PRIVATE_KEY" ]; then
             echo "ERROR: CERTIFICATE_PRIVATE_KEY eksik."
-            echo "Codemagic → Team/App Environment variables → Secure:"
-            echo "  Name: CERTIFICATE_PRIVATE_KEY"
-            echo "  Value: openssl genrsa 2048 çıktısı (PEM)"
-            echo "Sonra bu Ad Hoc build'i tekrar çalıştır."
+            echo "Codemagic → Environment variables → Group: ios_code_signing"
+            echo "  Name: CERTIFICATE_PRIVATE_KEY (Secure)"
+            echo "  Value: ios/signing/certificate_private_key.pem içeriği"
+            echo "codemagic.yaml environment.groups içinde ios_code_signing olmalı."
             exit 1
           fi
           keychain initialize
