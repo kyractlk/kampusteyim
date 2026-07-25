@@ -512,13 +512,13 @@ class AuthProvider extends ChangeNotifier {
     required String city,
     required String university,
     required String username,
+    required String emailTicket,
     bool kvkkAccepted = false,
     bool marketingConsent = false,
     String? studentIdDocUrl,
     String? studentVerificationType,
     String? studentIdFrontUrl,
     String? studentIdBackUrl,
-    bool requireVerification = true,
   }) async {
     _busy = true;
     _error = null;
@@ -531,42 +531,36 @@ class AuthProvider extends ChangeNotifier {
       return false;
     }
 
-    if (requireVerification) {
-      final type = studentVerificationType;
-      if (type == 'card') {
-        if (studentIdFrontUrl == null || studentIdFrontUrl.trim().isEmpty) {
-          _error = 'Öğrenci kartı ön yüzü zorunlu.';
-          _busy = false;
-          notifyListeners();
-          return false;
-        }
-      } else if (type == 'document') {
-        if (studentIdDocUrl == null || studentIdDocUrl.trim().isEmpty) {
-          _error = 'Öğrenci belgesi PDF zorunlu.';
-          _busy = false;
-          notifyListeners();
-          return false;
-        }
-      } else {
-        _error = 'Doğrulama tipi seçilmedi.';
-        _busy = false;
-        notifyListeners();
-        return false;
-      }
+    final ticket = emailTicket.trim();
+    if (ticket.length < 20) {
+      _error = 'Önce e-posta adresine gelen kodu doğrula.';
+      _busy = false;
+      notifyListeners();
+      return false;
+    }
+
+    final hasDocs = (studentIdFrontUrl ?? '').trim().isNotEmpty ||
+        (studentIdDocUrl ?? '').trim().isNotEmpty;
+    var type = studentVerificationType;
+    if (type == 'card' &&
+        (studentIdFrontUrl == null || studentIdFrontUrl.trim().isEmpty)) {
+      type = hasDocs ? type : null;
+    }
+    if (type == 'document' &&
+        (studentIdDocUrl == null || studentIdDocUrl.trim().isEmpty)) {
+      type = null;
     }
 
     if ([
       email,
-      studentNo,
       password,
       firstName,
       lastName,
-      phone,
       city,
       university,
       username,
     ].any((e) => e.trim().isEmpty)) {
-      _error = 'Tüm alanları doldurun (kullanıcı adı dahil).';
+      _error = 'E-posta, şifre, ad, soyad, kampüs ve kullanıcı adı zorunlu.';
       _busy = false;
       notifyListeners();
       return false;
@@ -587,7 +581,6 @@ class AuthProvider extends ChangeNotifier {
     }
 
     try {
-      // AI + uniqueness claim (auth olmadan önce local check, sonra claim)
       final pre = await FirebaseFirestore.instance
           .collection('handles')
           .doc(cleanUser)
@@ -605,14 +598,29 @@ class AuthProvider extends ChangeNotifier {
       );
       await cred.user?.updateDisplayName('$firstName $lastName');
 
+      try {
+        final consume = FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('consumeRegistrationEmailTicket');
+        await consume.call({'ticket': ticket});
+      } catch (e) {
+        debugPrint('[auth] consumeRegistrationEmailTicket: $e');
+        try {
+          await cred.user?.delete();
+        } catch (_) {}
+        _error =
+            'E-posta doğrulaması geçersiz veya süresi dolmuş. Yeni kod iste.';
+        _busy = false;
+        notifyListeners();
+        return false;
+      }
+
       String finalUsername = cleanUser;
       var status = 'ok';
       String? aiNote;
 
       try {
-        final callable =
-            FirebaseFunctions.instanceFor(region: 'europe-west1')
-                .httpsCallable('claimUsername');
+        final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('claimUsername');
         final res = await callable.call({
           'username': cleanUser,
           'firstName': firstName.trim(),
@@ -624,7 +632,6 @@ class AuthProvider extends ChangeNotifier {
         aiNote = map['message'] as String?;
       } catch (e) {
         debugPrint('[auth] claimUsername: $e');
-        // Fallback: temp username
         finalUsername =
             'user_${cred.user!.uid.substring(0, 8)}_${DateTime.now().millisecondsSinceEpoch % 10000}';
         status = 'temp';
@@ -648,33 +655,33 @@ class AuthProvider extends ChangeNotifier {
         kvkkAcceptedAt: DateTime.now(),
         marketingConsent: marketingConsent,
         marketingAcceptedAt: marketingConsent ? DateTime.now() : null,
-        accountStatus: requireVerification ? 'pending' : 'approved',
+        accountStatus: 'pending',
         studentIdDocUrl: studentIdDocUrl?.trim(),
-        studentVerificationType: studentVerificationType,
+        studentVerificationType: type,
         studentIdFrontUrl: studentIdFrontUrl?.trim(),
         studentIdBackUrl: studentIdBackUrl?.trim(),
       );
       _upsert(_user!);
       await _syncProfileToFirestore(_user!, privileged: true);
-      if (requireVerification) {
-        try {
-          final notify = FirebaseFunctions.instanceFor(region: 'europe-west1')
-              .httpsCallable('notifyRegistrationPending');
-          await notify.call({
-            'uid': cred.user!.uid,
-            'email': email.trim(),
-            'firstName': firstName.trim(),
-            'lastName': lastName.trim(),
-            'studentNo': studentNo.trim(),
-            'university': university,
-            'studentVerificationType': studentVerificationType,
-            'studentIdDocUrl': studentIdDocUrl?.trim(),
-            'studentIdFrontUrl': studentIdFrontUrl?.trim(),
-            'studentIdBackUrl': studentIdBackUrl?.trim(),
-          });
-        } catch (e) {
-          debugPrint('[auth] notifyRegistrationPending: $e');
-        }
+      try {
+        final notify = FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('notifyRegistrationPending');
+        await notify.call({
+          'uid': cred.user!.uid,
+          'email': email.trim(),
+          'firstName': firstName.trim(),
+          'lastName': lastName.trim(),
+          'studentNo': studentNo.trim(),
+          'phone': phone.trim(),
+          'university': university,
+          'studentVerificationType': type,
+          'studentIdDocUrl': studentIdDocUrl?.trim(),
+          'studentIdFrontUrl': studentIdFrontUrl?.trim(),
+          'studentIdBackUrl': studentIdBackUrl?.trim(),
+          'hasDocs': hasDocs,
+        });
+      } catch (e) {
+        debugPrint('[auth] notifyRegistrationPending: $e');
       }
       try {
         final welcome = FirebaseFunctions.instanceFor(region: 'europe-west1')
@@ -683,7 +690,7 @@ class AuthProvider extends ChangeNotifier {
           'to': email.trim(),
           'firstName': firstName.trim(),
           'username': finalUsername,
-          'variant': requireVerification ? 'pending' : 'welcome',
+          'variant': 'pending',
         });
       } catch (e) {
         debugPrint('[auth] welcome mail: $e');
@@ -691,7 +698,6 @@ class AuthProvider extends ChangeNotifier {
       _busy = false;
       if (status == 'temp' && aiNote != null) {
         _error = null;
-        // status message via error channel avoided — caller checks usernameStatus
       }
       notifyListeners();
       return true;
@@ -716,6 +722,56 @@ class AuthProvider extends ChangeNotifier {
       _busy = false;
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Kayıt öncesi e-posta OTP gönder.
+  Future<String?> sendRegistrationEmailCode(String email) async {
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('sendRegistrationEmailCode');
+      final res = await callable.call({'email': email.trim()});
+      final map = Map<String, dynamic>.from(res.data as Map);
+      return '${map['emailHint'] ?? 'Kod gönderildi'}';
+    } on FirebaseFunctionsException catch (e) {
+      _error = e.message ?? e.code;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      _error = 'Kod gönderilemedi.';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// OTP doğrula → ticket (kayıtta zorunlu).
+  Future<String?> verifyRegistrationEmailCode({
+    required String email,
+    required String code,
+  }) async {
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('verifyRegistrationEmailCode');
+      final res = await callable.call({
+        'email': email.trim(),
+        'code': code.trim(),
+      });
+      final map = Map<String, dynamic>.from(res.data as Map);
+      final t = '${map['ticket'] ?? ''}';
+      if (t.length < 20) {
+        _error = 'Doğrulama başarısız.';
+        notifyListeners();
+        return null;
+      }
+      return t;
+    } on FirebaseFunctionsException catch (e) {
+      _error = e.message ?? e.code;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      _error = 'Kod doğrulanamadı.';
+      notifyListeners();
+      return null;
     }
   }
 

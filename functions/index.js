@@ -420,9 +420,59 @@ OUTPUT: ONLY valid JSON with keys: personal_info, education, experiences, projec
 ATS-safe: no emoji, no markdown, plain text fields. Do NOT include raw_notes in output.`;
 }
 
+/** Plus CV tema kartelası (client `kCvThemePalette` ile senkron). */
+const CV_ACCENT_DEFAULT = 0xff3db8a8;
+const CV_ACCENT_PALETTE = new Set([
+  0xff3db8a8, // Teal
+  0xff0f766e, // Koyu teal
+  0xff047857, // Zümrüt
+  0xff166534, // Orman yeşili
+  0xff1e3a5f, // Kurumsal lacivert
+  0xff1d4ed8, // Klasik mavi
+  0xff2563eb, // Royal blue
+  0xff0e7490, // Çelik cyan
+  0xff334155, // Slate
+  0xff475569, // Çelik gri
+  0xff1f2937, // Antrasit
+  0xff0f172a, // Midnight
+  0xff3730a3, // İndigo
+  0xff5b21b6, // Mor
+  0xff7f1d1d, // Bordo
+  0xff9f1239, // Şarap
+  0xffb45309, // Bakır
+  0xff92400e, // Kahve
+]);
+
+function normalizeCvAccentArgb(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  let v = Math.trunc(n);
+  if (v < 0) v = v >>> 0;
+  // RGB only → opaque ARGB
+  if (v >= 0 && v <= 0xffffff) {
+    v = (0xff000000 + v) >>> 0;
+  } else {
+    v = v >>> 0;
+  }
+  return v;
+}
+
+/**
+ * Plus + cvTheme açıksa whitelist’ten accent; değilse varsayılan teal.
+ */
+function resolveCvAccentArgb({ requested, isPlus, features }) {
+  const themeOk = isPlus && (features?.cvTheme !== false);
+  if (!themeOk) return CV_ACCENT_DEFAULT;
+  const argb = normalizeCvAccentArgb(requested);
+  if (argb == null || !CV_ACCENT_PALETTE.has(argb)) {
+    return CV_ACCENT_DEFAULT;
+  }
+  return argb;
+}
+
 /**
  * Callable: generateAtsCv
- * data: { cvData, languageCode, languageName, userEmail, userName, studentNo }
+ * data: { cvData, languageCode, languageName, userEmail, userName, studentNo, accentArgb? }
  */
 exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, async (request) => {
   if (!request.auth) {
@@ -430,6 +480,9 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
   }
 
   const uid = request.auth.uid;
+
+  let isPlus = false;
+  let plusFeatures = {};
 
   // CV-AI kota: KampüsteyimPlus free/plus limitleri (app_config/kampusteyim_plus)
   // Geriye dönük: cv_ai_limits.perUserDailyLimit hâlâ okunur (admin eski sekme).
@@ -443,8 +496,9 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
     const lim = limSnap.exists ? limSnap.data() || {} : {};
     const u = userSnap.exists ? userSnap.data() || {} : {};
     const exp = u.plusExpiresAt ? new Date(u.plusExpiresAt) : null;
-    const isPlus =
+    isPlus =
       u.plusActive === true && (!exp || exp.getTime() > Date.now());
+    plusFeatures = plusCfg.features || {};
 
     let perUser = null;
     const freeLim = (plusCfg.rateLimitsFree || {}).cvAiDaily;
@@ -501,11 +555,18 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
     userEmail,
     userName,
     studentNo,
+    accentArgb: requestedAccent,
   } = request.data || {};
 
   if (!cvData) {
     throw new HttpsError('invalid-argument', 'cvData zorunlu');
   }
+
+  const accentArgb = resolveCvAccentArgb({
+    requested: requestedAccent,
+    isPlus,
+    features: plusFeatures,
+  });
 
   const { client, model } = await getOpenAI();
 
@@ -588,6 +649,7 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
     languageName,
     model,
     polished,
+    accentArgb,
     createdAt: new Date().toISOString(),
     userId: uid,
   };
@@ -599,6 +661,7 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
       cv_data: cvData,
       last_export_id: exportId,
       last_language: languageCode,
+      last_accent_argb: accentArgb,
       updated_at: new Date().toISOString(),
     },
     { merge: true },
@@ -629,6 +692,7 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
     exportId,
     languageCode,
     languageName,
+    accentArgb,
     polished,
   };
 });
@@ -3615,6 +3679,223 @@ function maskEmail(email) {
   if (at < 2) return '***';
   return `${e.slice(0, 2)}***${e.slice(at)}`;
 }
+
+function emailDocId(email) {
+  return crypto.createHash('sha256').update(String(email).trim().toLowerCase()).digest('hex');
+}
+
+/**
+ * Kayıt öncesi e-posta OTP — auth gerekmez.
+ * data: { email }
+ */
+exports.sendRegistrationEmailCode = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    const email = String(request.data?.email || '').trim().toLowerCase();
+    if (!isValidEmail(email)) {
+      throw new HttpsError('invalid-argument', 'Geçerli e-posta gir');
+    }
+
+    const { getAuth } = require('firebase-admin/auth');
+    try {
+      await getAuth().getUserByEmail(email);
+      throw new HttpsError(
+        'already-exists',
+        'Bu e-posta zaten kayıtlı. Giriş yap veya şifre sıfırla.',
+      );
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      // user-not-found → devam
+    }
+
+    const id = emailDocId(email);
+    const ref = db.collection('registration_email_otps').doc(id);
+    const prev = await ref.get();
+    const prevData = prev.exists ? prev.data() || {} : {};
+    const lastSent = prevData.lastSentAt ? new Date(prevData.lastSentAt).getTime() : 0;
+    if (lastSent && Date.now() - lastSent < 55 * 1000) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'Yeni kod için yaklaşık 1 dakika bekle.',
+      );
+    }
+    const hourAgo = Date.now() - 60 * 60 * 1000;
+    const sentHour = Array.isArray(prevData.sentLog)
+      ? prevData.sentLog.filter((t) => new Date(t).getTime() > hourAgo)
+      : [];
+    if (sentHour.length >= 8) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'Bu e-posta için saatlik kod limitine ulaşıldı.',
+      );
+    }
+
+    const code = makeDeletionCode();
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const sentLog = [...sentHour, new Date().toISOString()];
+    await ref.set(
+      {
+        email,
+        codeHash,
+        attempts: 0,
+        verified: false,
+        ticket: null,
+        expiresAt: expiresAt.toISOString(),
+        lastSentAt: new Date().toISOString(),
+        sentLog,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+
+    const html = brandedEmail({
+      title: 'E-posta doğrulama kodu',
+      greeting: 'Merhaba,',
+      bodyHtml: `
+        <p>KampüsteyimAPP kaydını tamamlamak için doğrulama kodun:</p>
+        <p style="font-size:28px;font-weight:800;letter-spacing:6px;color:#0B1F3A;text-align:center;margin:20px 0;">
+          ${code}
+        </p>
+        <p>Kod <b>15 dakika</b> geçerlidir. Bu talebi sen oluşturmadıysan maili yok say.</p>
+      `,
+      footerNote: 'AYS Tech · Kayıt güvenliği',
+    });
+    await sendMail({
+      to: email,
+      subject: 'KampüsteyimAPP · E-posta doğrulama kodu',
+      html,
+    });
+
+    return {
+      ok: true,
+      emailHint: `Kod ${maskEmail(email)} adresine gönderildi`,
+      expiresInSec: 15 * 60,
+    };
+  },
+);
+
+/**
+ * Kayıt OTP doğrula → kısa ömürlü ticket.
+ * data: { email, code }
+ */
+exports.verifyRegistrationEmailCode = onCall(
+  { region: 'europe-west1', timeoutSeconds: 20 },
+  async (request) => {
+    const email = String(request.data?.email || '').trim().toLowerCase();
+    const code = String(request.data?.code || '').trim();
+    if (!isValidEmail(email) || !/^\d{6}$/.test(code)) {
+      throw new HttpsError('invalid-argument', 'E-posta ve 6 haneli kod gerekli');
+    }
+
+    const id = emailDocId(email);
+    const ref = db.collection('registration_email_otps').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      throw new HttpsError('not-found', 'Önce doğrulama kodu iste');
+    }
+    const d = snap.data() || {};
+    if (d.expiresAt && new Date(d.expiresAt).getTime() < Date.now()) {
+      throw new HttpsError('deadline-exceeded', 'Kodun süresi dolmuş. Yeni kod iste.');
+    }
+    const attempts = Number(d.attempts || 0);
+    if (attempts >= 8) {
+      throw new HttpsError('resource-exhausted', 'Çok fazla deneme. Yeni kod iste.');
+    }
+
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    if (codeHash !== d.codeHash) {
+      await ref.set({ attempts: attempts + 1 }, { merge: true });
+      throw new HttpsError('permission-denied', 'Kod hatalı');
+    }
+
+    const ticket = crypto.randomBytes(24).toString('hex');
+    const ticketExpires = new Date(Date.now() + 30 * 60 * 1000);
+    await ref.set(
+      {
+        verified: true,
+        ticket,
+        ticketExpiresAt: ticketExpires.toISOString(),
+        codeHash: null,
+        attempts: 0,
+        verifiedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+
+    return {
+      ok: true,
+      ticket,
+      email,
+      expiresInSec: 30 * 60,
+    };
+  },
+);
+
+/**
+ * Kayıt sonrası ticket tüket + Auth emailVerified.
+ * data: { ticket }
+ */
+exports.consumeRegistrationEmailTicket = onCall(
+  { region: 'europe-west1', timeoutSeconds: 20 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    }
+    const uid = request.auth.uid;
+    const ticket = String(request.data?.ticket || '').trim();
+    if (ticket.length < 20) {
+      throw new HttpsError('invalid-argument', 'Doğrulama bileti gerekli');
+    }
+
+    const { getAuth } = require('firebase-admin/auth');
+    const authUser = await getAuth().getUser(uid);
+    const email = String(authUser.email || '').trim().toLowerCase();
+    if (!email) {
+      throw new HttpsError('failed-precondition', 'Hesap e-postası yok');
+    }
+
+    const id = emailDocId(email);
+    const ref = db.collection('registration_email_otps').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      throw new HttpsError('not-found', 'E-posta doğrulaması bulunamadı');
+    }
+    const d = snap.data() || {};
+    if (d.ticket !== ticket || d.verified !== true) {
+      throw new HttpsError('permission-denied', 'Doğrulama bileti geçersiz');
+    }
+    if (d.ticketExpiresAt && new Date(d.ticketExpiresAt).getTime() < Date.now()) {
+      throw new HttpsError('deadline-exceeded', 'Doğrulama süresi dolmuş');
+    }
+    if (d.consumed === true) {
+      throw new HttpsError('failed-precondition', 'Doğrulama zaten kullanılmış');
+    }
+    if (String(d.email || '').toLowerCase() !== email) {
+      throw new HttpsError('permission-denied', 'E-posta eşleşmiyor');
+    }
+
+    await getAuth().updateUser(uid, { emailVerified: true });
+    await ref.set(
+      {
+        consumed: true,
+        consumedAt: new Date().toISOString(),
+        consumedBy: uid,
+        ticket: null,
+      },
+      { merge: true },
+    );
+    await db.collection('users').doc(uid).set(
+      {
+        emailVerified: true,
+        emailVerifiedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+
+    return { ok: true };
+  },
+);
 
 async function purgeUserAccount({
   uid,

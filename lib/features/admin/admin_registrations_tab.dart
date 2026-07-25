@@ -157,8 +157,10 @@ class _SecurityPanel extends StatelessWidget {
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Belge doğrulaması zorunlu'),
-              subtitle: const Text('Kapalıysa kayıt doğrudan onaylanır'),
+              title: const Text('Kayıtta belge adımını göster'),
+              subtitle: const Text(
+                'Belge asla zorunlu değil; yüklemek onayı hızlandırır. Kapalıysa yalnızca e-posta yeter.',
+              ),
               value: security.requireStudentVerification,
               onChanged: loading || saving
                   ? null

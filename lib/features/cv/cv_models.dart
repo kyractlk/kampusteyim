@@ -314,6 +314,7 @@ class CvExportMeta {
     required this.languageName,
     required this.createdAt,
     required this.polished,
+    this.accentArgb = kCvAccentDefault,
   });
 
   final String id;
@@ -321,7 +322,44 @@ class CvExportMeta {
   final String languageName;
   final String createdAt;
   final Map<String, dynamic> polished;
+  /// Export anında kilitlenen tema rengi (yeniden indirmede kullanılır).
+  final int accentArgb;
 }
+
+/// Plus CV tema swatch’i.
+class CvThemeSwatch {
+  const CvThemeSwatch(this.argb, this.label);
+  final int argb;
+  final String label;
+}
+
+/// Ücretsiz varsayılan (teal).
+const int kCvAccentDefault = 0xFF3DB8A8;
+
+/// Plus CV kartelası — kurumsal ATS uyumlu accent’ler.
+const List<CvThemeSwatch> kCvThemePalette = [
+  CvThemeSwatch(0xFF3DB8A8, 'Teal'),
+  CvThemeSwatch(0xFF0F766E, 'Koyu teal'),
+  CvThemeSwatch(0xFF047857, 'Zümrüt'),
+  CvThemeSwatch(0xFF166534, 'Orman yeşili'),
+  CvThemeSwatch(0xFF1E3A5F, 'Kurumsal lacivert'),
+  CvThemeSwatch(0xFF1D4ED8, 'Klasik mavi'),
+  CvThemeSwatch(0xFF2563EB, 'Royal blue'),
+  CvThemeSwatch(0xFF0E7490, 'Çelik cyan'),
+  CvThemeSwatch(0xFF334155, 'Slate'),
+  CvThemeSwatch(0xFF475569, 'Çelik gri'),
+  CvThemeSwatch(0xFF1F2937, 'Antrasit'),
+  CvThemeSwatch(0xFF0F172A, 'Midnight'),
+  CvThemeSwatch(0xFF3730A3, 'İndigo'),
+  CvThemeSwatch(0xFF5B21B6, 'Mor'),
+  CvThemeSwatch(0xFF7F1D1D, 'Bordo'),
+  CvThemeSwatch(0xFF9F1239, 'Şarap'),
+  CvThemeSwatch(0xFFB45309, 'Bakır'),
+  CvThemeSwatch(0xFF92400E, 'Kahve'),
+];
+
+bool isCvAccentAllowed(int argb) =>
+    kCvThemePalette.any((s) => s.argb == argb);
 
 class CvLanguageOption {
   const CvLanguageOption(this.code, this.name);

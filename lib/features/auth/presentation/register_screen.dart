@@ -29,6 +29,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _lastName = TextEditingController();
   final _phone = TextEditingController();
   final _username = TextEditingController();
+  final _emailCode = TextEditingController();
+
+  String? _emailTicket;
+  bool _emailVerified = false;
+  bool _sendingCode = false;
+  bool _verifyingCode = false;
 
   String? _city = MockData.cities.first;
   String? _university = MockData.universities.first;
@@ -67,11 +73,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _lastName.dispose();
     _phone.dispose();
     _username.dispose();
+    _emailCode.dispose();
     super.dispose();
   }
 
-  bool get _docsOk {
-    if (!_security.requireStudentVerification) return true;
+  /// Belge yükleme durumu (zorunlu değil).
+  bool get _hasOptionalDocs {
     if (_verifyType == 'card') {
       final needBack = _security.requireCardBothSides;
       return _frontUrl != null && (!needBack || _backUrl != null);
@@ -128,9 +135,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (!_docsOk) {
+    if (_emailTicket == null || !_emailVerified) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Doğrulama belgelerini tamamla.')),
+        const SnackBar(content: Text('Önce e-posta doğrulama kodunu gir.')),
       );
       return;
     }
@@ -143,7 +150,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
     final auth = context.read<AuthProvider>();
-    final require = _security.requireStudentVerification;
+    final type = _hasOptionalDocs ? _verifyType : null;
     final ok = await auth.register(
       email: _email.text,
       studentNo: _studentNo.text,
@@ -154,28 +161,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
       city: _city ?? '',
       university: _university ?? '',
       username: _username.text,
+      emailTicket: _emailTicket!,
       kvkkAccepted: _kvkk,
       marketingConsent: _marketing,
-      requireVerification: require,
-      studentVerificationType: require ? _verifyType : null,
-      studentIdFrontUrl: _frontUrl,
-      studentIdBackUrl: _backUrl,
-      studentIdDocUrl: _pdfUrl ?? _frontUrl,
+      studentVerificationType: type,
+      studentIdFrontUrl: type == 'card' ? _frontUrl : null,
+      studentIdBackUrl: type == 'card' ? _backUrl : null,
+      studentIdDocUrl: type == 'document' ? _pdfUrl : null,
     );
     if (!mounted) return;
     if (ok) {
-      if (require) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Başvurun alındı. Belgen admin onayına düştü; sonuç mail ve bildirimle gelir.',
-            ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _hasOptionalDocs
+                ? 'Başvurun alındı. Belgen admin onayını hızlandırır; sonuç mail ile gelir.'
+                : 'Başvurun alındı. Belgeyi sonra da yükleyebilirsin; onay mail ile gelir.',
           ),
-        );
-        context.go('/pending-approval');
-      } else {
-        context.go('/home');
-      }
+        ),
+      );
+      context.go('/pending-approval');
     } else if (auth.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error!)),
@@ -183,32 +188,91 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  Future<void> _sendEmailCode() async {
+    if (!_email.text.contains('@')) {
+      _formKey.currentState?.validate();
+      return;
+    }
+    setState(() => _sendingCode = true);
+    final auth = context.read<AuthProvider>();
+    final hint = await auth.sendRegistrationEmailCode(_email.text);
+    if (!mounted) return;
+    setState(() {
+      _sendingCode = false;
+      if (hint != null) {
+        _emailVerified = false;
+        _emailTicket = null;
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(hint ?? auth.error ?? 'Kod gönderilemedi')),
+    );
+  }
+
+  Future<void> _verifyEmailCode() async {
+    final code = _emailCode.text.trim();
+    if (code.length != 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('6 haneli kodu gir')),
+      );
+      return;
+    }
+    setState(() => _verifyingCode = true);
+    final auth = context.read<AuthProvider>();
+    final ticket = await auth.verifyRegistrationEmailCode(
+      email: _email.text,
+      code: code,
+    );
+    if (!mounted) return;
+    setState(() {
+      _verifyingCode = false;
+      if (ticket != null) {
+        _emailTicket = ticket;
+        _emailVerified = true;
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ticket != null
+              ? 'E-posta doğrulandı'
+              : (auth.error ?? 'Kod hatalı'),
+        ),
+      ),
+    );
+  }
+
   void _next() {
     if (_step == 0) {
       final emailOk = _email.text.contains('@');
-      final noOk = _studentNo.text.trim().length >= 5;
-      final passOk = _password.text.length >= 4;
-      if (!emailOk || !noOk || !passOk) {
+      final passOk = _password.text.length >= 6;
+      if (!emailOk || !passOk) {
         _formKey.currentState!.validate();
+        return;
+      }
+      if (!_emailVerified || _emailTicket == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Devam için e-posta kodunu doğrula.'),
+          ),
+        );
         return;
       }
     }
     if (_step == 1) {
       final userOk =
           RegExp(r'^[a-zA-Z0-9_]{3,24}$').hasMatch(_username.text.trim());
+      final phone = _phone.text.trim();
       if (_firstName.text.trim().isEmpty ||
           _lastName.text.trim().isEmpty ||
-          _phone.text.trim().length < 10 ||
           !userOk) {
         _formKey.currentState!.validate();
         return;
       }
-    }
-    if (_step == 3 && !_docsOk) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Doğrulama adımını tamamla.')),
-      );
-      return;
+      if (phone.isNotEmpty && phone.length < 10) {
+        _formKey.currentState!.validate();
+        return;
+      }
     }
     setState(() => _step = (_step + 1).clamp(0, 4));
   }
@@ -259,7 +323,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       AppPrimaryButton(
                         label: 'Kaydı Tamamla',
                         loading: busy || _uploading,
-                        onPressed: (!_docsOk || _uploading || busy)
+                        onPressed: (_uploading || busy || !_emailVerified)
                             ? null
                             : _submit,
                       ),
@@ -299,26 +363,92 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   .titleLarge
                   ?.copyWith(fontWeight: FontWeight.w800),
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'E-posta zorunlu ve kod ile doğrulanır — gerekirse bu adresten sana ulaşırız.',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                color: AppColors.textSecondary,
+              ),
+            ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _email,
               keyboardType: TextInputType.emailAddress,
+              enabled: !_emailVerified,
               decoration: const InputDecoration(
                 labelText: 'E-posta',
                 prefixIcon: Icon(Icons.mail_outline),
               ),
+              onChanged: (_) {
+                if (_emailVerified || _emailTicket != null) {
+                  setState(() {
+                    _emailVerified = false;
+                    _emailTicket = null;
+                  });
+                }
+              },
               validator: (v) =>
                   v != null && v.contains('@') ? null : 'Geçerli e-posta gir',
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: (_sendingCode || _emailVerified) ? null : _sendEmailCode,
+                    icon: _sendingCode
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send_outlined, size: 18),
+                    label: Text(_emailVerified ? 'Doğrulandı' : 'Kod gönder'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _emailCode,
+              keyboardType: TextInputType.number,
+              enabled: !_emailVerified,
+              maxLength: 6,
+              decoration: InputDecoration(
+                labelText: 'E-posta doğrulama kodu',
+                prefixIcon: const Icon(Icons.pin_outlined),
+                counterText: '',
+                suffixIcon: _emailVerified
+                    ? const Icon(Icons.verified, color: AppColors.lime)
+                    : IconButton(
+                        onPressed: _verifyingCode ? null : _verifyEmailCode,
+                        icon: _verifyingCode
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.check_circle_outline),
+                      ),
+              ),
+              validator: (_) =>
+                  _emailVerified ? null : 'Kodu doğrula',
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _studentNo,
               decoration: const InputDecoration(
-                labelText: 'Öğrenci numarası',
+                labelText: 'Öğrenci numarası (isteğe bağlı)',
+                helperText: 'Yüklersen admin onayı hızlanır; sonra da ekleyebilirsin.',
                 prefixIcon: Icon(Icons.badge_outlined),
               ),
-              validator: (v) =>
-                  v != null && v.trim().length >= 5 ? null : 'En az 5 karakter',
+              validator: (v) {
+                final s = (v ?? '').trim();
+                if (s.isEmpty) return null;
+                return s.length >= 5 ? null : 'En az 5 karakter veya boş bırak';
+              },
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -335,7 +465,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
               validator: (v) =>
-                  v != null && v.length >= 4 ? null : 'En az 4 karakter',
+                  v != null && v.length >= 6 ? null : 'En az 6 karakter',
             ),
           ],
         );
@@ -375,11 +505,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
               controller: _phone,
               keyboardType: TextInputType.phone,
               decoration: const InputDecoration(
-                labelText: 'Telefon',
+                labelText: 'Telefon (isteğe bağlı)',
+                helperText: 'Zorunlu değil. İletişim için sonra profilinden ekleyebilirsin.',
                 prefixIcon: Icon(Icons.phone_outlined),
               ),
-              validator: (v) =>
-                  v != null && v.trim().length >= 10 ? null : 'Geçerli telefon',
+              validator: (v) {
+                final s = (v ?? '').trim();
+                if (s.isEmpty) return null;
+                return s.length >= 10 ? null : 'Geçerli telefon veya boş bırak';
+              },
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -470,20 +604,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Widget _buildVerificationStep() {
+    // Admin “belge adımını göster” kapalıysa atla (sonra pending ekranından yüklenebilir).
     if (!_security.requireStudentVerification) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Doğrulama',
+            'Öğrenci belgesi',
             style: Theme.of(context)
                 .textTheme
                 .titleLarge
                 ?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 12),
-          Text(
-            'Şu an belge doğrulaması kapalı. Devam edebilirsin.',
+          const Text(
+            'Belge yüklemek zorunlu değil. Kaydı tamamlayıp onay beklerken '
+            'veya daha sonra belge ekleyebilirsin — yüklemek onayı hızlandırır.',
             style: TextStyle(color: AppColors.textSecondary, height: 1.4),
           ),
         ],
@@ -505,13 +641,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Önce doğrulama tipini seç. Karttaki / belgedeki bilgiler formdaki '
-          'ad, soyad ve öğrenci numarasıyla eşleşmeli. Başvuru admin onayına düşer; '
-          'sonuç e-posta ve bildirimle iletilir.',
+          'Kart veya belge yüklemek isteğe bağlıdır. Yüklersen kaydın onayı hızlanır; '
+          'şimdi atlayıp sonra da yükleyebilirsin. Yüklersen belgedeki bilgiler '
+          'ad / soyad / öğrenci no ile uyumlu olmalı.',
           style: TextStyle(
             fontSize: 13,
             height: 1.4,
             color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _hasOptionalDocs
+              ? 'Belge hazır — onayı hızlandırır.'
+              : 'Belge yok — kayda devam edebilirsin; sonra yükle.',
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: _hasOptionalDocs ? AppColors.lime : AppColors.cyan,
           ),
         ),
         const SizedBox(height: 16),

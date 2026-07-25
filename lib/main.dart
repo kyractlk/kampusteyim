@@ -13,6 +13,7 @@ import 'core/auth/secure_session.dart';
 import 'core/constants/app_info.dart';
 import 'core/permissions/app_permissions.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/keyboard_dismiss.dart';
 import 'features/admin/admin_provider.dart';
 import 'features/auth/data/auth_provider.dart';
 import 'features/feed/feed_provider.dart';
@@ -203,8 +204,11 @@ class _MtMobilAppState extends State<MtMobilApp> {
             return const MaintenanceScreen();
           }
           // Klavye açılınca içerik yukarı kaysın; notch / gesture inset korunur.
+          // Boş alana / başka widget’a dokununca klavye kapanır (odak alanı hariç).
           final media = MediaQuery.maybeOf(context);
-          final content = child ?? const SizedBox.shrink();
+          final content = KeyboardDismissOnTap(
+            child: child ?? const SizedBox.shrink(),
+          );
           if (media == null) return content;
           return MediaQuery(
             data: media.copyWith(

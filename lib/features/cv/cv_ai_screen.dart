@@ -576,15 +576,6 @@ class _GenerateTab extends StatelessWidget {
                 final themeOk = user != null &&
                     user.isPlusActive &&
                     plus.config.features.cvTheme;
-                const swatches = <int>[
-                  0xFF3DB8A8,
-                  0xFF2563EB,
-                  0xFF7C3AED,
-                  0xFFDC2626,
-                  0xFFEA580C,
-                  0xFF0F766E,
-                  0xFF334155,
-                ];
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -608,37 +599,50 @@ class _GenerateTab extends StatelessWidget {
                         ],
                       ],
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      themeOk
+                          ? 'Seçilen renk ATS PDF’e ve AI export kaydına işlenir.'
+                          : 'Varsayılan teal · Plus ile kurumsal kartela açılır.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 10,
                       runSpacing: 10,
-                      children: swatches.map((c) {
+                      children: kCvThemePalette.map((swatch) {
+                        final c = swatch.argb;
                         final selected = cv.accentArgb == c;
-                        return InkWell(
-                          onTap: () async {
-                            if (!themeOk) {
-                              await requirePlus(
-                                context,
-                                featureLabel: 'CV tema rengi',
-                              );
-                              return;
-                            }
-                            cv.setAccentArgb(c);
-                          },
-                          borderRadius: BorderRadius.circular(20),
-                          child: Opacity(
-                            opacity: themeOk ? 1 : 0.45,
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: Color(c),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: selected
-                                      ? AppColors.navy
-                                      : Colors.black26,
-                                  width: selected ? 2.5 : 1,
+                        return Tooltip(
+                          message: swatch.label,
+                          child: InkWell(
+                            onTap: () async {
+                              if (!themeOk) {
+                                await requirePlus(
+                                  context,
+                                  featureLabel: 'CV tema rengi',
+                                );
+                                return;
+                              }
+                              await cv.setAccentArgb(c);
+                            },
+                            borderRadius: BorderRadius.circular(20),
+                            child: Opacity(
+                              opacity: themeOk ? 1 : 0.45,
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: Color(c),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: selected
+                                        ? AppColors.navy
+                                        : Colors.black26,
+                                    width: selected ? 2.5 : 1,
+                                  ),
                                 ),
                               ),
                             ),

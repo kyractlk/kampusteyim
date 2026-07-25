@@ -15,15 +15,29 @@ class CvPdfBuilder {
   static const _ink = PdfColor.fromInt(0xFF243B53);
   static const _navy = PdfColor.fromInt(0xFF3A5A78);
   static const _accent = PdfColor.fromInt(0xFF3DB8A8);
-  static const _accentSoft = PdfColor.fromInt(0xFFD8F3EF);
+  static const _accentSoftFallback = PdfColor.fromInt(0xFFD8F3EF);
   /// [build] sırasında set edilir — header/entry yardımcıları için.
   static PdfColor _paintAccent = _accent;
+  static PdfColor _paintAccentSoft = _accentSoftFallback;
   static const _text = PdfColor.fromInt(0xFF2A3540);
   static const _muted = PdfColor.fromInt(0xFF6B7C8A);
   static const _line = PdfColor.fromInt(0xFFDCE4EC);
   static const _panel = PdfColor.fromInt(0xFFF5F8FA);
   static const _headerBg = PdfColor.fromInt(0xFF2F4B66);
   static const _white = PdfColors.white;
+
+  /// Gerçek A4 — kenar 0; header üst kenara yapışır, gövde kendi padding’ini alır.
+  static final PdfPageFormat _a4 = PdfPageFormat.a4.copyWith(
+    marginTop: 0,
+    marginBottom: 0,
+    marginLeft: 0,
+    marginRight: 0,
+  );
+
+  static const pw.EdgeInsets _pageMargin = pw.EdgeInsets.zero;
+
+  /// Gövde / footer yatay iç boşluk (A4 kenarından ~14 mm).
+  static const double _bodyPad = 14 * PdfPageFormat.mm;
 
   static pw.Font? _cachedRegular;
   static pw.Font? _cachedBold;
@@ -41,10 +55,19 @@ class CvPdfBuilder {
       languageCode: languageCode,
       accentArgb: accentArgb,
     );
-    await Printing.layoutPdf(
-      name: fileHint,
-      onLayout: (_) async => bytes,
-    );
+    // Önce paylaş / kaydet (ölçek bozulmasın); sonra A4 baskı önizlemesi.
+    final name = fileHint.toLowerCase().endsWith('.pdf')
+        ? fileHint
+        : '$fileHint.pdf';
+    try {
+      await Printing.sharePdf(bytes: bytes, filename: name);
+    } catch (_) {
+      await Printing.layoutPdf(
+        name: name,
+        format: _a4,
+        onLayout: (_) async => bytes,
+      );
+    }
   }
 
   static Future<({pw.Font? base, pw.Font? bold})> _loadFonts() async {
@@ -391,6 +414,7 @@ class CvPdfBuilder {
   }) {
     _paintAccent =
         accentArgb != null ? PdfColor.fromInt(accentArgb) : _accent;
+    _paintAccentSoft = _softAccent(_paintAccent);
     final theme = pw.ThemeData.withFont(base: base, bold: bold);
     final labels = atsLabels(languageCode);
     final aiLabels =
@@ -423,22 +447,32 @@ class CvPdfBuilder {
     final doc = pw.Document(theme: theme);
     doc.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: pw.EdgeInsets.zero,
+        pageTheme: pw.PageTheme(
+          pageFormat: _a4,
+          margin: _pageMargin,
+          theme: theme,
+        ),
+        // start → içerik sola sıkışıyordu; stretch ile tam A4 genişliği
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         maxPages: 12,
         footer: (ctx) => pw.Container(
+          width: double.infinity,
           color: _white,
-          padding: const pw.EdgeInsets.fromLTRB(28, 4, 28, 12),
+          padding: const pw.EdgeInsets.fromLTRB(_bodyPad, 6, _bodyPad, 10),
           child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
             children: [
               pw.Container(height: 1, color: _line),
-              pw.SizedBox(height: 6),
+              pw.SizedBox(height: 5),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text(
-                    'KampüsteyimAPP CV-AI  ·  GAÜN  ·  AYS Tech  ·  $languageName',
-                    style: const pw.TextStyle(fontSize: 7.2, color: _muted),
+                  pw.Expanded(
+                    child: pw.Text(
+                      'KampüsteyimAPP CV-AI  ·  GAÜN  ·  AYS Tech  ·  $languageName',
+                      style: const pw.TextStyle(fontSize: 7.2, color: _muted),
+                      maxLines: 1,
+                    ),
                   ),
                   pw.Text(
                     '${ctx.pageNumber} / ${ctx.pagesCount}',
@@ -590,7 +624,7 @@ class CvPdfBuilder {
                         vertical: 5,
                       ),
                       decoration: pw.BoxDecoration(
-                        color: _accentSoft,
+                        color: _paintAccentSoft,
                         border: pw.Border.all(color: _paintAccent, width: 0.7),
                       ),
                       child: pw.Text(
@@ -685,7 +719,12 @@ class CvPdfBuilder {
       ...items.skip(1).map(
             (e) => pw.Inseparable(
               child: pw.Padding(
-                padding: const pw.EdgeInsets.fromLTRB(28, 2, 28, 2),
+                padding: const pw.EdgeInsets.fromLTRB(
+                  _bodyPad,
+                  2,
+                  _bodyPad,
+                  2,
+                ),
                 child: e,
               ),
             ),
@@ -696,9 +735,9 @@ class CvPdfBuilder {
   static pw.Widget _keepSection({required List<pw.Widget> children}) {
     return pw.Inseparable(
       child: pw.Padding(
-        padding: const pw.EdgeInsets.fromLTRB(28, 14, 28, 4),
+        padding: const pw.EdgeInsets.fromLTRB(_bodyPad, 12, _bodyPad, 2),
         child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           children: children,
         ),
       ),
@@ -719,6 +758,15 @@ class CvPdfBuilder {
     return ('${parts.first[0]}${parts.last[0]}').toUpperCase();
   }
 
+  /// Accent’i açık pastel panele çevir (beceri chip arka planı).
+  static PdfColor _softAccent(PdfColor c) {
+    return PdfColor(
+      c.red * 0.16 + 0.84,
+      c.green * 0.16 + 0.84,
+      c.blue * 0.16 + 0.84,
+    );
+  }
+
   static pw.Widget _header({
     required String name,
     required String headline,
@@ -731,11 +779,11 @@ class CvPdfBuilder {
       width: double.infinity,
       decoration: const pw.BoxDecoration(color: _headerBg),
       child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
           pw.Container(height: 3.5, color: _paintAccent),
           pw.Padding(
-            padding: const pw.EdgeInsets.fromLTRB(24, 24, 24, 14),
+            padding: const pw.EdgeInsets.fromLTRB(_bodyPad, 18, _bodyPad, 12),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
@@ -747,15 +795,15 @@ class CvPdfBuilder {
                         name.toUpperCase(),
                         maxLines: 2,
                         style: pw.TextStyle(
-                          fontSize: name.trim().length > 24 ? 15.5 : 19,
+                          fontSize: name.trim().length > 24 ? 15.5 : 18,
                           fontWeight: pw.FontWeight.bold,
                           color: _white,
-                          letterSpacing: 0.6,
-                          lineSpacing: 1.5,
+                          letterSpacing: 0.5,
+                          lineSpacing: 1.4,
                         ),
                       ),
                       if (headline.isNotEmpty) ...[
-                        pw.SizedBox(height: 6),
+                        pw.SizedBox(height: 5),
                         pw.Text(
                           headline,
                           maxLines: 2,
@@ -766,7 +814,7 @@ class CvPdfBuilder {
                         ),
                       ],
                       if (campus.isNotEmpty) ...[
-                        pw.SizedBox(height: 5),
+                        pw.SizedBox(height: 4),
                         pw.Text(
                           campus,
                           maxLines: 2,
@@ -781,8 +829,8 @@ class CvPdfBuilder {
                 ),
                 pw.SizedBox(width: 12),
                 pw.Container(
-                  width: 72,
-                  height: 72,
+                  width: 68,
+                  height: 68,
                   decoration: pw.BoxDecoration(
                     shape: pw.BoxShape.circle,
                     color: _navy,
@@ -791,14 +839,14 @@ class CvPdfBuilder {
                   alignment: pw.Alignment.center,
                   child: pw.ClipOval(
                     child: pw.SizedBox(
-                      width: 68,
-                      height: 68,
+                      width: 64,
+                      height: 64,
                       child: photo != null
                           ? pw.Image(
                               photo,
                               fit: pw.BoxFit.cover,
-                              width: 68,
-                              height: 68,
+                              width: 64,
+                              height: 64,
                             )
                           : pw.Container(
                               color: const PdfColor.fromInt(0xFF3D5F7A),
@@ -806,7 +854,7 @@ class CvPdfBuilder {
                               child: pw.Text(
                                 initials,
                                 style: pw.TextStyle(
-                                  fontSize: 20,
+                                  fontSize: 18,
                                   fontWeight: pw.FontWeight.bold,
                                   color: _white,
                                 ),
@@ -821,10 +869,10 @@ class CvPdfBuilder {
           pw.Container(
             width: double.infinity,
             color: const PdfColor.fromInt(0xFF27445C),
-            padding: const pw.EdgeInsets.fromLTRB(28, 9, 28, 10),
+            padding: const pw.EdgeInsets.fromLTRB(_bodyPad, 8, _bodyPad, 10),
             child: pw.Wrap(
-              spacing: 14,
-              runSpacing: 7,
+              spacing: 12,
+              runSpacing: 6,
               children: [
                 if ('${pi['email'] ?? ''}'.isNotEmpty)
                   _contactLink(

@@ -20,8 +20,8 @@ class CvProvider extends ChangeNotifier {
   String? status;
   String? error;
   CvLanguageOption selectedLanguage = kCvWorldLanguages.first;
-  /// Plus CV tema rengi (ARGB).
-  int accentArgb = 0xFF3DB8A8;
+  /// Plus CV tema rengi (ARGB) — backend whitelist ile kilitlenir.
+  int accentArgb = kCvAccentDefault;
 
   bool get isReadyForJobs => data.isReadyForJobs;
 
@@ -88,18 +88,24 @@ class CvProvider extends ChangeNotifier {
   Future<void> loadLocal() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('cv_draft_json');
-    if (raw == null || raw.isEmpty) return;
-    try {
-      final map = jsonDecode(raw);
-      if (map is Map) {
-        data = CvData.fromJson(map.cast<String, dynamic>());
-      }
-    } catch (_) {}
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final map = jsonDecode(raw);
+        if (map is Map) {
+          data = CvData.fromJson(map.cast<String, dynamic>());
+        }
+      } catch (_) {}
+    }
+    final savedAccent = prefs.getInt('cv_accent_argb');
+    if (savedAccent != null && isCvAccentAllowed(savedAccent)) {
+      accentArgb = savedAccent;
+    }
   }
 
   Future<void> saveLocal() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('cv_draft_json', jsonEncode(data.toJson()));
+    await prefs.setInt('cv_accent_argb', accentArgb);
   }
 
   Future<void> saveRemote(String userId) async {
@@ -157,12 +163,18 @@ class CvProvider extends ChangeNotifier {
           .get();
       exports = snap.docs.map((d) {
         final m = d.data();
+        final rawAccent = m['accentArgb'];
+        final accent = rawAccent is num
+            ? rawAccent.toInt()
+            : kCvAccentDefault;
         return CvExportMeta(
           id: d.id,
           languageCode: '${m['languageCode'] ?? ''}',
           languageName: '${m['languageName'] ?? ''}',
           createdAt: '${m['createdAt'] ?? ''}',
           polished: ((m['polished'] as Map?) ?? {}).cast<String, dynamic>(),
+          accentArgb:
+              isCvAccentAllowed(accent) ? accent : kCvAccentDefault,
         );
       }).toList();
     } catch (_) {}
@@ -205,6 +217,7 @@ class CvProvider extends ChangeNotifier {
         'userEmail': user.email,
         'userName': user.fullName,
         'studentNo': user.studentNo,
+        'accentArgb': accentArgb,
       });
 
       final map = Map<String, dynamic>.from(result.data as Map);
@@ -212,6 +225,18 @@ class CvProvider extends ChangeNotifier {
           Map<String, dynamic>.from(map['polished'] as Map? ?? {});
       _preservePhoto(polished);
       final exportId = '${map['exportId']}';
+      final resolvedAccent = () {
+        final raw = map['accentArgb'];
+        if (raw is num) {
+          final v = raw.toInt();
+          if (isCvAccentAllowed(v)) return v;
+        }
+        return isCvAccentAllowed(accentArgb)
+            ? accentArgb
+            : kCvAccentDefault;
+      }();
+      accentArgb = resolvedAccent;
+      await saveLocal();
 
       exports.insert(
         0,
@@ -221,6 +246,7 @@ class CvProvider extends ChangeNotifier {
           languageName: selectedLanguage.name,
           createdAt: DateTime.now().toIso8601String(),
           polished: polished,
+          accentArgb: resolvedAccent,
         ),
       );
 
@@ -231,7 +257,7 @@ class CvProvider extends ChangeNotifier {
         languageName: selectedLanguage.name,
         languageCode: selectedLanguage.code,
         fileHint: fileHint,
-        accentArgb: accentArgb,
+        accentArgb: resolvedAccent,
       );
 
       status = 'ATS CV hazır · ${selectedLanguage.name} (canlı AI)';
@@ -261,7 +287,9 @@ class CvProvider extends ChangeNotifier {
       languageName: export.languageName,
       languageCode: export.languageCode,
       fileHint: 'CV_${export.languageCode.toUpperCase()}_${export.id}.pdf',
-      accentArgb: accentArgb,
+      accentArgb: isCvAccentAllowed(export.accentArgb)
+          ? export.accentArgb
+          : accentArgb,
     );
   }
 
@@ -270,8 +298,11 @@ class CvProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setAccentArgb(int argb) {
+  Future<void> setAccentArgb(int argb) async {
+    if (!isCvAccentAllowed(argb)) return;
     accentArgb = argb;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('cv_accent_argb', argb);
     notifyListeners();
   }
 
