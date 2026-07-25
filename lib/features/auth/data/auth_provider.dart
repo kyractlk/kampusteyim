@@ -515,6 +515,7 @@ class AuthProvider extends ChangeNotifier {
     required String emailTicket,
     bool kvkkAccepted = false,
     bool marketingConsent = false,
+    bool requireVerification = true,
     String? studentIdDocUrl,
     String? studentVerificationType,
     String? studentIdFrontUrl,
@@ -539,17 +540,34 @@ class AuthProvider extends ChangeNotifier {
       return false;
     }
 
-    final hasDocs = (studentIdFrontUrl ?? '').trim().isNotEmpty ||
-        (studentIdDocUrl ?? '').trim().isNotEmpty;
     var type = studentVerificationType;
-    if (type == 'card' &&
-        (studentIdFrontUrl == null || studentIdFrontUrl.trim().isEmpty)) {
-      type = hasDocs ? type : null;
-    }
-    if (type == 'document' &&
-        (studentIdDocUrl == null || studentIdDocUrl.trim().isEmpty)) {
+    if (requireVerification) {
+      if (type == 'card') {
+        if (studentIdFrontUrl == null || studentIdFrontUrl.trim().isEmpty) {
+          _error = 'Öğrenci kartı ön yüzü zorunlu.';
+          _busy = false;
+          notifyListeners();
+          return false;
+        }
+      } else if (type == 'document') {
+        if (studentIdDocUrl == null || studentIdDocUrl.trim().isEmpty) {
+          _error = 'Öğrenci belgesi PDF zorunlu.';
+          _busy = false;
+          notifyListeners();
+          return false;
+        }
+      } else {
+        _error = 'Doğrulama belgesi seçimi zorunlu.';
+        _busy = false;
+        notifyListeners();
+        return false;
+      }
+    } else {
       type = null;
     }
+
+    final hasDocs = (studentIdFrontUrl ?? '').trim().isNotEmpty ||
+        (studentIdDocUrl ?? '').trim().isNotEmpty;
 
     if ([
       email,
@@ -655,7 +673,7 @@ class AuthProvider extends ChangeNotifier {
         kvkkAcceptedAt: DateTime.now(),
         marketingConsent: marketingConsent,
         marketingAcceptedAt: marketingConsent ? DateTime.now() : null,
-        accountStatus: 'pending',
+        accountStatus: requireVerification ? 'pending' : 'approved',
         studentIdDocUrl: studentIdDocUrl?.trim(),
         studentVerificationType: type,
         studentIdFrontUrl: studentIdFrontUrl?.trim(),
@@ -663,25 +681,27 @@ class AuthProvider extends ChangeNotifier {
       );
       _upsert(_user!);
       await _syncProfileToFirestore(_user!, privileged: true);
-      try {
-        final notify = FirebaseFunctions.instanceFor(region: 'europe-west1')
-            .httpsCallable('notifyRegistrationPending');
-        await notify.call({
-          'uid': cred.user!.uid,
-          'email': email.trim(),
-          'firstName': firstName.trim(),
-          'lastName': lastName.trim(),
-          'studentNo': studentNo.trim(),
-          'phone': phone.trim(),
-          'university': university,
-          'studentVerificationType': type,
-          'studentIdDocUrl': studentIdDocUrl?.trim(),
-          'studentIdFrontUrl': studentIdFrontUrl?.trim(),
-          'studentIdBackUrl': studentIdBackUrl?.trim(),
-          'hasDocs': hasDocs,
-        });
-      } catch (e) {
-        debugPrint('[auth] notifyRegistrationPending: $e');
+      if (requireVerification) {
+        try {
+          final notify = FirebaseFunctions.instanceFor(region: 'europe-west1')
+              .httpsCallable('notifyRegistrationPending');
+          await notify.call({
+            'uid': cred.user!.uid,
+            'email': email.trim(),
+            'firstName': firstName.trim(),
+            'lastName': lastName.trim(),
+            'studentNo': studentNo.trim(),
+            'phone': phone.trim(),
+            'university': university,
+            'studentVerificationType': type,
+            'studentIdDocUrl': studentIdDocUrl?.trim(),
+            'studentIdFrontUrl': studentIdFrontUrl?.trim(),
+            'studentIdBackUrl': studentIdBackUrl?.trim(),
+            'hasDocs': hasDocs,
+          });
+        } catch (e) {
+          debugPrint('[auth] notifyRegistrationPending: $e');
+        }
       }
       try {
         final welcome = FirebaseFunctions.instanceFor(region: 'europe-west1')
@@ -690,7 +710,7 @@ class AuthProvider extends ChangeNotifier {
           'to': email.trim(),
           'firstName': firstName.trim(),
           'username': finalUsername,
-          'variant': 'pending',
+          'variant': requireVerification ? 'pending' : 'welcome',
         });
       } catch (e) {
         debugPrint('[auth] welcome mail: $e');

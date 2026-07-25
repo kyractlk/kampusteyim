@@ -53,6 +53,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _uploading = false;
   String? _busySide;
 
+  List<String> get _stepIds {
+    final ids = <String>['account', 'personal', 'campus'];
+    if (_security.requireStudentVerification) ids.add('docs');
+    ids.add('legal');
+    return ids;
+  }
+
+  List<String> get _stepLabels {
+    final labels = <String>['Hesap', 'Kişisel', 'Kampüs'];
+    if (_security.requireStudentVerification) labels.add('Belge');
+    labels.add('Onay');
+    return labels;
+  }
+
+  String get _stepId => _stepIds[_step.clamp(0, _stepIds.length - 1)];
+
   @override
   void initState() {
     super.initState();
@@ -60,7 +76,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (mounted) setState(() => _legal = t);
     });
     RegistrationSecurityConfig.load().then((s) {
-      if (mounted) setState(() => _security = s);
+      if (!mounted) return;
+      setState(() {
+        _security = s;
+        if (_step >= _stepIds.length) _step = _stepIds.length - 1;
+      });
     });
   }
 
@@ -77,8 +97,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  /// Belge yükleme durumu (zorunlu değil).
-  bool get _hasOptionalDocs {
+  bool get _docsOk {
+    if (!_security.requireStudentVerification) return true;
     if (_verifyType == 'card') {
       final needBack = _security.requireCardBothSides;
       return _frontUrl != null && (!needBack || _backUrl != null);
@@ -94,7 +114,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }) async {
     if (_uploading) return;
     try {
-      // Spinner sadece dosya seçildikten sonra — iptalde takılma olmasın.
       final file = await pick();
       if (file == null || !mounted) return;
 
@@ -141,6 +160,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
+    if (!_docsOk) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Doğrulama belgelerini tamamla.')),
+      );
+      return;
+    }
     if (!_kvkk || !_marketing) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -150,7 +175,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
     final auth = context.read<AuthProvider>();
-    final type = _hasOptionalDocs ? _verifyType : null;
+    final require = _security.requireStudentVerification;
     final ok = await auth.register(
       email: _email.text,
       studentNo: _studentNo.text,
@@ -164,23 +189,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
       emailTicket: _emailTicket!,
       kvkkAccepted: _kvkk,
       marketingConsent: _marketing,
-      studentVerificationType: type,
-      studentIdFrontUrl: type == 'card' ? _frontUrl : null,
-      studentIdBackUrl: type == 'card' ? _backUrl : null,
-      studentIdDocUrl: type == 'document' ? _pdfUrl : null,
+      requireVerification: require,
+      studentVerificationType: require ? _verifyType : null,
+      studentIdFrontUrl: require && _verifyType == 'card' ? _frontUrl : null,
+      studentIdBackUrl: require && _verifyType == 'card' ? _backUrl : null,
+      studentIdDocUrl: require && _verifyType == 'document' ? _pdfUrl : null,
     );
     if (!mounted) return;
     if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _hasOptionalDocs
-                ? 'Başvurun alındı. Belgen admin onayını hızlandırır; sonuç mail ile gelir.'
-                : 'Başvurun alındı. Belgeyi sonra da yükleyebilirsin; onay mail ile gelir.',
+      if (require) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Başvurun alındı. Belgen admin onayına düştü; sonuç mail ve bildirimle gelir.',
+            ),
           ),
-        ),
-      );
-      context.go('/pending-approval');
+        );
+        context.go('/pending-approval');
+      } else {
+        context.go('/home');
+      }
     } else if (auth.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error!)),
@@ -243,10 +271,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _next() {
-    if (_step == 0) {
+    if (_stepId == 'account') {
       final emailOk = _email.text.contains('@');
       final passOk = _password.text.length >= 6;
       if (!emailOk || !passOk) {
+        _formKey.currentState!.validate();
+        return;
+      }
+      if (_security.requireStudentNo && _studentNo.text.trim().length < 5) {
         _formKey.currentState!.validate();
         return;
       }
@@ -258,28 +290,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
         return;
       }
-    }
-    if (_step == 1) {
+    } else if (_stepId == 'personal') {
       final userOk =
           RegExp(r'^[a-zA-Z0-9_]{3,24}$').hasMatch(_username.text.trim());
-      final phone = _phone.text.trim();
       if (_firstName.text.trim().isEmpty ||
           _lastName.text.trim().isEmpty ||
           !userOk) {
         _formKey.currentState!.validate();
         return;
       }
-      if (phone.isNotEmpty && phone.length < 10) {
+      if (_security.requirePhone && _phone.text.trim().length < 10) {
         _formKey.currentState!.validate();
         return;
       }
+    } else if (_stepId == 'docs') {
+      if (!_docsOk) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Doğrulama adımını tamamla.')),
+        );
+        return;
+      }
     }
-    setState(() => _step = (_step + 1).clamp(0, 4));
+    setState(() => _step = (_step + 1).clamp(0, _stepIds.length - 1));
   }
 
   @override
   Widget build(BuildContext context) {
     final busy = context.watch<AuthProvider>().isBusy;
+    final last = _stepIds.length - 1;
 
     return GradientScaffold(
       child: SafeArea(
@@ -295,7 +333,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   children: [
                     const BrandHeader(compact: true, showAys: false),
                     const SizedBox(height: 20),
-                    _StepIndicator(step: _step)
+                    _StepIndicator(step: _step, labels: _stepLabels)
                         .animate()
                         .fadeIn()
                         .slideY(begin: 0.15),
@@ -303,7 +341,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 320),
                       child: Container(
-                        key: ValueKey(_step),
+                        key: ValueKey('${_stepId}_$_step'),
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
                           color: AppColors.surface.withValues(alpha: 0.94),
@@ -314,7 +352,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    if (_step < 4)
+                    if (_step < last)
                       AppPrimaryButton(
                         label: 'Devam',
                         onPressed: _uploading ? null : _next,
@@ -351,8 +389,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Widget _buildStep() {
-    switch (_step) {
-      case 0:
+    switch (_stepId) {
+      case 'account':
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -362,15 +400,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   .textTheme
                   .titleLarge
                   ?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'E-posta zorunlu ve kod ile doğrulanır — gerekirse bu adresten sana ulaşırız.',
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.35,
-                color: AppColors.textSecondary,
-              ),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -397,7 +426,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: (_sendingCode || _emailVerified) ? null : _sendEmailCode,
+                    onPressed:
+                        (_sendingCode || _emailVerified) ? null : _sendEmailCode,
                     icon: _sendingCode
                         ? const SizedBox(
                             width: 16,
@@ -428,28 +458,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.check_circle_outline),
                       ),
               ),
-              validator: (_) =>
-                  _emailVerified ? null : 'Kodu doğrula',
+              validator: (_) => _emailVerified ? null : 'Kodu doğrula',
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _studentNo,
-              decoration: const InputDecoration(
-                labelText: 'Öğrenci numarası (isteğe bağlı)',
-                helperText: 'Yüklersen admin onayı hızlanır; sonra da ekleyebilirsin.',
-                prefixIcon: Icon(Icons.badge_outlined),
+            if (_security.requireStudentNo) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _studentNo,
+                decoration: const InputDecoration(
+                  labelText: 'Öğrenci numarası',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+                validator: (v) =>
+                    v != null && v.trim().length >= 5 ? null : 'En az 5 karakter',
               ),
-              validator: (v) {
-                final s = (v ?? '').trim();
-                if (s.isEmpty) return null;
-                return s.length >= 5 ? null : 'En az 5 karakter veya boş bırak';
-              },
-            ),
+            ],
             const SizedBox(height: 12),
             TextFormField(
               controller: _password,
@@ -469,7 +497,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ],
         );
-      case 1:
+      case 'personal':
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -500,21 +528,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
               validator: (v) =>
                   v != null && v.trim().isNotEmpty ? null : 'Zorunlu',
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _phone,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Telefon (isteğe bağlı)',
-                helperText: 'Zorunlu değil. İletişim için sonra profilinden ekleyebilirsin.',
-                prefixIcon: Icon(Icons.phone_outlined),
+            if (_security.requirePhone) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _phone,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Telefon',
+                  prefixIcon: Icon(Icons.phone_outlined),
+                ),
+                validator: (v) => v != null && v.trim().length >= 10
+                    ? null
+                    : 'Geçerli telefon',
               ),
-              validator: (v) {
-                final s = (v ?? '').trim();
-                if (s.isEmpty) return null;
-                return s.length >= 10 ? null : 'Geçerli telefon veya boş bırak';
-              },
-            ),
+            ],
             const SizedBox(height: 12),
             TextFormField(
               controller: _username,
@@ -532,7 +559,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ],
         );
-      case 2:
+      case 'campus':
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -571,7 +598,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ],
         );
-      case 3:
+      case 'docs':
         return _buildVerificationStep();
       default:
         return Column(
@@ -604,28 +631,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Widget _buildVerificationStep() {
-    // Admin “belge adımını göster” kapalıysa atla (sonra pending ekranından yüklenebilir).
-    if (!_security.requireStudentVerification) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Öğrenci belgesi',
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Belge yüklemek zorunlu değil. Kaydı tamamlayıp onay beklerken '
-            'veya daha sonra belge ekleyebilirsin — yüklemek onayı hızlandırır.',
-            style: TextStyle(color: AppColors.textSecondary, height: 1.4),
-          ),
-        ],
-      );
-    }
-
     final cardOk = _security.allowStudentCard;
     final pdfOk = _security.allowStudentDocumentPdf;
 
@@ -641,24 +646,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Kart veya belge yüklemek isteğe bağlıdır. Yüklersen kaydın onayı hızlanır; '
-          'şimdi atlayıp sonra da yükleyebilirsin. Yüklersen belgedeki bilgiler '
-          'ad / soyad / öğrenci no ile uyumlu olmalı.',
+          'Öğrenci kartı veya resmi belge yükle. Belgedeki bilgiler ad, soyad ve '
+          'öğrenci numarasıyla eşleşmeli. Başvuru admin onayına düşer.',
           style: TextStyle(
             fontSize: 13,
             height: 1.4,
             color: AppColors.textSecondary,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _hasOptionalDocs
-              ? 'Belge hazır — onayı hızlandırır.'
-              : 'Belge yok — kayda devam edebilirsin; sonra yükle.',
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-            color: _hasOptionalDocs ? AppColors.lime : AppColors.cyan,
           ),
         ),
         const SizedBox(height: 16),
@@ -690,7 +683,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         if (_verifyType == 'card') ...[
           const SizedBox(height: 16),
-            _SideUploadCard(
+          _SideUploadCard(
             label: 'Ön yüz',
             done: _frontUrl != null,
             busy: _uploading && _busySide == 'front',
@@ -830,8 +823,8 @@ class _SideUploadCard extends StatelessWidget {
   final String label;
   final bool done;
   final bool busy;
-  final VoidCallback? onCamera;
   final VoidCallback? onGallery;
+  final VoidCallback? onCamera;
   final bool pdfOnly;
 
   @override
@@ -839,11 +832,9 @@ class _SideUploadCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
+        color: AppColors.surfaceMuted,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: done ? AppColors.lime : AppColors.border,
-        ),
-        color: done ? AppColors.lime.withValues(alpha: 0.1) : null,
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -895,18 +886,19 @@ class _SideUploadCard extends StatelessWidget {
 }
 
 class _StepIndicator extends StatelessWidget {
-  const _StepIndicator({required this.step});
+  const _StepIndicator({required this.step, required this.labels});
   final int step;
+  final List<String> labels;
 
   @override
   Widget build(BuildContext context) {
-    final labels = ['Hesap', 'Kişisel', 'Kampüs', 'Belge', 'Onay'];
+    final n = labels.length;
     return Row(
-      children: List.generate(5, (i) {
+      children: List.generate(n, (i) {
         final active = i <= step;
         return Expanded(
           child: Padding(
-            padding: EdgeInsets.only(right: i < 4 ? 4 : 0),
+            padding: EdgeInsets.only(right: i < n - 1 ? 4 : 0),
             child: Column(
               children: [
                 AnimatedContainer(

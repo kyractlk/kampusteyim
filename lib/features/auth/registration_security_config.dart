@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
-/// Kayıt doğrulama güvenlik ayarları — admin anlık aç/kapa.
+/// Kayıt güvenlik / form alan ayarları — yalnız admin. Kullanıcıya gerekçe gösterilmez.
 class RegistrationSecurityConfig {
   const RegistrationSecurityConfig({
     this.requireStudentVerification = true,
+    this.requireStudentNo = true,
+    this.requirePhone = true,
     this.allowStudentCard = true,
     this.allowStudentDocumentPdf = true,
     this.requireCardBothSides = true,
@@ -13,7 +15,15 @@ class RegistrationSecurityConfig {
     this.maxPdfBytes = 12 * 1024 * 1024,
   });
 
+  /// Açıkken kayıtta belge adımı zorunlu; kapalıyken adım hiç gösterilmez, hesap doğrudan onaylanır.
   final bool requireStudentVerification;
+
+  /// Açıkken öğrenci no zorunlu; kapalıyken alan gizlenir.
+  final bool requireStudentNo;
+
+  /// Açıkken telefon zorunlu; kapalıyken alan gizlenir.
+  final bool requirePhone;
+
   final bool allowStudentCard;
   final bool allowStudentDocumentPdf;
   final bool requireCardBothSides;
@@ -29,17 +39,22 @@ class RegistrationSecurityConfig {
     if (m == null || m.isEmpty) return defaults;
     return RegistrationSecurityConfig(
       requireStudentVerification: m['requireStudentVerification'] != false,
+      requireStudentNo: m['requireStudentNo'] != false,
+      requirePhone: m['requirePhone'] != false,
       allowStudentCard: m['allowStudentCard'] != false,
       allowStudentDocumentPdf: m['allowStudentDocumentPdf'] != false,
       requireCardBothSides: m['requireCardBothSides'] != false,
       malwareScanEnabled: m['malwareScanEnabled'] != false,
-      maxImageBytes: (m['maxImageBytes'] as num?)?.toInt() ?? defaults.maxImageBytes,
+      maxImageBytes:
+          (m['maxImageBytes'] as num?)?.toInt() ?? defaults.maxImageBytes,
       maxPdfBytes: (m['maxPdfBytes'] as num?)?.toInt() ?? defaults.maxPdfBytes,
     );
   }
 
   Map<String, dynamic> toMap() => {
         'requireStudentVerification': requireStudentVerification,
+        'requireStudentNo': requireStudentNo,
+        'requirePhone': requirePhone,
         'allowStudentCard': allowStudentCard,
         'allowStudentDocumentPdf': allowStudentDocumentPdf,
         'requireCardBothSides': requireCardBothSides,
@@ -61,11 +76,15 @@ class RegistrationSecurityConfig {
   }
 
   Future<void> save() async {
-    await FirebaseFirestore.instance.doc(docPath).set(toMap(), SetOptions(merge: true));
+    await FirebaseFirestore.instance
+        .doc(docPath)
+        .set(toMap(), SetOptions(merge: true));
   }
 
   RegistrationSecurityConfig copyWith({
     bool? requireStudentVerification,
+    bool? requireStudentNo,
+    bool? requirePhone,
     bool? allowStudentCard,
     bool? allowStudentDocumentPdf,
     bool? requireCardBothSides,
@@ -74,6 +93,8 @@ class RegistrationSecurityConfig {
     return RegistrationSecurityConfig(
       requireStudentVerification:
           requireStudentVerification ?? this.requireStudentVerification,
+      requireStudentNo: requireStudentNo ?? this.requireStudentNo,
+      requirePhone: requirePhone ?? this.requirePhone,
       allowStudentCard: allowStudentCard ?? this.allowStudentCard,
       allowStudentDocumentPdf:
           allowStudentDocumentPdf ?? this.allowStudentDocumentPdf,
@@ -93,18 +114,15 @@ class StudentDocGuard {
 
   static StudentDocKind? detectKind(Uint8List bytes) {
     if (bytes.length < 8) return null;
-    // JPEG
     if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
       return StudentDocKind.jpeg;
     }
-    // PNG
     if (bytes[0] == 0x89 &&
         bytes[1] == 0x50 &&
         bytes[2] == 0x4E &&
         bytes[3] == 0x47) {
       return StudentDocKind.png;
     }
-    // PDF
     if (bytes[0] == 0x25 &&
         bytes[1] == 0x50 &&
         bytes[2] == 0x44 &&
@@ -116,22 +134,21 @@ class StudentDocGuard {
 
   static String? malwareHint(Uint8List bytes) {
     if (bytes.length < 4) return 'Dosya çok küçük veya bozuk.';
-    // PE / EXE
     if (bytes[0] == 0x4D && bytes[1] == 0x5A) {
       return 'Çalıştırılabilir dosya engellendi.';
     }
-    // ELF
     if (bytes[0] == 0x7F &&
         bytes[1] == 0x45 &&
         bytes[2] == 0x4C &&
         bytes[3] == 0x46) {
       return 'Çalıştırılabilir dosya engellendi.';
     }
-    // ZIP (apk/jar/docx disguised) — PDF dışı arşiv
-    if (bytes[0] == 0x50 && bytes[1] == 0x4B && bytes[2] == 0x03 && bytes[3] == 0x04) {
+    if (bytes[0] == 0x50 &&
+        bytes[1] == 0x4B &&
+        bytes[2] == 0x03 &&
+        bytes[3] == 0x04) {
       return 'Arşiv / sıkıştırılmış zararlı olası dosya engellendi.';
     }
-    // HTML script drop
     final head = String.fromCharCodes(
       bytes.take(64).where((b) => b >= 32 && b < 127),
     ).toLowerCase();

@@ -152,14 +152,14 @@ class _SecurityPanel extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Değişiklikler anında kayıt ekranına yansır.',
+              'Değişiklikler anında kayıt ekranına yansır. Kullanıcıya gerekçe gösterilmez.',
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Kayıtta belge adımını göster'),
+              title: const Text('Belge doğrulaması zorunlu'),
               subtitle: const Text(
-                'Belge asla zorunlu değil; yüklemek onayı hızlandırır. Kapalıysa yalnızca e-posta yeter.',
+                'Kapalıysa belge adımı hiç gösterilmez; hesap doğrudan onaylanır',
               ),
               value: security.requireStudentVerification,
               onChanged: loading || saving
@@ -167,6 +167,25 @@ class _SecurityPanel extends StatelessWidget {
                   : (v) => onChanged(
                         security.copyWith(requireStudentVerification: v),
                       ),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Öğrenci numarası zorunlu'),
+              subtitle: const Text('Kapalıysa alan gizlenir'),
+              value: security.requireStudentNo,
+              onChanged: loading || saving
+                  ? null
+                  : (v) =>
+                      onChanged(security.copyWith(requireStudentNo: v)),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Telefon zorunlu'),
+              subtitle: const Text('Kapalıysa alan gizlenir'),
+              value: security.requirePhone,
+              onChanged: loading || saving
+                  ? null
+                  : (v) => onChanged(security.copyWith(requirePhone: v)),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
