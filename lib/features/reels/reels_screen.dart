@@ -388,9 +388,9 @@ class _ReelPageState extends State<_ReelPage> {
         (author?.showBlueBadge == true) ||
         (author?.showGoldBadge == true);
     final photo = author?.photoUrl ?? reel.authorPhotoUrl;
-    // Alt nav (extendBody) + sistem inset — "Ses" / @handle kesilmesin.
+    // Alt nav (extendBody + SafeArea) + sistem inset — handle / açıklama / Ses üstte kalsın.
     final bottomClear =
-        MediaQuery.viewPaddingOf(context).bottom + 72 + 10;
+        MediaQuery.viewPaddingOf(context).bottom + 66 + 36;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -530,23 +530,14 @@ class _ReelPageState extends State<_ReelPage> {
                 ),
                 if (reel.caption.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Text(
-                    reel.caption,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      height: 1.3,
-                      fontSize: 13,
-                    ),
-                  ),
+                  _ReelCaptionText(caption: reel.caption),
                 ],
               ],
             ),
           ),
           Positioned(
             right: 4,
-            bottom: bottomClear - 4,
+            bottom: bottomClear,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -584,6 +575,45 @@ class _ReelPageState extends State<_ReelPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Açıklama içinde @mention / #hashtag vurgusu.
+class _ReelCaptionText extends StatelessWidget {
+  const _ReelCaptionText({required this.caption});
+  final String caption;
+
+  @override
+  Widget build(BuildContext context) {
+    final base = const TextStyle(
+      color: Colors.white,
+      height: 1.3,
+      fontSize: 13,
+    );
+    final accent = TextStyle(
+      color: AppColors.cyan,
+      height: 1.3,
+      fontSize: 13,
+      fontWeight: FontWeight.w700,
+    );
+    final re = RegExp(r'([@#][\wğüşıöçĞÜŞİÖÇ0-9_]+)');
+    final spans = <TextSpan>[];
+    var start = 0;
+    for (final m in re.allMatches(caption)) {
+      if (m.start > start) {
+        spans.add(TextSpan(text: caption.substring(start, m.start), style: base));
+      }
+      spans.add(TextSpan(text: m.group(0), style: accent));
+      start = m.end;
+    }
+    if (start < caption.length) {
+      spans.add(TextSpan(text: caption.substring(start), style: base));
+    }
+    return Text.rich(
+      TextSpan(children: spans.isEmpty ? [TextSpan(text: caption, style: base)] : spans),
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }
@@ -814,27 +844,62 @@ class _ReelCommentsSheetState extends State<_ReelCommentsSheet> {
                 ),
               ),
               if (_suggestions.isNotEmpty)
-                SizedBox(
-                  height: 52,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                Container(
+                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                  constraints: const BoxConstraints(maxHeight: 168),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
                     itemCount: _suggestions.length,
+                    separatorBuilder: (_, _) => const Divider(
+                      height: 1,
+                      color: Colors.white12,
+                    ),
                     itemBuilder: (context, i) {
                       final u = _suggestions[i];
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ActionChip(
-                          backgroundColor: Colors.white12,
-                          labelStyle: const TextStyle(color: Colors.white),
-                          avatar: UserAvatar(
-                            name: u.fullName,
-                            photoUrl: u.photoUrl,
-                            radius: 12,
-                          ),
-                          label: Text(MentionUtils.displayHandle(u.handle)),
-                          onPressed: () => _applyMention(u),
+                      return ListTile(
+                        dense: true,
+                        onTap: () => _applyMention(u),
+                        leading: UserAvatar(
+                          name: u.fullName,
+                          photoUrl: u.communityLogoUrl ?? u.photoUrl,
+                          isCommunity: u.isCommunity,
+                          radius: 16,
                         ),
+                        title: Text(
+                          u.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        subtitle: Text(
+                          MentionUtils.displayHandle(u.handle),
+                          style: TextStyle(
+                            color: u.isCommunity
+                                ? AppColors.lime
+                                : AppColors.cyan,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        trailing: u.isCommunity
+                            ? const Text(
+                                'Topluluk',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 11,
+                                ),
+                              )
+                            : null,
                       );
                     },
                   ),

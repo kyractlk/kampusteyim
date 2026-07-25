@@ -5,8 +5,12 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/storage/media_upload.dart';
+import '../../core/utils/hashtag_utils.dart';
+import '../../core/utils/mention_utils.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
+import '../notifications/notification_models.dart';
+import '../notifications/push_service.dart';
 import 'reel_models.dart';
 import 'reels_video_cache.dart';
 
@@ -211,20 +215,83 @@ class ReelsProvider extends ChangeNotifier {
             .get();
         if (existing.docs.isNotEmpty) return null;
       }
+      final text = caption.trim();
+      final tags = HashtagUtils.extractUnique(text);
+      final mentionedIds = _resolveMentionIds(
+        text: text,
+        actorId: author.id,
+        directory: _auth?.directory ?? const [],
+      );
       final doc = FirebaseFirestore.instance.collection('reels').doc();
       final reel = CampusReel.fromAuthor(
         id: doc.id,
         author: author,
         mediaUrl: mediaUrl,
         isVideo: isVideo,
-        caption: caption.trim(),
+        caption: text,
+        hashtags: tags,
+        mentionedUserIds: mentionedIds,
         sourcePostId: sourcePostId,
       );
       await doc.set(reel.toFirestore());
+      unawaited(_notifyReelMentions(
+        content: text,
+        reelId: doc.id,
+        actorId: author.id,
+        actorName: author.fullName,
+        mentionedIds: mentionedIds,
+      ));
       return null;
     } catch (e) {
       debugPrint('[reels] createUrl: $e');
       return 'Reels paylaşılamadı: $e';
+    }
+  }
+
+  List<String> _resolveMentionIds({
+    required String text,
+    required String actorId,
+    required List<AppUser> directory,
+  }) {
+    final handles = MentionUtils.extractHandles(text);
+    if (handles.isEmpty) return const [];
+    final ids = <String>{};
+    for (final h in handles) {
+      for (final u in directory) {
+        final uh = u.handle.replaceFirst('@', '').toLowerCase();
+        final un = (u.username ?? '').toLowerCase();
+        if ((uh == h || un == h) && u.id != actorId && u.allowMentions) {
+          ids.add(u.id);
+          break;
+        }
+      }
+    }
+    return ids.toList();
+  }
+
+  Future<void> _notifyReelMentions({
+    required String content,
+    required String reelId,
+    required String actorId,
+    required String actorName,
+    required List<String> mentionedIds,
+  }) async {
+    if (mentionedIds.isEmpty && content.isEmpty) return;
+    final copy = NotificationCopy.mention(actorName);
+    for (final uid in mentionedIds) {
+      try {
+        await PushService.instance.dispatch(
+          toUserId: uid,
+          title: copy.$1,
+          body: '${copy.$2} (Kampüs Reels)',
+          emoji: copy.$3,
+          type: 'mention',
+          actorId: actorId,
+          targetId: reelId,
+        );
+      } catch (e) {
+        debugPrint('[reels] mention notify: $e');
+      }
     }
   }
 
@@ -324,6 +391,18 @@ class ReelsProvider extends ChangeNotifier {
             _items[i].copyWith(commentCount: _items[i].commentCount + 1);
         notifyListeners();
       }
+      final mentioned = _resolveMentionIds(
+        text: text,
+        actorId: author.id,
+        directory: _auth?.directory ?? const [],
+      );
+      unawaited(_notifyReelMentions(
+        content: text,
+        reelId: reelId,
+        actorId: author.id,
+        actorName: author.fullName,
+        mentionedIds: mentioned,
+      ));
       return null;
     } catch (e) {
       debugPrint('[reels] comment: $e');

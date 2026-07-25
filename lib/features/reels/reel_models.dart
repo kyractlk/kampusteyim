@@ -13,6 +13,8 @@ class CampusReel {
     required this.createdAt,
     this.authorPhotoUrl,
     this.caption = '',
+    this.hashtags = const [],
+    this.mentionedUserIds = const [],
     this.mediaType = ReelMediaType.video,
     this.likedBy = const [],
     this.viewedBy = const [],
@@ -31,6 +33,8 @@ class CampusReel {
   final String mediaUrl;
   final ReelMediaType mediaType;
   final String caption;
+  final List<String> hashtags;
+  final List<String> mentionedUserIds;
   final DateTime createdAt;
   final List<String> likedBy;
   final List<String> viewedBy;
@@ -62,6 +66,8 @@ class CampusReel {
         mediaUrl: mediaUrl,
         mediaType: mediaType,
         caption: caption,
+        hashtags: hashtags,
+        mentionedUserIds: mentionedUserIds,
         createdAt: createdAt,
         likedBy: likedBy ?? this.likedBy,
         viewedBy: viewedBy ?? this.viewedBy,
@@ -80,6 +86,8 @@ class CampusReel {
         'mediaUrl': mediaUrl,
         'mediaType': mediaType == ReelMediaType.video ? 'video' : 'image',
         'caption': caption,
+        'hashtags': hashtags,
+        'mentionedUserIds': mentionedUserIds,
         'createdAt': createdAt.toIso8601String(),
         'likedBy': likedBy,
         'viewedBy': viewedBy,
@@ -112,6 +120,8 @@ class CampusReel {
           ? ReelMediaType.image
           : ReelMediaType.video,
       caption: '${d['caption'] ?? ''}',
+      hashtags: strList(d['hashtags']),
+      mentionedUserIds: strList(d['mentionedUserIds']),
       createdAt: parse(d['createdAt']),
       likedBy: strList(d['likedBy']),
       viewedBy: strList(d['viewedBy']),
@@ -129,6 +139,8 @@ class CampusReel {
     required String mediaUrl,
     required bool isVideo,
     String caption = '',
+    List<String> hashtags = const [],
+    List<String> mentionedUserIds = const [],
     String? sourcePostId,
   }) {
     return CampusReel(
@@ -140,6 +152,8 @@ class CampusReel {
       mediaUrl: mediaUrl,
       mediaType: isVideo ? ReelMediaType.video : ReelMediaType.image,
       caption: caption,
+      hashtags: hashtags,
+      mentionedUserIds: mentionedUserIds,
       createdAt: DateTime.now(),
       sourcePostId: sourcePostId,
       authorVerified: author.showBlueBadge || author.showGoldBadge,

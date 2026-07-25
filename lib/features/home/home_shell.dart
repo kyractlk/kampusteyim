@@ -102,12 +102,13 @@ class HomeShell extends StatelessWidget {
                 surfaceTintColor: Colors.transparent,
                 elevation: 0,
                 shadowColor: Colors.transparent,
-                height: reelsMode ? 58 : 68,
+                height: reelsMode ? 66 : 68,
                 labelTextStyle: WidgetStateProperty.resolveWith((states) {
                   final selected = states.contains(WidgetState.selected);
                   return TextStyle(
-                    fontSize: 12,
+                    fontSize: reelsMode ? 11 : 12,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    height: 1.1,
                     color: reelsMode
                         ? (selected ? Colors.white : Colors.white60)
                         : (selected ? AppColors.navy : AppColors.textSecondary),
@@ -124,15 +125,20 @@ class HomeShell extends StatelessWidget {
                 }),
               ),
             ),
-            child: NavigationBar(
-              selectedIndex: index,
-              onDestinationSelected: (i) => _onTap(context, i),
-              backgroundColor:
-                  reelsMode ? Colors.black : AppColors.surface,
-              indicatorColor: reelsMode
-                  ? Colors.white.withValues(alpha: 0.16)
-                  : AppColors.cyan.withValues(alpha: 0.18),
-              destinations: _destinations(loggedIn),
+            child: SafeArea(
+              top: false,
+              minimum: EdgeInsets.zero,
+              child: NavigationBar(
+                selectedIndex: index,
+                onDestinationSelected: (i) => _onTap(context, i),
+                backgroundColor:
+                    reelsMode ? Colors.black : AppColors.surface,
+                indicatorColor: reelsMode
+                    ? Colors.white.withValues(alpha: 0.16)
+                    : AppColors.cyan.withValues(alpha: 0.18),
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                destinations: _destinations(loggedIn),
+              ),
             ),
           ),
         ),

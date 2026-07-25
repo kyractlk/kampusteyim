@@ -11,6 +11,10 @@ import 'package:video_player/video_player.dart';
 import '../../core/storage/media_upload.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_gate.dart';
+import '../../core/utils/hashtag_utils.dart';
+import '../../core/utils/mention_utils.dart';
+import '../../core/widgets/social_widgets.dart';
+import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../reels/reels_provider.dart';
 import 'camera_mirror.dart';
@@ -853,7 +857,7 @@ class _CapturedPreviewState extends State<_CapturedPreview> {
   }
 }
 
-class _PublishPanel extends StatelessWidget {
+class _PublishPanel extends StatefulWidget {
   const _PublishPanel({
     required this.isVideo,
     required this.mode,
@@ -873,47 +877,228 @@ class _PublishPanel extends StatelessWidget {
   final VoidCallback onModePublish;
 
   @override
+  State<_PublishPanel> createState() => _PublishPanelState();
+}
+
+class _PublishPanelState extends State<_PublishPanel> {
+  final _focus = FocusNode();
+  String? _mentionQuery;
+  List<AppUser> _mentionHits = const [];
+
+  bool get _showCaption =>
+      widget.mode == CampusShareMode.reels ||
+      widget.mode == CampusShareMode.choose;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.captionCtrl.addListener(_onCaptionChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.captionCtrl.removeListener(_onCaptionChanged);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _onCaptionChanged() {
+    if (!mounted || !_showCaption) return;
+    final auth = context.read<AuthProvider>();
+    final cursor = widget.captionCtrl.selection.baseOffset;
+    final q = MentionUtils.activeQuery(
+      widget.captionCtrl.text,
+      cursor < 0 ? widget.captionCtrl.text.length : cursor,
+    );
+    if (q == null) {
+      if (_mentionQuery != null) {
+        setState(() {
+          _mentionQuery = null;
+          _mentionHits = const [];
+        });
+      } else {
+        setState(() {});
+      }
+      return;
+    }
+    final hits = MentionUtils.suggestions(
+      directory: auth.directory,
+      query: q,
+      excludeUserId: auth.user?.id,
+    );
+    setState(() {
+      _mentionQuery = q;
+      _mentionHits = hits;
+    });
+  }
+
+  void _pickMention(AppUser u) {
+    final cursor = widget.captionCtrl.selection.baseOffset;
+    final next = MentionUtils.applyMention(
+      text: widget.captionCtrl.text,
+      cursor: cursor < 0 ? widget.captionCtrl.text.length : cursor,
+      user: u,
+    );
+    widget.captionCtrl.value = TextEditingValue(
+      text: next.text,
+      selection: TextSelection.collapsed(offset: next.cursor),
+    );
+    setState(() {
+      _mentionQuery = null;
+      _mentionHits = const [];
+    });
+  }
+
+  void _insertToken(String token) {
+    final t = widget.captionCtrl.text;
+    final cursor = widget.captionCtrl.selection.baseOffset;
+    final at = cursor < 0 ? t.length : cursor;
+    final before = t.substring(0, at);
+    final after = t.substring(at);
+    final needsSpace = before.isNotEmpty && !before.endsWith(' ');
+    final insert = '${needsSpace ? ' ' : ''}$token';
+    final next = '$before$insert$after';
+    final newCursor = before.length + insert.length;
+    widget.captionCtrl.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: newCursor),
+    );
+    _focus.requestFocus();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final fixed = mode != CampusShareMode.choose;
+    final fixed = widget.mode != CampusShareMode.choose;
+    final uniqueTags = HashtagUtils.uniqueCount(widget.captionCtrl.text);
+    final showMentions = _mentionQuery != null && _mentionHits.isNotEmpty;
+
     return Material(
-      color: Colors.black.withValues(alpha: 0.82),
+      color: Colors.black.withValues(alpha: 0.88),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (mode == CampusShareMode.reels || mode == CampusShareMode.choose)
+              if (_showCaption) ...[
                 TextField(
-                  controller: captionCtrl,
+                  controller: widget.captionCtrl,
+                  focusNode: _focus,
                   style: const TextStyle(color: Colors.white),
-                  maxLines: 2,
+                  maxLines: 3,
+                  minLines: 2,
+                  cursorColor: AppColors.cyan,
                   decoration: InputDecoration(
-                    hintText: 'Açıklama yaz… @kullanici',
+                    hintText:
+                        'Açıklama · @kullanıcı / @topluluk · #hashtag',
                     hintStyle: const TextStyle(color: Colors.white38),
                     filled: true,
-                    fillColor: Colors.white12,
+                    fillColor: const Color(0xFF1A1A1A),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide.none,
                     ),
                   ),
                 ),
-              if (mode == CampusShareMode.reels || mode == CampusShareMode.choose)
+                if (showMentions)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    constraints: const BoxConstraints(maxHeight: 180),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E1E1E),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _mentionHits.length,
+                      separatorBuilder: (_, _) => const Divider(
+                        height: 1,
+                        color: Colors.white12,
+                      ),
+                      itemBuilder: (context, i) {
+                        final u = _mentionHits[i];
+                        return ListTile(
+                          dense: true,
+                          onTap: () => _pickMention(u),
+                          leading: UserAvatar(
+                            name: u.fullName,
+                            photoUrl: u.communityLogoUrl ?? u.photoUrl,
+                            isCommunity: u.isCommunity,
+                            radius: 16,
+                          ),
+                          title: Text(
+                            u.fullName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                          subtitle: Text(
+                            MentionUtils.displayHandle(u.handle),
+                            style: TextStyle(
+                              color: u.isCommunity
+                                  ? AppColors.lime
+                                  : AppColors.cyan,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          trailing: Text(
+                            u.isCommunity
+                                ? 'Topluluk'
+                                : (u.isCompany ? 'Firma' : 'Kullanıcı'),
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 11,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _CaptionQuickChip(
+                      label: '@ etiket',
+                      onTap: () => _insertToken('@'),
+                    ),
+                    const SizedBox(width: 8),
+                    _CaptionQuickChip(
+                      label: '# hashtag',
+                      onTap: () => _insertToken('#'),
+                    ),
+                    const Spacer(),
+                    if (uniqueTags > 0)
+                      Text(
+                        '$uniqueTags hashtag',
+                        style: const TextStyle(
+                          color: AppColors.cyan,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 10),
+              ],
               if (fixed)
                 FilledButton(
                   style: FilledButton.styleFrom(
-                    backgroundColor: mode == CampusShareMode.reels
+                    backgroundColor: widget.mode == CampusShareMode.reels
                         ? AppColors.lime
                         : AppColors.cyan,
                     foregroundColor: AppColors.navy,
                     minimumSize: const Size.fromHeight(48),
                   ),
-                  onPressed: onModePublish,
+                  onPressed: widget.onModePublish,
                   child: Text(
-                    mode == CampusShareMode.reels
+                    widget.mode == CampusShareMode.reels
                         ? 'Kampüs Reels olarak paylaş'
                         : 'Hikâye olarak paylaş',
                     style: const TextStyle(fontWeight: FontWeight.w800),
@@ -926,7 +1111,7 @@ class _PublishPanel extends StatelessWidget {
                     foregroundColor: AppColors.navy,
                     minimumSize: const Size.fromHeight(48),
                   ),
-                  onPressed: onStory,
+                  onPressed: widget.onStory,
                   child: const Text(
                     'Hikâye olarak paylaş',
                     style: TextStyle(fontWeight: FontWeight.w800),
@@ -939,9 +1124,9 @@ class _PublishPanel extends StatelessWidget {
                     foregroundColor: AppColors.navy,
                     minimumSize: const Size.fromHeight(48),
                   ),
-                  onPressed: onReels,
+                  onPressed: widget.onReels,
                   child: Text(
-                    isVideo
+                    widget.isVideo
                         ? 'Kampüs Reels olarak paylaş'
                         : 'Kampüs Reels’e koy',
                     style: const TextStyle(fontWeight: FontWeight.w800),
@@ -949,13 +1134,42 @@ class _PublishPanel extends StatelessWidget {
                 ),
               ],
               TextButton(
-                onPressed: onRetake,
+                onPressed: widget.onRetake,
                 child: const Text(
                   'Yeniden çek',
                   style: TextStyle(color: Colors.white70),
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CaptionQuickChip extends StatelessWidget {
+  const _CaptionQuickChip({required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF2A2A2A),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
           ),
         ),
       ),
