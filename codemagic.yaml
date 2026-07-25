@@ -40,7 +40,10 @@ workflows:
           pod install --repo-update
       - name: Build number
         script: |
-          sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BUILD_NUMBER/" pubspec.yaml
+          # App Store’da son yüklenen cfBundleVersion = 12 → her zaman daha yüksek olmalı
+          BN="${BUILD_NUMBER:-13}"
+          if [ "$BN" -le 12 ]; then BN=13; fi
+          sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Flutter IPA RELEASE only
         script: |
@@ -130,7 +133,9 @@ workflows:
           pod install --repo-update
       - name: Build number
         script: |
-          sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BUILD_NUMBER/" pubspec.yaml
+          BN="${BUILD_NUMBER:-13}"
+          if [ "$BN" -le 12 ]; then BN=13; fi
+          sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Flutter Ad Hoc RELEASE IPA
         script: |
