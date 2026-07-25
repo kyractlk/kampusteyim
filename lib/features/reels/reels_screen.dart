@@ -12,6 +12,7 @@ import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
+import '../home/home_shell.dart' show kReelsBottomNavHeight;
 import '../notifications/notification_provider.dart';
 import '../stories/campus_camera_screen.dart';
 import 'reel_models.dart';
@@ -388,10 +389,9 @@ class _ReelPageState extends State<_ReelPage> {
         (author?.showBlueBadge == true) ||
         (author?.showGoldBadge == true);
     final photo = author?.photoUrl ?? reel.authorPhotoUrl;
-    // extendBody: video nav altına uzar. Overlay = sistem inset + nav (68) + nefes payı.
-    // (Çifte SafeArea yok — aksi halde yazılar bara gömülüyordu.)
+    // İnce Reels nav ile birebir aynı blok yüksekliği + Ses/etiket nefes payı.
     final bottomClear =
-        MediaQuery.viewPaddingOf(context).bottom + 68 + 28;
+        MediaQuery.viewPaddingOf(context).bottom + kReelsBottomNavHeight + 22;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -640,15 +640,15 @@ class _SideBtn extends StatelessWidget {
         IconButton(
           onPressed: onTap,
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 40),
-          icon: Icon(icon, color: color, size: 28),
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+          icon: Icon(icon, color: color, size: 26),
         ),
         Text(
           label,
           style: const TextStyle(
             color: Colors.white70,
             fontSize: 11,
-            height: 1.1,
+            height: 1.05,
           ),
         ),
       ],

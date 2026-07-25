@@ -15,6 +15,9 @@ import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
 import '../reels/reels_provider.dart';
 
+/// Reels alt menü — içerik yüksekliği (home indicator / sistem inset hariç).
+const double kReelsBottomNavHeight = 50;
+
 class HomeShell extends StatelessWidget {
   const HomeShell({super.key, required this.navigationShell});
 
@@ -91,54 +94,58 @@ class HomeShell extends StatelessWidget {
           extendBody: reelsMode,
           backgroundColor: reelsMode ? Colors.black : null,
           body: navigationShell,
-          bottomNavigationBar: Theme(
-            data: Theme.of(context).copyWith(
-              navigationBarTheme: NavigationBarThemeData(
-                backgroundColor:
-                    reelsMode ? Colors.black : AppColors.surface,
-                indicatorColor: reelsMode
-                    ? Colors.white.withValues(alpha: 0.16)
-                    : AppColors.cyan.withValues(alpha: 0.18),
-                surfaceTintColor: Colors.transparent,
-                elevation: 0,
-                shadowColor: Colors.transparent,
-                // Profil ile aynı yükseklik — boyut değiştirme.
-                height: 68,
-                labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                  final selected = states.contains(WidgetState.selected);
-                  return TextStyle(
-                    fontSize: 12,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: reelsMode
-                        ? (selected ? Colors.white : Colors.white60)
-                        : (selected ? AppColors.navy : AppColors.textSecondary),
-                  );
-                }),
-                iconTheme: WidgetStateProperty.resolveWith((states) {
-                  final selected = states.contains(WidgetState.selected);
-                  return IconThemeData(
-                    size: 24,
-                    color: reelsMode
-                        ? (selected ? Colors.white : Colors.white60)
-                        : (selected ? AppColors.navy : AppColors.textSecondary),
-                  );
-                }),
-              ),
-            ),
-            // SafeArea yok: NavigationBar zaten sistem inset’i yönetir;
-            // ekstra SafeArea çifte padding + overlay çakışması yapıyordu.
-            child: NavigationBar(
-              selectedIndex: index,
-              onDestinationSelected: (i) => _onTap(context, i),
-              backgroundColor:
-                  reelsMode ? Colors.black : AppColors.surface,
-              indicatorColor: reelsMode
-                  ? Colors.white.withValues(alpha: 0.16)
-                  : AppColors.cyan.withValues(alpha: 0.18),
-              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-              destinations: _destinations(loggedIn),
-            ),
-          ),
+          bottomNavigationBar: reelsMode
+              ? _ReelsBottomNav(
+                  index: index,
+                  onTap: (i) => _onTap(context, i),
+                  destinations: _destinations(loggedIn),
+                )
+              : Theme(
+                  data: Theme.of(context).copyWith(
+                    navigationBarTheme: NavigationBarThemeData(
+                      backgroundColor: AppColors.surface,
+                      indicatorColor:
+                          AppColors.cyan.withValues(alpha: 0.18),
+                      surfaceTintColor: Colors.transparent,
+                      elevation: 0,
+                      shadowColor: Colors.transparent,
+                      height: 68,
+                      labelTextStyle:
+                          WidgetStateProperty.resolveWith((states) {
+                        final selected =
+                            states.contains(WidgetState.selected);
+                        return TextStyle(
+                          fontSize: 12,
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.w500,
+                          color: selected
+                              ? AppColors.navy
+                              : AppColors.textSecondary,
+                        );
+                      }),
+                      iconTheme: WidgetStateProperty.resolveWith((states) {
+                        final selected =
+                            states.contains(WidgetState.selected);
+                        return IconThemeData(
+                          size: 24,
+                          color: selected
+                              ? AppColors.navy
+                              : AppColors.textSecondary,
+                        );
+                      }),
+                    ),
+                  ),
+                  child: NavigationBar(
+                    selectedIndex: index,
+                    onDestinationSelected: (i) => _onTap(context, i),
+                    backgroundColor: AppColors.surface,
+                    indicatorColor:
+                        AppColors.cyan.withValues(alpha: 0.18),
+                    labelBehavior:
+                        NavigationDestinationLabelBehavior.alwaysShow,
+                    destinations: _destinations(loggedIn),
+                  ),
+                ),
         ),
       );
     }
@@ -242,6 +249,73 @@ class HomeShell extends StatelessWidget {
           label: loggedIn ? 'Profil' : 'Giriş',
         ),
       ];
+}
+
+/// Reels: ince siyah bant — menüleri alta yapıştırır, SafeArea şişirmez.
+class _ReelsBottomNav extends StatelessWidget {
+  const _ReelsBottomNav({
+    required this.index,
+    required this.onTap,
+    required this.destinations,
+  });
+
+  final int index;
+  final ValueChanged<int> onTap;
+  final List<NavigationDestination> destinations;
+
+  @override
+  Widget build(BuildContext context) {
+    final systemBottom = MediaQuery.viewPaddingOf(context).bottom;
+    return ColoredBox(
+      color: Colors.black,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: systemBottom),
+        child: MediaQuery.removePadding(
+          context: context,
+          removeBottom: true,
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              navigationBarTheme: NavigationBarThemeData(
+                backgroundColor: Colors.black,
+                indicatorColor: Colors.white.withValues(alpha: 0.16),
+                surfaceTintColor: Colors.transparent,
+                elevation: 0,
+                shadowColor: Colors.transparent,
+                height: kReelsBottomNavHeight,
+                labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                  final selected = states.contains(WidgetState.selected);
+                  return TextStyle(
+                    fontSize: 10,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    height: 1.0,
+                    color: selected ? Colors.white : Colors.white60,
+                  );
+                }),
+                iconTheme: WidgetStateProperty.resolveWith((states) {
+                  final selected = states.contains(WidgetState.selected);
+                  return IconThemeData(
+                    size: 22,
+                    color: selected ? Colors.white : Colors.white60,
+                  );
+                }),
+              ),
+            ),
+            child: SizedBox(
+              height: kReelsBottomNavHeight,
+              child: NavigationBar(
+                selectedIndex: index,
+                onDestinationSelected: onTap,
+                backgroundColor: Colors.black,
+                indicatorColor: Colors.white.withValues(alpha: 0.16),
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                destinations: destinations,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _DesktopRail extends StatelessWidget {
