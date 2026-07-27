@@ -1,11 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../core/storage/media_disk_cache.dart';
 import 'reel_models.dart';
 
-/// Reels video önbelleği — arka planda sürekli ısıtma, kaydırınca anlık.
+/// Reels video önbelleği — önce diske indir, sonra controller ısıt (takılmasız).
 class ReelsVideoCache {
   ReelsVideoCache._();
   static final instance = ReelsVideoCache._();
@@ -23,7 +25,7 @@ class ReelsVideoCache {
     return c != null && c.value.isInitialized;
   }
 
-  /// Hazır controller döner; yoksa başlatır (paylaşımlı).
+  /// Hazır controller döner; yoksa disk/network’ten başlatır.
   Future<VideoPlayerController?> obtain({
     required String reelId,
     required String url,
@@ -33,7 +35,7 @@ class ReelsVideoCache {
     if (existing != null && existing.value.isInitialized) return existing;
 
     if (_loading.contains(reelId)) {
-      for (var i = 0; i < 80; i++) {
+      for (var i = 0; i < 120; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 40));
         final c = _controllers[reelId];
         if (c != null && c.value.isInitialized) return c;
@@ -44,10 +46,17 @@ class ReelsVideoCache {
 
     _loading.add(reelId);
     try {
-      final c = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-      );
+      // Önce diske indir — streaming jank’ini azaltır.
+      File? file;
+      if (!kIsWeb) {
+        file = await MediaDiskCache.instance.ensure(url);
+      }
+      final VideoPlayerController c = (file != null)
+          ? VideoPlayerController.file(file)
+          : VideoPlayerController.networkUrl(
+              Uri.parse(url),
+              videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+            );
       _controllers[reelId] = c;
       await c.initialize();
       await c.setLooping(true);
@@ -79,10 +88,15 @@ class ReelsVideoCache {
         .toList();
     _queue = videos;
 
-    // İlk açılışta daha agresif ısıt.
-    final priority = videos.take(count.clamp(8, 40)).toList();
-    for (var i = 0; i < priority.length; i += 3) {
-      final chunk = priority.skip(i).take(3);
+    // Disk’e hepsini kuyrukla (controller’dan bağımsız).
+    MediaDiskCache.instance.prefetchAll(
+      videos.map((r) => r.mediaUrl),
+      concurrency: 3,
+    );
+
+    final priority = videos.take(count.clamp(6, 30)).toList();
+    for (var i = 0; i < priority.length; i += 2) {
+      final chunk = priority.skip(i).take(2);
       await Future.wait(
         chunk.map((r) => obtain(reelId: r.id, url: r.mediaUrl)),
       );
@@ -91,7 +105,7 @@ class ReelsVideoCache {
     if (keepWarm) {
       final keep = {
         ...priority.map((r) => r.id),
-        ...videos.take(36).map((r) => r.id),
+        ...videos.take(24).map((r) => r.id),
       };
       await trim(keep);
       unawaited(_runBackgroundWarm());
@@ -108,11 +122,14 @@ class ReelsVideoCache {
             _failed.contains(r.id)) {
           continue;
         }
-        await obtain(reelId: r.id, url: r.mediaUrl);
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-        // Daha fazla controller tut — kaydırınca anlık.
-        if (_controllers.length > 48) {
-          final keep = _queue.take(40).map((e) => e.id).toSet();
+        // Disk hazır olsun; controller’ı sadece ilk 30 için tut.
+        await MediaDiskCache.instance.ensure(r.mediaUrl);
+        if (_controllers.length < 30) {
+          await obtain(reelId: r.id, url: r.mediaUrl);
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        if (_controllers.length > 36) {
+          final keep = _queue.take(28).map((e) => e.id).toSet();
           await trim(keep);
         }
       }

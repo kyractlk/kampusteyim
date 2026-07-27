@@ -1,14 +1,12 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 
+import '../../core/storage/media_disk_cache.dart';
 import '../../core/storage/media_upload.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
@@ -147,17 +145,44 @@ class StoriesProvider extends ChangeNotifier {
 
   Future<void> _prefetchVisibleMedia() async {
     final items = visibleItemsForViewer();
-    // Tüm görünür hikâyeleri arka planda ısıt (görsel + video URL).
     final urls = items
         .map((s) => s.mediaUrl)
         .where((u) => u.startsWith('http'))
         .toList();
-    for (final url in urls) {
-      final isVideo = items.any(
-        (s) => s.mediaUrl == url && s.mediaType == MediaType.video,
-      );
-      unawaited(_prefetchUrl(url, isVideo: isVideo));
+    // Atıldığı / geldiği an diske yaz — tıklanınca anlık.
+    MediaDiskCache.instance.prefetchAll(urls, concurrency: 4);
+    for (final url in urls.take(20)) {
+      unawaited(_prefetchUrl(url, isVideo: false));
     }
+  }
+
+  Future<void> _prefetchUrl(String url, {required bool isVideo}) async {
+    if (!url.startsWith('http')) return;
+    try {
+      await MediaDiskCache.instance.ensure(url);
+      if (!isVideo && !kIsWeb) {
+        final file = await MediaDiskCache.instance.fileFor(url);
+        if (file != null) return;
+        final stream = NetworkImage(url).resolve(ImageConfiguration.empty);
+        final completer = Completer<void>();
+        late ImageStreamListener listener;
+        listener = ImageStreamListener(
+          (info, sync) {
+            if (!completer.isCompleted) completer.complete();
+            stream.removeListener(listener);
+          },
+          onError: (e, st) {
+            if (!completer.isCompleted) completer.complete();
+            stream.removeListener(listener);
+          },
+        );
+        stream.addListener(listener);
+        await completer.future.timeout(
+          const Duration(seconds: 8),
+          onTimeout: () {},
+        );
+      }
+    } catch (_) {}
   }
 
   /// Halka çubuğu: yazar bazında gruplanmış aktif hikâyeler (en yeni üste).
@@ -239,52 +264,12 @@ class StoriesProvider extends ChangeNotifier {
       );
       await doc.set(item.toFirestore());
       // Yeni hikâyeyi hemen önbelleğe al.
-      unawaited(_prefetchUrl(url, isVideo: isVideo));
+      MediaDiskCache.instance.prefetchAll([url], concurrency: 1);
       return null;
     } catch (e) {
       debugPrint('[stories] create: $e');
       return 'Hikâye paylaşılamadı: $e';
     }
-  }
-
-  Future<void> _prefetchUrl(String url, {required bool isVideo}) async {
-    if (!url.startsWith('http')) return;
-    try {
-      if (!isVideo) {
-        final stream = NetworkImage(url).resolve(ImageConfiguration.empty);
-        final completer = Completer<void>();
-        late ImageStreamListener listener;
-        listener = ImageStreamListener(
-          (info, sync) {
-            if (!completer.isCompleted) completer.complete();
-            stream.removeListener(listener);
-          },
-          onError: (e, st) {
-            if (!completer.isCompleted) completer.complete();
-            stream.removeListener(listener);
-          },
-        );
-        stream.addListener(listener);
-        await completer.future.timeout(
-          const Duration(seconds: 8),
-          onTimeout: () {},
-        );
-        return;
-      }
-      // Video: disk cache — tıklanınca anında hazır olsun.
-      if (kIsWeb) return;
-      final dir = await getTemporaryDirectory();
-      final name =
-          'story_${url.hashCode.abs().toRadixString(16)}${url.contains('.mp4') ? '.mp4' : '.bin'}';
-      final file = File('${dir.path}/$name');
-      if (await file.exists() && await file.length() > 1024) return;
-      final res = await http.get(Uri.parse(url)).timeout(
-        const Duration(seconds: 45),
-      );
-      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-        await file.writeAsBytes(res.bodyBytes, flush: true);
-      }
-    } catch (_) {}
   }
 
   Future<void> likeStory(String storyId, String userId) async {

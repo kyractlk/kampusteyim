@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/storage/media_disk_cache.dart';
 import '../../core/storage/media_upload.dart';
 import '../../core/utils/hashtag_utils.dart';
 import '../../core/utils/mention_utils.dart';
@@ -333,6 +334,9 @@ class ReelsProvider extends ChangeNotifier {
       await doc.set(reel.toFirestore());
       _items.insert(0, reel);
       notifyListeners();
+      // Atıldığı an cihaza indir / ısıt.
+      MediaDiskCache.instance.prefetchAll([mediaUrl], concurrency: 1);
+      unawaited(ReelsVideoCache.instance.prefetch([reel], count: 1, keepWarm: true));
       unawaited(_notifyReelMentions(
         content: text,
         reelId: doc.id,

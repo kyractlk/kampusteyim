@@ -2,7 +2,7 @@ const { onCall, HttpsError, onRequest } = require('firebase-functions/v2/https')
 const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue, FieldPath } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
 const crypto = require('crypto');
 const OpenAI = require('openai');
@@ -1301,36 +1301,59 @@ exports.notifyAudience = onCall(
       });
     }
 
-    // members / campus — kullanıcı listesinden filtrele
-    const snap = await db.collection('users').limit(800).get();
+    // members / campus — tüm kullanıcılar (sayfalı); uygulama kapalı olsa bile FCM gider.
+    const pageSize = 400;
     let targeted = 0;
     let delivered = 0;
     let mailed = 0;
-    for (const doc of snap.docs) {
-      const u = doc.data() || {};
-      const role = String(u.role || 'student');
-      if (role === 'company' || role === 'admin' || role === 'community') continue;
-      if (u.isCommunity === true) continue;
-      if (doc.id === actorId || u.stableId === actorId) continue;
+    let lastDoc = null;
+    // Max ~20 sayfa = 8000 kullanıcı
+    for (let page = 0; page < 20; page += 1) {
+      let q = db.collection('users').orderBy(FieldPath.documentId()).limit(pageSize);
+      if (lastDoc) q = q.startAfter(lastDoc);
+      const snap = await q.get();
+      if (snap.empty) break;
+      lastDoc = snap.docs[snap.docs.length - 1];
 
-      if (audience === 'members') {
-        if (String(u.affiliatedCommunityId || '') !== String(actorId)) continue;
+      const batch = [];
+      for (const doc of snap.docs) {
+        const u = doc.data() || {};
+        const role = String(u.role || 'student');
+        if (role === 'company' || role === 'admin' || role === 'community') continue;
+        if (u.isCommunity === true) continue;
+        if (u.deleted === true) continue;
+        if (doc.id === actorId || u.stableId === actorId) continue;
+        if (audience === 'members') {
+          if (String(u.affiliatedCommunityId || '') !== String(actorId)) continue;
+        }
+        batch.push(doc);
       }
 
-      const r = await deliverToUserDoc({
-        doc,
-        title: pushTitle,
-        body: pushBody,
-        emoji,
-        type: notifType,
-        actorId,
-        targetId: targetId || null,
-        sendEmail: false,
-        emailSubject: `KampüsteyimAPP · ${actorName}`,
-      });
-      if (!r.skipped) targeted += 1;
-      delivered += r.delivered || 0;
-      mailed += r.mailed || 0;
+      // Paralel gönder (8’li) — timeout’a takılmadan.
+      for (let i = 0; i < batch.length; i += 8) {
+        const chunk = batch.slice(i, i + 8);
+        const results = await Promise.all(
+          chunk.map((doc) =>
+            deliverToUserDoc({
+              doc,
+              title: pushTitle,
+              body: pushBody,
+              emoji,
+              type: notifType,
+              actorId,
+              targetId: targetId || null,
+              sendEmail: !!sendEmail,
+              emailSubject: `KampüsteyimAPP · ${actorName}`,
+            }),
+          ),
+        );
+        for (const r of results) {
+          if (!r.skipped) targeted += 1;
+          delivered += r.delivered || 0;
+          mailed += r.mailed || 0;
+        }
+      }
+      if (snap.size < pageSize) break;
     }
     return { ok: true, targeted, delivered, mailed };
   },
@@ -5566,6 +5589,48 @@ exports.syncFeedCaches = onCall(
       purgedReels,
       at: now,
     };
+  },
+);
+
+/** Yeni hikâye → takipçilere push (uygulama kapalı olsa bile). */
+exports.onStoryCreatedPush = onDocumentCreated(
+  { document: 'stories/{storyId}', region: 'europe-west1', timeoutSeconds: 120 },
+  async (event) => {
+    const s = event.data?.data();
+    if (!s || s.deletedAt || s.archived === true) return null;
+    const authorId = String(s.authorId || '');
+    if (!authorId) return null;
+    const name = String(s.authorName || 'Birisi');
+    return notifyFollowersOfActor({
+      actorId: authorId,
+      title: 'Yeni hikâye',
+      body: `${name} yeni bir hikâye paylaştı`,
+      emoji: '✨',
+      type: 'activity',
+      targetId: event.params.storyId,
+      sendEmail: false,
+    });
+  },
+);
+
+/** Yeni reel → takipçilere push. */
+exports.onReelCreatedPush = onDocumentCreated(
+  { document: 'reels/{reelId}', region: 'europe-west1', timeoutSeconds: 120 },
+  async (event) => {
+    const r = event.data?.data();
+    if (!r || r.deletedAt) return null;
+    const authorId = String(r.authorId || '');
+    if (!authorId) return null;
+    const name = String(r.authorName || 'Birisi');
+    return notifyFollowersOfActor({
+      actorId: authorId,
+      title: 'Yeni Reels',
+      body: `${name} yeni bir Reels paylaştı`,
+      emoji: '🎬',
+      type: 'activity',
+      targetId: event.params.reelId,
+      sendEmail: false,
+    });
   },
 );
 
