@@ -60,8 +60,8 @@ workflows:
       - name: Build number
         script: |
           # App Store’da son yüklenen cfBundleVersion’dan yüksek olmalı
-          BN="${BUILD_NUMBER:-27}"
-          if [ "$BN" -le 26 ]; then BN=27; fi
+          BN="${BUILD_NUMBER:-31}"
+          if [ "$BN" -le 30 ]; then BN=31; fi
           sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Flutter IPA RELEASE only
@@ -70,6 +70,14 @@ workflows:
           echo "Building RELEASE IPA (never Debug)…"
           if grep -q "UIApplicationSceneManifest" ios/Runner/Info.plist; then
             echo "ERROR: UIApplicationSceneManifest still in Info.plist"
+            exit 1
+          fi
+          if [ ! -f ios/Runner/PrivacyInfo.xcprivacy ]; then
+            echo "ERROR: PrivacyInfo.xcprivacy missing"
+            exit 1
+          fi
+          if ! grep -q "PrivacyInfo.xcprivacy in Resources" ios/Runner.xcodeproj/project.pbxproj; then
+            echo "ERROR: PrivacyInfo.xcprivacy not in Xcode Resources"
             exit 1
           fi
           if ! grep -q "installTouchRateCorrectionNoOp\|touch-rate VSync" ios/Runner/AppDelegate.swift; then
@@ -83,6 +91,10 @@ workflows:
           echo "IPA: $IPA"
           if unzip -l "$IPA" | grep -q 'kernel_blob.bin'; then
             echo "ERROR: Debug kernel_blob.bin in IPA — aborting"
+            exit 1
+          fi
+          if ! unzip -l "$IPA" | grep -q 'PrivacyInfo.xcprivacy'; then
+            echo "ERROR: PrivacyInfo.xcprivacy not inside IPA"
             exit 1
           fi
           echo "Release IPA OK — TestFlight upload next"
