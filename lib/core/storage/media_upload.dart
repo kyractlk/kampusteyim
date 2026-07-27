@@ -107,21 +107,21 @@ class MediaUpload {
     }
   }
 
-  /// Ders notu / PDF vb. (Plus).
+  /// Ders notu / PDF vb. (Plus). Document picker foto izni istemez (SAF / UIDocumentPicker).
   static Future<XFile?> pickDocument() async {
     const accept =
         '.pdf,.doc,.docx,.ppt,.pptx,.txt,.xls,.xlsx,application/pdf';
     if (kIsWeb) {
       return pickWebFile(accept: accept, fallbackName: 'not.pdf');
     }
-    final ok = await AppPermissions.ensureMediaAccess();
-    if (!ok) throw StateError('Dosya izni gerekli');
     try {
       const group = XTypeGroup(
         label: 'documents',
         extensions: ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt', 'xls', 'xlsx'],
       );
-      final f = await openFile(acceptedTypeGroups: [group]);
+      // Tip kısıtı bazen cihazda picker’ı boş açıyor — önce kısıtlı, olmazsa açık dene.
+      var f = await openFile(acceptedTypeGroups: [group]);
+      f ??= await openFile();
       if (f == null) return null;
       return XFile(f.path, name: f.name, mimeType: f.mimeType);
     } catch (e) {

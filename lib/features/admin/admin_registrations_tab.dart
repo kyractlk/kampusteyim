@@ -44,9 +44,23 @@ class _AdminRegistrationsTabState extends State<AdminRegistrationsTab> {
       _security = next;
       _savingCfg = true;
     });
+    final admin = context.read<AdminProvider>();
     try {
       await next.save();
-      if (mounted) {
+      if (!next.requireStudentVerification) {
+        final n = await admin.syncRegistrationGate();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                n > 0
+                    ? 'Ayar kaydedildi · $n bekleyen kayıt otomatik onaylandı'
+                    : 'Ayar kaydedildi',
+              ),
+            ),
+          );
+        }
+      } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Kayıt güvenlik ayarı güncellendi')),
         );
@@ -159,7 +173,7 @@ class _SecurityPanel extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               title: const Text('Belge doğrulaması zorunlu'),
               subtitle: const Text(
-                'Kapalıysa belge adımı hiç gösterilmez; hesap doğrudan onaylanır',
+                'Kapalıysa belge adımı yok; bekleyen kayıtlar otomatik onaylanır',
               ),
               value: security.requireStudentVerification,
               onChanged: loading || saving
@@ -168,6 +182,32 @@ class _SecurityPanel extends StatelessWidget {
                         security.copyWith(requireStudentVerification: v),
                       ),
             ),
+            if (!security.requireStudentVerification)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: loading || saving
+                      ? null
+                      : () async {
+                          final n = await context
+                              .read<AdminProvider>()
+                              .syncRegistrationGate();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  n > 0
+                                      ? '$n bekleyen kayıt onaylandı'
+                                      : 'Onaylanacak bekleyen kayıt yok',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                  icon: const Icon(Icons.done_all, size: 18),
+                  label: const Text('Bekleyenleri şimdi onayla'),
+                ),
+              ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Öğrenci numarası zorunlu'),

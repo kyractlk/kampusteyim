@@ -166,14 +166,17 @@ class PushService {
         }
       }
       if (isApple) {
+        // APNs token bazen 10–20 sn gecikir; kısa denemede vazgeçme.
         String? apns;
-        for (var i = 0; i < 8; i++) {
+        for (var i = 0; i < 25; i++) {
           apns = await _messaging.getAPNSToken();
           if (apns != null) break;
-          await Future<void>.delayed(const Duration(milliseconds: 400));
+          await Future<void>.delayed(
+            Duration(milliseconds: i < 10 ? 500 : 800),
+          );
         }
         if (apns == null) {
-          debugPrint('[push] APNs token henüz yok');
+          debugPrint('[push] APNs token henüz yok — retry sonra');
           return null;
         }
       }

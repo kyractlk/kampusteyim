@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/storage/media_upload.dart';
 import '../../core/utils/hashtag_utils.dart';
 import '../../core/utils/mention_utils.dart';
+import '../../core/utils/campus_affinity.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
@@ -44,6 +46,13 @@ class ReelsProvider extends ChangeNotifier {
   Future<void> refresh() async {
     _loading = true;
     notifyListeners();
+    final viaApi = await _hydrateFromCallable();
+    if (viaApi) {
+      _loading = false;
+      notifyListeners();
+      await _prefetchFeed();
+      return;
+    }
     try {
       final snap = await FirebaseFirestore.instance
           .collection('reels')
@@ -70,7 +79,7 @@ class ReelsProvider extends ChangeNotifier {
   Future<void> _prefetchFeed() async {
     final feed = feedFor(_auth?.user?.id);
     // Kullanıcı Reels’te olmasa da arka planda ısıtmaya devam.
-    await ReelsVideoCache.instance.prefetch(feed, count: 10, keepWarm: true);
+    await ReelsVideoCache.instance.prefetch(feed, count: 24, keepWarm: true);
   }
 
   Future<void> prefetchAround(List<CampusReel> feed, int index) async {
@@ -123,6 +132,7 @@ class ReelsProvider extends ChangeNotifier {
     _sub?.cancel();
     _loading = true;
     notifyListeners();
+    unawaited(_hydrateFromCallable());
     _sub = FirebaseFirestore.instance
         .collection('reels')
         .orderBy('createdAt', descending: true)
@@ -152,6 +162,38 @@ class ReelsProvider extends ChangeNotifier {
     );
   }
 
+  Future<bool> _hydrateFromCallable() async {
+    final me = _auth?.user;
+    if (me == null) return false;
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('getReelsFeed');
+      final res = await callable.call({
+        'followingIds': me.following,
+        'limit': 120,
+      });
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      final raw = (map['items'] as List?) ?? [];
+      if (raw.isEmpty) return false;
+      _items
+        ..clear()
+        ..addAll(
+          raw.map((e) {
+            final m = Map<String, dynamic>.from(e as Map);
+            final id = '${m.remove('id') ?? ''}';
+            return CampusReel.fromFirestore(id, m);
+          }).where((r) => !r.isDeleted),
+        );
+      _error = null;
+      notifyListeners();
+      unawaited(_prefetchFeed());
+      return true;
+    } catch (e) {
+      debugPrint('[reels] getReelsFeed: $e');
+      return false;
+    }
+  }
+
   bool _canSeeReel(CampusReel r, String? viewerId) {
     if (viewerId != null &&
         (_auth?.idsFor(r.authorId).contains(viewerId) ?? false)) {
@@ -164,22 +206,31 @@ class ReelsProvider extends ChangeNotifier {
     return _auth?.follows(r.authorId) == true;
   }
 
-  /// İzlenmemişler önce; gizli hesap reels’leri takipçilere özel.
+  /// İzlenmemişler + aynı üniversite affinity; gizli hesap reels’leri takipçilere özel.
   List<CampusReel> feedFor(String? viewerId) {
     final list = _items.where((r) => _canSeeReel(r, viewerId)).toList();
     if (viewerId == null || viewerId.isEmpty) return list;
-    final unseen = <CampusReel>[];
-    final seen = <CampusReel>[];
-    for (final r in list) {
-      if (r.viewedByUser(viewerId)) {
-        seen.add(r);
-      } else {
-        unseen.add(r);
-      }
-    }
-    unseen.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    seen.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return [...unseen, ...seen];
+    final viewer = _auth?.user;
+    list.sort((a, b) {
+      final sa = CampusAffinity.scoreReel(
+        viewer: viewer,
+        author: _auth?.findUser(a.authorId),
+        createdAt: a.createdAt,
+        followingAuthor: _auth?.follows(a.authorId) == true,
+        unseen: !a.viewedByUser(viewerId),
+      );
+      final sb = CampusAffinity.scoreReel(
+        viewer: viewer,
+        author: _auth?.findUser(b.authorId),
+        createdAt: b.createdAt,
+        followingAuthor: _auth?.follows(b.authorId) == true,
+        unseen: !b.viewedByUser(viewerId),
+      );
+      final cmp = sb.compareTo(sa);
+      if (cmp != 0) return cmp;
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return list;
   }
 
   Future<String?> createReel({

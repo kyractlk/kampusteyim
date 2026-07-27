@@ -318,6 +318,7 @@ class AdminProvider extends ChangeNotifier {
             ? null
             : (logoUrl ?? 'assets/logos/ays_circle.png'),
         username: map['username'] as String?,
+        accountStatus: 'approved',
       );
       auth.upsertUser(user);
       status = isCompany
@@ -326,27 +327,22 @@ class AdminProvider extends ChangeNotifier {
       busy = false;
       notifyListeners();
       return (user: user, password: pass);
+    } on FirebaseFunctionsException catch (e) {
+      debugPrint('[admin] createManagedAccount: ${e.code} ${e.message}');
+      busy = false;
+      if (e.code == 'already-exists') {
+        status = e.message ?? 'Bu e-posta ile zaten bir hesap var';
+      } else {
+        status = e.message ?? 'Hesap oluşturulamadı';
+      }
+      notifyListeners();
+      rethrow;
     } catch (e) {
       debugPrint('[admin] createManagedAccount: $e');
-      if (kind == 'company') {
-        final u = await createCompanyAccount(
-          auth: auth,
-          companyName: displayName,
-          email: email,
-        );
-        busy = false;
-        notifyListeners();
-        return (user: u, password: pass);
-      }
-      final u = await createCommunityAccount(
-        auth: auth,
-        name: displayName,
-        email: email,
-        logoUrl: logoUrl,
-      );
       busy = false;
+      status = 'Hesap oluşturulamadı: $e';
       notifyListeners();
-      return (user: u, password: pass);
+      rethrow;
     }
   }
 
@@ -516,23 +512,47 @@ class AdminProvider extends ChangeNotifier {
     required bool enabled,
     String? logoUrl,
   }) async {
-    final u = auth.findUser(userId);
-    if (u == null) return;
-    auth.upsertUser(
-      u.copyWith(
-        isCommunity: enabled,
-        role: enabled ? UserRole.community : UserRole.student,
-        hasGoldBadge: enabled,
-        communityLogoUrl: logoUrl ??
-            u.communityLogoUrl ??
-            (enabled ? 'assets/logos/ays_circle.png' : null),
-        clearAffiliation: enabled,
-        hasBlueBadge: enabled ? false : u.hasBlueBadge,
-        clearStaffRole: enabled,
-        isSuperAdmin: false,
-      ),
-    );
-    status = enabled ? 'Topluluk badge verildi' : 'Topluluk badge kaldırıldı';
+    var u = auth.findUser(userId) ?? await auth.ensureUserLoaded(userId);
+    if (u == null) {
+      status = 'Kullanıcı bulunamadı: $userId';
+      notifyListeners();
+      return;
+    }
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('adminSetUserBadges');
+      final res = await callable.call({
+        'userId': userId,
+        'action': enabled ? 'community_on' : 'community_off',
+        if (logoUrl != null) 'logoUrl': logoUrl,
+      });
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      auth.upsertUser(
+        u.copyWith(
+          isCommunity: map['isCommunity'] == true || enabled,
+          role: (map['isCommunity'] == true || enabled)
+              ? UserRole.community
+              : UserRole.student,
+          hasGoldBadge: map['hasGoldBadge'] == true,
+          communityLogoUrl: logoUrl ??
+              u.communityLogoUrl ??
+              (enabled ? 'assets/logos/ays_circle.png' : null),
+          clearAffiliation: enabled,
+          hasBlueBadge: enabled ? false : u.hasBlueBadge,
+          clearStaffRole: enabled,
+          isSuperAdmin: false,
+          accountStatus: enabled ? 'approved' : u.accountStatus,
+        ),
+        syncRemote: false,
+      );
+      status = enabled ? 'Topluluk badge verildi' : 'Topluluk badge kaldırıldı';
+    } on FirebaseFunctionsException catch (e) {
+      status = e.message ?? 'Badge güncellenemedi';
+      debugPrint('[admin] setCommunityBadge: ${e.code} ${e.message}');
+    } catch (e) {
+      status = 'Badge güncellenemedi';
+      debugPrint('[admin] setCommunityBadge: $e');
+    }
     notifyListeners();
   }
 
@@ -552,26 +572,68 @@ class AdminProvider extends ChangeNotifier {
     bool grantBlueBadge = false,
     bool grantGoldBadge = false,
   }) async {
-    final u = auth.findUser(userId);
-    final org = auth.findUser(orgId);
-    if (u == null || org == null) return;
+    var u = auth.findUser(userId) ?? await auth.ensureUserLoaded(userId);
+    var org = auth.findUser(orgId) ?? await auth.ensureUserLoaded(orgId);
+    if (u == null) {
+      status = 'Kullanıcı bulunamadı: $userId';
+      notifyListeners();
+      return;
+    }
+    if (org == null) {
+      status = 'Kurum bulunamadı: $orgId';
+      notifyListeners();
+      return;
+    }
     final isOrg = org.isCommunity || org.isCompany || org.hasGoldBadge;
-    if (!isOrg) return;
-    final logo = org.communityLogoUrl ?? org.photoUrl;
-    auth.upsertUser(
-      u.copyWith(
-        hasBlueBadge: grantBlueBadge ? true : u.hasBlueBadge,
-        hasGoldBadge: grantGoldBadge ? true : u.hasGoldBadge,
-        affiliatedCommunityId: orgId,
-        affiliatedCommunityName: org.fullName.trim().isEmpty
-            ? org.firstName
-            : org.fullName.trim(),
-        affiliatedOrgLogoUrl: logo,
-      ),
-    );
-    status = grantGoldBadge
-        ? 'Gold tick + kurum ilişkisi bağlandı'
-        : 'Kurum ilişkisi bağlandı';
+    if (!isOrg) {
+      status = 'Hedef bir kurum hesabı değil';
+      notifyListeners();
+      return;
+    }
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('adminSetUserBadges');
+      final res = await callable.call({
+        'userId': userId,
+        'action': 'link_org',
+        'orgId': orgId,
+        'grantBlueBadge': grantBlueBadge,
+        'grantGoldBadge': grantGoldBadge,
+      });
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      final linkedOrgId = map['affiliatedCommunityId'] as String? ?? orgId;
+      final linkedOrgName = map['affiliatedCommunityName'] as String? ??
+          (org.fullName.trim().isEmpty ? org.firstName : org.fullName.trim());
+      final linkedLogo =
+          map['affiliatedOrgLogoUrl'] as String? ??
+          org.communityLogoUrl ??
+          org.photoUrl;
+      auth.upsertUser(
+        u.copyWith(
+          hasBlueBadge: map['hasBlueBadge'] == true
+              ? true
+              : (grantBlueBadge ? true : u.hasBlueBadge),
+          hasGoldBadge: map['hasGoldBadge'] == true
+              ? true
+              : (grantGoldBadge ? true : u.hasGoldBadge),
+          affiliatedCommunityId: linkedOrgId,
+          affiliatedCommunityName: linkedOrgName,
+          affiliatedOrgLogoUrl: linkedLogo,
+        ),
+        syncRemote: false,
+      );
+      status = grantGoldBadge
+          ? 'Gold tick + kurum ilişkisi bağlandı'
+          : grantBlueBadge
+              ? 'Mavi tick + kurum ilişkisi bağlandı'
+              : 'Kurum ilişkisi bağlandı';
+    } on FirebaseFunctionsException catch (e) {
+      status = e.message ?? 'Kurum bağlanamadı';
+      debugPrint('[admin] linkToOrganization: ${e.code} ${e.message}');
+    } catch (e) {
+      status = 'Kurum bağlanamadı';
+      debugPrint('[admin] linkToOrganization: $e');
+    }
     notifyListeners();
   }
 
@@ -579,16 +641,57 @@ class AdminProvider extends ChangeNotifier {
     required AuthProvider auth,
     required String userId,
   }) async {
-    final u = auth.findUser(userId);
-    if (u == null) return;
-    auth.upsertUser(
-      u.copyWith(
-        hasBlueBadge: false,
-        clearAffiliation: true,
-      ),
-    );
-    status = 'Kurum ilişkisi kaldırıldı';
+    var u = auth.findUser(userId) ?? await auth.ensureUserLoaded(userId);
+    if (u == null) {
+      status = 'Kullanıcı bulunamadı: $userId';
+      notifyListeners();
+      return;
+    }
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('adminSetUserBadges');
+      await callable.call({
+        'userId': userId,
+        'action': 'unlink_org',
+      });
+      auth.upsertUser(
+        u.copyWith(
+          hasBlueBadge: false,
+          clearAffiliation: true,
+        ),
+        syncRemote: false,
+      );
+      status = 'Kurum ilişkisi kaldırıldı';
+    } on FirebaseFunctionsException catch (e) {
+      status = e.message ?? 'İlişki kaldırılamadı';
+      debugPrint('[admin] unlinkCommunity: ${e.code} ${e.message}');
+    } catch (e) {
+      status = 'İlişki kaldırılamadı';
+      debugPrint('[admin] unlinkCommunity: $e');
+    }
     notifyListeners();
+  }
+
+  /// Belge doğrulaması kapalıysa bekleyen kayıtları anında onayla.
+  Future<int> syncRegistrationGate() async {
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('adminSyncRegistrationGate');
+      final res = await callable.call(<String, dynamic>{});
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      final approved = (map['approved'] as num?)?.toInt() ?? 0;
+      final skipped = map['skipped'] == true;
+      status = skipped
+          ? 'Belge doğrulaması açık — otomatik onay yok'
+          : '$approved bekleyen kayıt onaylandı';
+      notifyListeners();
+      return approved;
+    } catch (e) {
+      status = 'Kayıt kapısı senkronu başarısız';
+      debugPrint('[admin] syncRegistrationGate: $e');
+      notifyListeners();
+      return 0;
+    }
   }
 
   Future<void> applyRestriction({
@@ -599,17 +702,46 @@ class AdminProvider extends ChangeNotifier {
     required String reason,
     Duration? duration,
   }) async {
-    final u = auth.findUser(userId);
-    if (u == null) return;
+    var u = auth.findUser(userId) ?? await auth.ensureUserLoaded(userId);
+    if (u == null) {
+      status = 'Kullanıcı bulunamadı: $userId';
+      notifyListeners();
+      return;
+    }
     final until = duration == null ? null : DateTime.now().add(duration);
-    auth.upsertUser(
-      u.copyWith(
-        restrictionType: type,
-        restrictionReason: reason,
-        restrictionUntil: until,
-        clearRestrictionUntil: type == 'none',
-      ),
-    );
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('adminSetUserRestriction');
+      final res = await callable.call({
+        'userId': userId,
+        'type': type,
+        'reason': reason,
+        if (until != null) 'until': until.toIso8601String(),
+      });
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      final cleared = type == 'none' || map['restrictionType'] == 'none';
+      auth.upsertUser(
+        u.copyWith(
+          restrictionType: '${map['restrictionType'] ?? type}',
+          restrictionReason: cleared ? '' : '${map['restrictionReason'] ?? reason}',
+          restrictionUntil: cleared
+              ? null
+              : DateTime.tryParse('${map['restrictionUntil'] ?? ''}'),
+          clearRestrictionUntil: cleared,
+        ),
+        syncRemote: false,
+      );
+    } on FirebaseFunctionsException catch (e) {
+      status = e.message ?? 'Kısıtlama güncellenemedi';
+      debugPrint('[admin] applyRestriction: ${e.code} ${e.message}');
+      notifyListeners();
+      return;
+    } catch (e) {
+      status = 'Kısıtlama güncellenemedi';
+      debugPrint('[admin] applyRestriction: $e');
+      notifyListeners();
+      return;
+    }
 
     final title = type == 'none'
         ? 'Kısıtlama kaldırıldı'

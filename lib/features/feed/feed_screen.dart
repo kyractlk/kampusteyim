@@ -15,6 +15,7 @@ import '../../core/utils/app_nav.dart';
 import '../../core/utils/app_share.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/utils/breakpoints.dart';
+import '../../core/utils/campus_affinity.dart';
 import '../../core/utils/hashtag_utils.dart';
 import '../../core/utils/mention_utils.dart';
 import '../../core/widgets/social_widgets.dart';
@@ -43,13 +44,39 @@ class FeedScreen extends StatelessWidget {
     final user = auth.user;
     final posts = user == null
         ? allPosts
-        : allPosts
-            .where(
-              (p) =>
-                  !user.blocks(p.authorId) &&
-                  !(auth.findUser(p.authorId)?.blocks(user.id) ?? false),
-            )
-            .toList();
+        : () {
+            final filtered = allPosts
+                .where(
+                  (p) =>
+                      !user.blocks(p.authorId) &&
+                      !(auth.findUser(p.authorId)?.blocks(user.id) ?? false),
+                )
+                .toList();
+            filtered.sort((a, b) {
+              final sa = CampusAffinity.scorePost(
+                viewer: user,
+                author: auth.findUser(a.authorId),
+                createdAt: a.createdAt,
+                likeCount: a.likeCount,
+                replyCount: a.replyCount,
+                repostCount: a.repostCount,
+                followingAuthor: auth.follows(a.authorId),
+              );
+              final sb = CampusAffinity.scorePost(
+                viewer: user,
+                author: auth.findUser(b.authorId),
+                createdAt: b.createdAt,
+                likeCount: b.likeCount,
+                replyCount: b.replyCount,
+                repostCount: b.repostCount,
+                followingAuthor: auth.follows(b.authorId),
+              );
+              final cmp = sb.compareTo(sa);
+              if (cmp != 0) return cmp;
+              return b.createdAt.compareTo(a.createdAt);
+            });
+            return filtered;
+          }();
     final restricted = user != null && !user.canPost;
     final spectator = user?.isSpectatorMode == true;
     final needsLogo =
@@ -224,6 +251,8 @@ class _ComposerCardState extends State<_ComposerCard> {
   String? _mentionQuery;
   List<AppUser> _mentionHits = const [];
 
+  bool _pickingMention = false;
+
   @override
   void initState() {
     super.initState();
@@ -243,15 +272,20 @@ class _ComposerCardState extends State<_ComposerCard> {
   void _onFocusChanged() {
     if (!mounted) return;
     setState(() {});
-    if (!_focus.hasFocus && _mentionQuery != null) {
-      setState(() {
-        _mentionQuery = null;
-        _mentionHits = const [];
+    // Mention listesine dokununca focus kaybolur; hemen temizleme (tap kaçmasın).
+    if (!_focus.hasFocus && _mentionQuery != null && !_pickingMention) {
+      Future<void>.delayed(const Duration(milliseconds: 180), () {
+        if (!mounted || _focus.hasFocus || _pickingMention) return;
+        setState(() {
+          _mentionQuery = null;
+          _mentionHits = const [];
+        });
       });
     }
   }
 
   void _dismissCompose() {
+    if (_pickingMention) return;
     _focus.unfocus();
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
@@ -286,6 +320,7 @@ class _ComposerCardState extends State<_ComposerCard> {
   }
 
   void _pickMention(AppUser u) {
+    _pickingMention = true;
     final cursor = _controller.selection.baseOffset;
     final next = MentionUtils.applyMention(
       text: _controller.text,
@@ -300,6 +335,8 @@ class _ComposerCardState extends State<_ComposerCard> {
       _mentionQuery = null;
       _mentionHits = const [];
     });
+    _pickingMention = false;
+    _focus.requestFocus();
   }
 
   Future<void> _pickImage() async {
@@ -449,7 +486,14 @@ class _ComposerCardState extends State<_ComposerCard> {
                 maxLines: 3,
                 minLines: 2,
                 onChanged: (_) => setState(() {}),
-                onTapOutside: (_) => _dismissCompose(),
+                onTapOutside: (_) {
+                  // Mention listesine tıklarken kapatma.
+                  if (_pickingMention ||
+                      (_mentionQuery != null && _mentionHits.isNotEmpty)) {
+                    return;
+                  }
+                  _dismissCompose();
+                },
                 textInputAction: TextInputAction.done,
                 onEditingComplete: _dismissCompose,
                 decoration: InputDecoration(
@@ -492,20 +536,28 @@ class _ComposerCardState extends State<_ComposerCard> {
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, i) {
                       final u = _mentionHits[i];
-                      return ListTile(
-                        dense: true,
-                        leading: UserAvatar(
-                          name: u.fullName,
-                          photoUrl: u.communityLogoUrl ?? u.photoUrl,
-                          isCommunity: u.isCommunity,
-                          radius: 18,
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTapDown: (_) {
+                            _pickingMention = true;
+                          },
+                          onTap: () => _pickMention(u),
+                          child: ListTile(
+                            dense: true,
+                            leading: UserAvatar(
+                              name: u.fullName,
+                              photoUrl: u.communityLogoUrl ?? u.photoUrl,
+                              isCommunity: u.isCommunity,
+                              radius: 18,
+                            ),
+                            title: Text(
+                              u.fullName,
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            subtitle: Text(u.handle),
+                          ),
                         ),
-                        title: Text(
-                          u.fullName,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: Text(u.handle),
-                        onTap: () => _pickMention(u),
                       );
                     },
                   ),
@@ -711,6 +763,13 @@ class PostCard extends StatelessWidget {
                               if (author?.isBot == true) ...[
                                 const SizedBox(width: 4),
                                 const BotBadge(size: 15),
+                              ],
+                              if (author?.showUniversityBadge == true) ...[
+                                const SizedBox(width: 4),
+                                UniversityBadge(
+                                  label: author!.universityBadgeLabel,
+                                  compact: true,
+                                ),
                               ],
                             ],
                           ),

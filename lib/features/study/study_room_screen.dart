@@ -461,34 +461,22 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             body: Padding(
               padding: EdgeInsets.only(bottom: bottomInset),
               child: SafeArea(
-                child: wide
-                    ? Row(
-                        children: [
-                          Expanded(flex: 3, child: timerPanel),
-                          if (_chatOpenUi)
-                            SizedBox(width: 360, child: chatPanel)
-                          else
-                            _ChatRail(
-                              onOpen: () => setState(() => _chatOpenUi = true),
-                            ),
-                        ],
+                // Chat her zaman sağda (mobil + geniş ekran).
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(flex: wide ? 3 : 2, child: timerPanel),
+                    if (_chatOpenUi)
+                      SizedBox(
+                        width: wide ? 360 : 168,
+                        child: chatPanel,
                       )
-                    : Column(
-                        children: [
-                          Expanded(child: timerPanel),
-                          if (_chatOpenUi)
-                            SizedBox(
-                              height: MediaQuery.sizeOf(context).height * 0.38,
-                              child: chatPanel,
-                            )
-                          else
-                            _ChatRail(
-                              onOpen: () =>
-                                  setState(() => _chatOpenUi = true),
-                              horizontal: true,
-                            ),
-                        ],
+                    else
+                      _ChatRail(
+                        onOpen: () => setState(() => _chatOpenUi = true),
                       ),
+                  ],
+                ),
               ),
             ),
           );
@@ -499,10 +487,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 }
 
 class _ChatRail extends StatelessWidget {
-  const _ChatRail({required this.onOpen, this.horizontal = false});
+  const _ChatRail({required this.onOpen});
 
   final VoidCallback onOpen;
-  final bool horizontal;
 
   @override
   Widget build(BuildContext context) {
@@ -510,36 +497,18 @@ class _ChatRail extends StatelessWidget {
       color: const Color(0xFF0C1E33),
       child: InkWell(
         onTap: onOpen,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: horizontal ? 16 : 10,
-            vertical: horizontal ? 10 : 16,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+          child: RotatedBox(
+            quarterTurns: 3,
+            child: Text(
+              "Chat'i aç",
+              style: TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
-          child: horizontal
-              ? const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.chat_bubble_outline, color: AppColors.cyan),
-                    SizedBox(width: 8),
-                    Text(
-                      'Chat’i aç',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                )
-              : const RotatedBox(
-                  quarterTurns: 3,
-                  child: Text(
-                    'Chat’i aç',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
         ),
       ),
     );

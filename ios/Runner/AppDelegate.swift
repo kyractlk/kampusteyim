@@ -2,6 +2,8 @@ import Flutter
 import ObjectiveC
 import UIKit
 import UserNotifications
+import FirebaseCore
+import FirebaseMessaging
 
 /// iOS 26.5 + ProMotion App Store review: Flutter engine SIGSEGV in
 /// `-[VSyncClient initWithTaskRunner:]` via
@@ -20,6 +22,10 @@ import UserNotifications
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     Self.installTouchRateCorrectionNoOp()
+
+    if FirebaseApp.app() == nil {
+      FirebaseApp.configure()
+    }
 
     flutterEngine.run()
     GeneratedPluginRegistrant.register(with: flutterEngine)
@@ -61,6 +67,10 @@ import UserNotifications
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
   ) {
+    // Custom FlutterEngine: APNs token’ı FCM’e elle bağla.
+    Messaging.messaging().apnsToken = deviceToken
+    let hex = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+    NSLog("[KampüsteyimAPP] APNs token ok (\(deviceToken.count) bytes) \(hex.prefix(16))…")
     super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
   }
 

@@ -332,6 +332,13 @@ class _UserProfileViewState extends State<UserProfileView> {
                   user.handle,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
                 ),
+                if (user.showUniversityBadge) ...[
+                  const SizedBox(height: 8),
+                  UniversityBadge(
+                    label: user.universityBadgeLabel,
+                    light: true,
+                  ),
+                ],
                 if (user.hasAffiliation) ...[
                   const SizedBox(height: 8),
                   AffiliationBadge(

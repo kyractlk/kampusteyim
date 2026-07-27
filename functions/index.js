@@ -1,5 +1,5 @@
 const { onCall, HttpsError, onRequest } = require('firebase-functions/v2/https');
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -861,10 +861,12 @@ exports.dispatchPush = onCall({ region: 'europe-west1' }, async (request) => {
  * Firma staj/iş ilanı: feed post + takipçilere push/inbox (+opsiyonel mail)
  */
 async function findUserDocByAnyId(userId) {
-  const id = String(userId || '');
+  const id = String(userId || '').trim();
   if (!id) return null;
+
   let doc = await db.collection('users').doc(id).get();
   if (doc.exists) return doc;
+
   try {
     const byStable = await db
       .collection('users')
@@ -873,6 +875,42 @@ async function findUserDocByAnyId(userId) {
       .get();
     if (!byStable.empty) return byStable.docs[0];
   } catch (_) {}
+
+  const handle = id.replace(/^@/, '').toLowerCase();
+  if (handle) {
+    try {
+      const byUsername = await db
+        .collection('users')
+        .where('username', '==', handle)
+        .limit(1)
+        .get();
+      if (!byUsername.empty) return byUsername.docs[0];
+    } catch (_) {}
+
+    try {
+      const h = await db.collection('handles').doc(handle).get();
+      if (h.exists) {
+        const data = h.data() || {};
+        const authUid = String(data.authUid || '').trim();
+        const linkedId = String(data.userId || '').trim();
+        if (authUid) {
+          doc = await db.collection('users').doc(authUid).get();
+          if (doc.exists) return doc;
+        }
+        if (linkedId) {
+          doc = await db.collection('users').doc(linkedId).get();
+          if (doc.exists) return doc;
+          const byLinkedStable = await db
+            .collection('users')
+            .where('stableId', '==', linkedId)
+            .limit(1)
+            .get();
+          if (!byLinkedStable.empty) return byLinkedStable.docs[0];
+        }
+      }
+    } catch (_) {}
+  }
+
   return null;
 }
 
@@ -3264,6 +3302,99 @@ async function assertPlatformAdmin(uid) {
   throw new HttpsError('permission-denied', 'Admin gerekli');
 }
 
+/**
+ * E-posta ile Auth veya Firestore’da herhangi bir hesap var mı?
+ * (öğrenci / firma / topluluk — tür fark etmez)
+ */
+async function findAccountByEmail(emailRaw) {
+  const email = String(emailRaw || '').trim().toLowerCase();
+  if (!isValidEmail(email)) return null;
+  const { getAuth } = require('firebase-admin/auth');
+  try {
+    const rec = await getAuth().getUserByEmail(email);
+    return {
+      source: 'auth',
+      uid: rec.uid,
+      email,
+    };
+  } catch (e) {
+    if (e?.code !== 'auth/user-not-found') {
+      console.warn('[findAccountByEmail] auth', e?.code || e?.message || e);
+    }
+  }
+  // Firestore: email alanı (küçük harf)
+  const q = await db
+    .collection('users')
+    .where('email', '==', email)
+    .limit(5)
+    .get();
+  if (!q.empty) {
+    const doc = q.docs[0];
+    const d = doc.data() || {};
+    return {
+      source: 'firestore',
+      uid: doc.id,
+      email,
+      role: d.role || '',
+      isCommunity: d.isCommunity === true,
+    };
+  }
+  return null;
+}
+
+/**
+ * Belge doğrulaması kapalıysa pending öğrenci hesaplarını onayla.
+ */
+async function approvePendingWhenVerificationDisabled() {
+  const cfgSnap = await db
+    .collection('app_config')
+    .doc('registration_security')
+    .get();
+  const cfg = cfgSnap.exists ? cfgSnap.data() || {} : {};
+  if (cfg.requireStudentVerification !== false) {
+    return { skipped: true, reason: 'verification_required', approved: 0 };
+  }
+
+  const snap = await db
+    .collection('users')
+    .where('accountStatus', '==', 'pending')
+    .limit(400)
+    .get();
+
+  let approved = 0;
+  const batchSize = 400;
+  let batch = db.batch();
+  let n = 0;
+  const now = new Date().toISOString();
+
+  for (const doc of snap.docs) {
+    const d = doc.data() || {};
+    if (d.isCommunity === true || d.role === 'company' || d.role === 'community') {
+      continue;
+    }
+    if (d.isSuperAdmin === true || d.role === 'admin') continue;
+    batch.set(
+      doc.ref,
+      {
+        accountStatus: 'approved',
+        registrationAutoApprovedAt: now,
+        registrationAutoApproveReason: 'verification_disabled',
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    approved += 1;
+    n += 1;
+    if (n >= batchSize) {
+      await batch.commit();
+      batch = db.batch();
+      n = 0;
+    }
+  }
+  if (n > 0) await batch.commit();
+  return { skipped: false, approved };
+}
+
 function emailDocId(email) {
   return crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex').slice(0, 40);
 }
@@ -4161,6 +4292,15 @@ exports.adminCreateManagedAccount = onCall(
       throw new HttpsError('invalid-argument', 'kind company|community olmalı');
     }
 
+    // Aynı e-posta ile öğrenci / firma / topluluk — ikinci hesap yok
+    const existing = await findAccountByEmail(email);
+    if (existing) {
+      throw new HttpsError(
+        'already-exists',
+        'Bu e-posta ile zaten bir hesap var. Aynı e-posta ile ikinci hesap açılamaz.',
+      );
+    }
+
     const { getAuth } = require('firebase-admin/auth');
     let userRecord;
     try {
@@ -4172,7 +4312,10 @@ exports.adminCreateManagedAccount = onCall(
       });
     } catch (e) {
       if (e?.code === 'auth/email-already-exists') {
-        throw new HttpsError('already-exists', 'Bu e-posta zaten kayıtlı');
+        throw new HttpsError(
+          'already-exists',
+          'Bu e-posta ile zaten bir hesap var. Aynı e-posta ile ikinci hesap açılamaz.',
+        );
       }
       throw new HttpsError('internal', e?.message || 'Auth oluşturulamadı');
     }
@@ -4196,6 +4339,7 @@ exports.adminCreateManagedAccount = onCall(
       hasGoldBadge: !isCompany,
       hasBlueBadge: false,
       isSuperAdmin: false,
+      accountStatus: 'approved',
       stableId: uid,
       username,
       usernameStatus: 'ok',
@@ -4907,6 +5051,521 @@ exports.adminSetPlus = onCall(
     }
 
     throw new HttpsError('invalid-argument', 'action: grant | revoke');
+  },
+);
+
+/**
+ * Belge doğrulaması kapanınca pending’leri otomatik onayla.
+ */
+exports.onRegistrationSecurityWritten = onDocumentWritten(
+  {
+    document: 'app_config/registration_security',
+    region: 'europe-west1',
+  },
+  async (event) => {
+    const after = event.data?.after?.data() || {};
+    const before = event.data?.before?.data() || {};
+    // Yalnızca zorunluluk true→false (veya false iken kaydet) iken flush
+    if (after.requireStudentVerification === false) {
+      const res = await approvePendingWhenVerificationDisabled();
+      console.log('[onRegistrationSecurityWritten]', res);
+      return res;
+    }
+    if (
+      before.requireStudentVerification === false &&
+      after.requireStudentVerification === true
+    ) {
+      return { skipped: true, reason: 'verification_reenabled' };
+    }
+    return null;
+  },
+);
+
+/** Admin: pending flush (belge kapalıysa) */
+exports.adminSyncRegistrationGate = onCall(
+  { region: 'europe-west1', timeoutSeconds: 120 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    return approvePendingWhenVerificationDisabled();
+  },
+);
+
+/**
+ * Admin: badge / kurum ilişkisi — yalnızca ilgili alanlar (diğer profil alanlarına dokunmaz).
+ * action:
+ *  - community_on | community_off
+ *  - link_org (orgId, grantBlue?, grantGold?)
+ *  - unlink_org
+ *  - set_flags (hasGoldBadge?, hasBlueBadge?)
+ */
+exports.adminSetUserBadges = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+
+    const userId = String(request.data?.userId || '').trim();
+    const action = String(request.data?.action || '').trim();
+    if (!userId) throw new HttpsError('invalid-argument', 'userId zorunlu');
+    if (!action) throw new HttpsError('invalid-argument', 'action zorunlu');
+
+    const userDoc = await findUserDocByAnyId(userId);
+    if (!userDoc) throw new HttpsError('not-found', 'Kullanıcı yok');
+    const userRef = userDoc.ref;
+    const u = userDoc.data() || {};
+    if (u.isSuperAdmin === true && action === 'community_on') {
+      throw new HttpsError(
+        'failed-precondition',
+        'Süper admin topluluk hesabına çevrilemez',
+      );
+    }
+
+    const now = new Date().toISOString();
+    let patch = { updatedAt: now, badgesUpdatedAt: now };
+
+    if (action === 'community_on') {
+      const logoUrl = request.data?.logoUrl
+        ? String(request.data.logoUrl).slice(0, 500)
+        : u.communityLogoUrl || 'assets/logos/ays_circle.png';
+      patch = {
+        ...patch,
+        isCommunity: true,
+        role: 'community',
+        hasGoldBadge: true,
+        hasBlueBadge: false,
+        communityLogoUrl: logoUrl,
+        affiliatedCommunityId: FieldValue.delete(),
+        affiliatedCommunityName: FieldValue.delete(),
+        affiliatedOrgLogoUrl: FieldValue.delete(),
+        staffRoleId: FieldValue.delete(),
+        isSuperAdmin: false,
+        accountStatus: 'approved',
+      };
+    } else if (action === 'community_off') {
+      patch = {
+        ...patch,
+        isCommunity: false,
+        role: 'student',
+        hasGoldBadge: false,
+        communityLogoUrl: FieldValue.delete(),
+      };
+    } else if (action === 'link_org') {
+      const orgId = String(request.data?.orgId || '').trim();
+      if (!orgId) throw new HttpsError('invalid-argument', 'orgId zorunlu');
+      const orgDoc = await findUserDocByAnyId(orgId);
+      if (!orgDoc) throw new HttpsError('not-found', 'Kurum yok');
+      if (orgDoc.id === userDoc.id) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Kullanıcı kendi kurumuna bağlanamaz',
+        );
+      }
+      const org = orgDoc.data() || {};
+      const isOrg =
+        org.isCommunity === true ||
+        org.role === 'company' ||
+        org.role === 'community' ||
+        org.hasGoldBadge === true;
+      if (!isOrg) {
+        throw new HttpsError('failed-precondition', 'Hedef bir kurum hesabı değil');
+      }
+      const grantBlue = request.data?.grantBlueBadge === true;
+      const grantGold = request.data?.grantGoldBadge === true;
+      const logo = org.communityLogoUrl || org.photoUrl || null;
+      const orgName =
+        String(org.fullName || '').trim() ||
+        `${String(org.firstName || '').trim()} ${String(org.lastName || '').trim()}`.trim() ||
+        String(org.firstName || '').trim() ||
+        'Kurum';
+      const resolvedOrgId = orgDoc.id;
+      patch = {
+        ...patch,
+        affiliatedCommunityId: resolvedOrgId,
+        affiliatedCommunityName: orgName,
+        affiliatedOrgLogoUrl: logo,
+      };
+      if (grantBlue) patch.hasBlueBadge = true;
+      if (grantGold) patch.hasGoldBadge = true;
+    } else if (action === 'unlink_org') {
+      patch = {
+        ...patch,
+        hasBlueBadge: false,
+        affiliatedCommunityId: FieldValue.delete(),
+        affiliatedCommunityName: FieldValue.delete(),
+        affiliatedOrgLogoUrl: FieldValue.delete(),
+      };
+    } else if (action === 'set_flags') {
+      if (typeof request.data?.hasGoldBadge === 'boolean') {
+        patch.hasGoldBadge = request.data.hasGoldBadge;
+      }
+      if (typeof request.data?.hasBlueBadge === 'boolean') {
+        patch.hasBlueBadge = request.data.hasBlueBadge;
+      }
+    } else {
+      throw new HttpsError(
+        'invalid-argument',
+        'action: community_on|community_off|link_org|unlink_org|set_flags',
+      );
+    }
+
+    await userRef.set(patch, { merge: true });
+    const after = (await userRef.get()).data() || {};
+    return {
+      ok: true,
+      action,
+      userId: userDoc.id,
+      hasGoldBadge: after.hasGoldBadge === true,
+      hasBlueBadge: after.hasBlueBadge === true,
+      isCommunity: after.isCommunity === true,
+      affiliatedCommunityId: after.affiliatedCommunityId || null,
+      affiliatedCommunityName: after.affiliatedCommunityName || null,
+      affiliatedOrgLogoUrl: after.affiliatedOrgLogoUrl || null,
+    };
+  },
+);
+
+/**
+ * Admin: kullanıcı kısıtlaması — doğru Firestore dokümanına yazar.
+ * type: none | warn | mute | postBan | fullBan
+ */
+exports.adminSetUserRestriction = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+
+    const userId = String(request.data?.userId || '').trim();
+    const type = String(request.data?.type || 'none').trim();
+    const reason = sanitizePlainText(request.data?.reason || '', 500);
+    const untilRaw = request.data?.until;
+    if (!userId) throw new HttpsError('invalid-argument', 'userId zorunlu');
+
+    const allowed = new Set(['none', 'warn', 'mute', 'postBan', 'fullBan']);
+    if (!allowed.has(type)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'type: none|warn|mute|postBan|fullBan',
+      );
+    }
+
+    const userDoc = await findUserDocByAnyId(userId);
+    if (!userDoc) throw new HttpsError('not-found', 'Kullanıcı yok');
+
+    const now = new Date().toISOString();
+    const patch = {
+      restrictionType: type,
+      restrictionReason: type === 'none' ? '' : reason,
+      updatedAt: now,
+      restrictionUpdatedBy: request.auth.uid,
+      restrictionUpdatedAt: now,
+    };
+
+    if (type === 'none') {
+      patch.restrictionUntil = FieldValue.delete();
+      patch.restrictionClearedBy = request.auth.uid;
+      patch.restrictionClearedAt = now;
+    } else {
+      patch.restrictionClearedBy = FieldValue.delete();
+      patch.restrictionClearedAt = FieldValue.delete();
+      if (untilRaw) {
+        const until = new Date(String(untilRaw));
+        if (!Number.isNaN(until.getTime())) {
+          patch.restrictionUntil = until.toISOString();
+        } else {
+          patch.restrictionUntil = FieldValue.delete();
+        }
+      } else {
+        patch.restrictionUntil = FieldValue.delete();
+      }
+    }
+
+    await userDoc.ref.set(patch, { merge: true });
+    const after = (await userDoc.ref.get()).data() || {};
+
+    return {
+      ok: true,
+      userId: userDoc.id,
+      restrictionType: after.restrictionType || 'none',
+      restrictionReason: after.restrictionReason || '',
+      restrictionUntil: after.restrictionUntil || null,
+    };
+  },
+);
+
+// ─── Stories / Reels feed hızlandırma ───────────────────────────────
+
+const STORY_ARRAY_CAP = 120;
+const REEL_ARRAY_CAP = 120;
+
+function capStringArray(arr, max = STORY_ARRAY_CAP) {
+  if (!Array.isArray(arr)) return null;
+  if (arr.length <= max) return null;
+  return arr.slice(-max).map(String);
+}
+
+function leanStoryPayload(id, s) {
+  const data = s || {};
+  return {
+    id,
+    authorId: String(data.authorId || ''),
+    authorName: String(data.authorName || ''),
+    authorHandle: String(data.authorHandle || ''),
+    mediaUrl: String(data.mediaUrl || ''),
+    mediaType: String(data.mediaType || 'image'),
+    createdAt: String(data.createdAt || ''),
+    expiresAt: String(data.expiresAt || ''),
+    likedBy: Array.isArray(data.likedBy)
+      ? data.likedBy.slice(-80).map(String)
+      : [],
+    viewedBy: Array.isArray(data.viewedBy)
+      ? data.viewedBy.slice(-80).map(String)
+      : [],
+    hiddenFrom: Array.isArray(data.hiddenFrom)
+      ? data.hiddenFrom.map(String)
+      : [],
+    archived: data.archived === true,
+    deletedAt: data.deletedAt || null,
+    reportCount: Number(data.reportCount || 0),
+  };
+}
+
+function leanReelPayload(id, r) {
+  const data = r || {};
+  return {
+    id,
+    authorId: String(data.authorId || ''),
+    authorName: String(data.authorName || ''),
+    authorHandle: String(data.authorHandle || ''),
+    authorPhotoUrl: data.authorPhotoUrl || null,
+    mediaUrl: String(data.mediaUrl || ''),
+    mediaType: String(data.mediaType || 'video'),
+    caption: String(data.caption || ''),
+    hashtags: Array.isArray(data.hashtags) ? data.hashtags.map(String) : [],
+    mentionedUserIds: Array.isArray(data.mentionedUserIds)
+      ? data.mentionedUserIds.map(String)
+      : [],
+    createdAt: String(data.createdAt || ''),
+    likedBy: Array.isArray(data.likedBy)
+      ? data.likedBy.slice(-80).map(String)
+      : [],
+    viewedBy: Array.isArray(data.viewedBy)
+      ? data.viewedBy.slice(-80).map(String)
+      : [],
+    commentCount: Number(data.commentCount || 0),
+    reportCount: Number(data.reportCount || 0),
+    sourcePostId: data.sourcePostId || null,
+    authorVerified: data.authorVerified === true,
+    deletedAt: data.deletedAt || null,
+  };
+}
+
+function buildVisibleAuthorSet(uid, userDoc, followingIds) {
+  const visible = new Set([String(uid)]);
+  if (userDoc) {
+    visible.add(String(userDoc.id));
+    const d = userDoc.data() || {};
+    if (d.stableId) visible.add(String(d.stableId));
+  }
+  for (const f of followingIds || []) {
+    if (f) visible.add(String(f));
+  }
+  return visible;
+}
+
+async function batchDeleteDocs(docs) {
+  if (!docs.length) return 0;
+  let deleted = 0;
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = db.batch();
+    const slice = docs.slice(i, i + 400);
+    for (const doc of slice) batch.delete(doc.ref);
+    await batch.commit();
+    deleted += slice.length;
+  }
+  return deleted;
+}
+
+/** Hikâye / reel doc boyutunu küçült (viewedBy/likedBy şişmesin). */
+async function trimFeedArrays(ref, data, caps = {}) {
+  const maxView = caps.view || STORY_ARRAY_CAP;
+  const maxLike = caps.like || STORY_ARRAY_CAP;
+  const patch = {};
+  const viewed = capStringArray(data.viewedBy, maxView);
+  const liked = capStringArray(data.likedBy, maxLike);
+  if (viewed) patch.viewedBy = viewed;
+  if (liked) patch.likedBy = liked;
+  if (Object.keys(patch).length === 0) return false;
+  await ref.set(patch, { merge: true });
+  return true;
+}
+
+exports.onStoryWrittenTrim = onDocumentWritten(
+  { document: 'stories/{storyId}', region: 'europe-west1' },
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists) return;
+    const data = after.data() || {};
+    await trimFeedArrays(after.ref, data);
+  },
+);
+
+exports.onReelWrittenTrim = onDocumentWritten(
+  { document: 'reels/{reelId}', region: 'europe-west1' },
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists) return;
+    const data = after.data() || {};
+    await trimFeedArrays(after.ref, data);
+  },
+);
+
+/** Süresi dolmuş hikâyeleri sil — limit(200) sorgusunda taze içerik kalsın. */
+exports.purgeExpiredStories = onSchedule(
+  { schedule: 'every 30 minutes', region: 'europe-west1', timeoutSeconds: 120 },
+  async () => {
+    const now = new Date().toISOString();
+    const snap = await db
+      .collection('stories')
+      .where('expiresAt', '<', now)
+      .limit(450)
+      .get();
+    const toDelete = snap.docs.filter((d) => {
+      const s = d.data() || {};
+      if (s.archived === true) return false;
+      return true;
+    });
+    const n = await batchDeleteDocs(toDelete);
+    if (n > 0) console.log('[purgeExpiredStories]', n);
+  },
+);
+
+/** Soft-delete reels’leri kalıcı sil. */
+exports.purgeDeletedReels = onSchedule(
+  { schedule: 'every 6 hours', region: 'europe-west1', timeoutSeconds: 120 },
+  async () => {
+    const cutoff = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString();
+    const snap = await db
+      .collection('reels')
+      .where('deletedAt', '<', cutoff)
+      .limit(450)
+      .get();
+    const n = await batchDeleteDocs(snap.docs);
+    if (n > 0) console.log('[purgeDeletedReels]', n);
+  },
+);
+
+/** Callable: takip edilen + kendi hikâyeleri (hafif payload). */
+exports.getStoriesFeed = onCall(
+  { region: 'europe-west1', timeoutSeconds: 45 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    const uid = request.auth.uid;
+    const userDoc = await findUserDocByAnyId(uid);
+    const followingIds = Array.isArray(request.data?.followingIds)
+      ? request.data.followingIds.map(String)
+      : [];
+    const limitN = Math.min(Math.max(Number(request.data?.limit) || 200, 20), 250);
+    const visibleAuthors = buildVisibleAuthorSet(uid, userDoc, followingIds);
+    const now = new Date().toISOString();
+
+    const snap = await db
+      .collection('stories')
+      .orderBy('createdAt', 'desc')
+      .limit(limitN)
+      .get();
+
+    const items = [];
+    for (const doc of snap.docs) {
+      const s = doc.data() || {};
+      if (s.deletedAt) continue;
+      if (s.archived !== true && s.expiresAt && String(s.expiresAt) < now) continue;
+      const authorId = String(s.authorId || '');
+      if (!visibleAuthors.has(authorId)) continue;
+      if (Array.isArray(s.hiddenFrom) && s.hiddenFrom.map(String).includes(uid)) {
+        continue;
+      }
+      items.push(leanStoryPayload(doc.id, s));
+    }
+
+    return { ok: true, items, fetchedAt: now, count: items.length };
+  },
+);
+
+/** Callable: reels feed — gizli hesap filtresi + hafif payload. */
+exports.getReelsFeed = onCall(
+  { region: 'europe-west1', timeoutSeconds: 45 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    const uid = request.auth.uid;
+    const userDoc = await findUserDocByAnyId(uid);
+    const followingIds = Array.isArray(request.data?.followingIds)
+      ? request.data.followingIds.map(String)
+      : [];
+    const limitN = Math.min(Math.max(Number(request.data?.limit) || 120, 20), 180);
+    const visibleAuthors = buildVisibleAuthorSet(uid, userDoc, followingIds);
+    const authorCache = new Map();
+
+    async function canSeeAuthor(authorId) {
+      const aid = String(authorId || '');
+      if (!aid) return false;
+      if (visibleAuthors.has(aid) || aid === uid) return true;
+      let cached = authorCache.get(aid);
+      if (!cached) {
+        const doc = await findUserDocByAnyId(aid);
+        cached = doc?.data() || {};
+        authorCache.set(aid, cached);
+      }
+      if (cached.isPrivateAccount !== true) return true;
+      const stable = String(cached.stableId || '');
+      return visibleAuthors.has(stable) || visibleAuthors.has(aid);
+    }
+
+    const snap = await db
+      .collection('reels')
+      .orderBy('createdAt', 'desc')
+      .limit(limitN)
+      .get();
+
+    const items = [];
+    for (const doc of snap.docs) {
+      const r = doc.data() || {};
+      if (r.deletedAt) continue;
+      if (!(await canSeeAuthor(r.authorId))) continue;
+      items.push(leanReelPayload(doc.id, r));
+    }
+
+    return { ok: true, items, fetchedAt: new Date().toISOString(), count: items.length };
+  },
+);
+
+/** Admin/manuel: feed temizliğini hemen çalıştır. */
+exports.syncFeedCaches = onCall(
+  { region: 'europe-west1', timeoutSeconds: 120 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    const now = new Date().toISOString();
+    const storySnap = await db
+      .collection('stories')
+      .where('expiresAt', '<', now)
+      .limit(450)
+      .get();
+    const stories = storySnap.docs.filter((d) => d.data()?.archived !== true);
+    const reelCutoff = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString();
+    const reelSnap = await db
+      .collection('reels')
+      .where('deletedAt', '<', reelCutoff)
+      .limit(450)
+      .get();
+    const purgedStories = await batchDeleteDocs(stories);
+    const purgedReels = await batchDeleteDocs(reelSnap.docs);
+    return {
+      ok: true,
+      purgedStories,
+      purgedReels,
+      at: now,
+    };
   },
 );
 

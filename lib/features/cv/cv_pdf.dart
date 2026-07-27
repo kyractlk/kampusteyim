@@ -70,26 +70,115 @@ class CvPdfBuilder {
     }
   }
 
-  static Future<({pw.Font? base, pw.Font? bold})> _loadFonts() async {
-    if (_cachedRegular != null && _cachedBold != null) {
-      return (base: _cachedRegular, bold: _cachedBold);
+  static bool _isCjkLanguage(String code) {
+    const cjk = {'ja', 'ko', 'zh', 'zh-cn', 'zh-tw'};
+    return cjk.contains(code.toLowerCase());
+  }
+
+  static String _displayName(String name, String languageCode) {
+    final n = name.trim();
+    if (n.isEmpty) return n;
+    if (_isCjkLanguage(languageCode) ||
+        RegExp(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]').hasMatch(n)) {
+      return n;
     }
+    return n.toUpperCase();
+  }
+
+  static Future<pw.Font?> _tryPdfFont(
+    Future<pw.Font> Function() loader,
+  ) async {
     try {
-      final reg = await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
-      final bld = await rootBundle.load('assets/fonts/NotoSans-Bold.ttf');
-      _cachedRegular = pw.Font.ttf(reg);
-      _cachedBold = pw.Font.ttf(bld);
-      return (base: _cachedRegular, bold: _cachedBold);
+      return await loader();
     } catch (_) {
-      try {
-        return (
-          base: await PdfGoogleFonts.nunitoRegular(),
-          bold: await PdfGoogleFonts.nunitoBold(),
-        );
-      } catch (_) {
-        return (base: null, bold: null);
+      return null;
+    }
+  }
+
+  static Future<pw.Font?> _loadBundledTtf(String asset) async {
+    try {
+      final data = await rootBundle.load(asset);
+      return pw.Font.ttf(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<({pw.Font? base, pw.Font? bold, List<pw.Font> fallback})>
+      _loadFonts(String languageCode) async {
+    final code = languageCode.toLowerCase();
+    final fallback = <pw.Font>[];
+
+    pw.Font? base;
+    pw.Font? bold;
+
+    switch (code) {
+      case 'ja':
+        base = await _loadBundledTtf('assets/fonts/NotoSansJP-Regular.ttf');
+        bold = await _loadBundledTtf('assets/fonts/NotoSansJP-Bold.ttf');
+        base ??= await _tryPdfFont(() => PdfGoogleFonts.notoSansJPRegular());
+        bold ??= await _tryPdfFont(() => PdfGoogleFonts.notoSansJPBold());
+        break;
+      case 'ko':
+        base = await _loadBundledTtf('assets/fonts/NotoSansKR-Regular.ttf');
+        bold = await _loadBundledTtf('assets/fonts/NotoSansKR-Bold.ttf');
+        base ??= await _tryPdfFont(() => PdfGoogleFonts.notoSansKRRegular());
+        bold ??= await _tryPdfFont(() => PdfGoogleFonts.notoSansKRBold());
+        break;
+      case 'zh':
+        base = await _tryPdfFont(() => PdfGoogleFonts.notoSansSCRegular());
+        bold = await _tryPdfFont(() => PdfGoogleFonts.notoSansSCBold());
+        break;
+      case 'th':
+        base = await _tryPdfFont(() => PdfGoogleFonts.notoSansThaiRegular());
+        bold = base;
+        break;
+      case 'ar':
+        base = await _tryPdfFont(() => PdfGoogleFonts.notoSansArabicRegular());
+        bold = base;
+        break;
+      default:
+        break;
+    }
+
+    if (base == null) {
+      if (_cachedRegular != null && _cachedBold != null) {
+        base = _cachedRegular;
+        bold = _cachedBold;
+      } else {
+        base = await _loadBundledTtf('assets/fonts/NotoSans-Regular.ttf');
+        bold = await _loadBundledTtf('assets/fonts/NotoSans-Bold.ttf');
+        if (base != null && bold != null) {
+          _cachedRegular = base;
+          _cachedBold = bold;
+        } else {
+          base = await _tryPdfFont(() => PdfGoogleFonts.nunitoRegular());
+          bold = await _tryPdfFont(() => PdfGoogleFonts.nunitoBold());
+        }
       }
     }
+
+    if (!_isCjkLanguage(code)) {
+      for (final asset in [
+        'assets/fonts/NotoSansJP-Regular.ttf',
+        'assets/fonts/NotoSansKR-Regular.ttf',
+      ]) {
+        final f = await _loadBundledTtf(asset);
+        if (f != null) fallback.add(f);
+      }
+      if (fallback.isEmpty) {
+        for (final loader in <Future<pw.Font> Function()>[
+          () => PdfGoogleFonts.notoSansJPRegular(),
+          () => PdfGoogleFonts.notoSansKRRegular(),
+          () => PdfGoogleFonts.notoSansSCRegular(),
+        ]) {
+          final f = await _tryPdfFont(loader);
+          if (f != null) fallback.add(f);
+        }
+      }
+    }
+
+    return (base: base, bold: bold ?? base, fallback: fallback);
   }
 
   static Future<pw.ImageProvider?> _loadPhoto(String? url) async {
@@ -108,7 +197,7 @@ class CvPdfBuilder {
     String languageCode = 'en',
     int? accentArgb,
   }) async {
-    final fonts = await _loadFonts();
+    final fonts = await _loadFonts(languageCode);
     final pi =
         (polished['personal_info'] as Map?)?.cast<String, dynamic>() ?? {};
     final photo = await _loadPhoto('${pi['photoUrl'] ?? ''}');
@@ -118,6 +207,7 @@ class CvPdfBuilder {
       languageCode: languageCode,
       base: fonts.base,
       bold: fonts.bold,
+      fontFallback: fonts.fallback,
       photo: photo,
       accentArgb: accentArgb,
     );
@@ -409,13 +499,18 @@ class CvPdfBuilder {
     String languageCode = 'en',
     pw.Font? base,
     pw.Font? bold,
+    List<pw.Font> fontFallback = const [],
     pw.ImageProvider? photo,
     int? accentArgb,
   }) {
     _paintAccent =
         accentArgb != null ? PdfColor.fromInt(accentArgb) : _accent;
     _paintAccentSoft = _softAccent(_paintAccent);
-    final theme = pw.ThemeData.withFont(base: base, bold: bold);
+    final theme = pw.ThemeData.withFont(
+      base: base,
+      bold: bold,
+      fontFallback: fontFallback,
+    );
     final labels = atsLabels(languageCode);
     final aiLabels =
         (polished['section_labels'] as Map?)?.cast<String, dynamic>();
@@ -493,6 +588,7 @@ class CvPdfBuilder {
                 pi: pi,
                 photo: photo,
                 initials: initials,
+                languageCode: languageCode,
               ),
             ),
           ];
@@ -774,6 +870,7 @@ class CvPdfBuilder {
     required Map<String, dynamic> pi,
     required pw.ImageProvider? photo,
     required String initials,
+    required String languageCode,
   }) {
     return pw.Container(
       width: double.infinity,
@@ -792,7 +889,7 @@ class CvPdfBuilder {
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
                       pw.Text(
-                        name.toUpperCase(),
+                        _displayName(name, languageCode),
                         maxLines: 2,
                         style: pw.TextStyle(
                           fontSize: name.trim().length > 24 ? 15.5 : 18,

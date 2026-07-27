@@ -30,7 +30,7 @@ class UserVerificationBadges extends StatelessWidget {
     } else if (u.showBlueBadge) {
       children.add(VerifiedBadge(size: size));
     }
-    if (plusOn && u.showGreenBadge) {
+    if (plusOn && u.showGreenBadge && !u.showGoldBadge && !u.showBlueBadge) {
       if (children.isNotEmpty) children.add(SizedBox(width: size * 0.25));
       children.add(VerifiedBadge(green: true, size: size));
     }

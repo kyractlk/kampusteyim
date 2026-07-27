@@ -179,6 +179,54 @@ class BotBadge extends StatelessWidget {
 
 /// Twitter tarzı “X ile ilişkili” satırı — minik logo + kurum adı (+ opsiyonel tick).
 /// Basılınca kurum / topluluk profiline gider.
+class UniversityBadge extends StatelessWidget {
+  const UniversityBadge({
+    super.key,
+    required this.label,
+    this.light = false,
+    this.compact = false,
+  });
+
+  final String label;
+  final bool light;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.trim().isEmpty) return const SizedBox.shrink();
+    final fg = light ? Colors.white : AppColors.navy;
+    final bg = light
+        ? Colors.white.withValues(alpha: 0.18)
+        : AppColors.cyan.withValues(alpha: 0.16);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 9,
+        vertical: compact ? 2 : 3,
+      ),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: light
+              ? Colors.white.withValues(alpha: 0.28)
+              : AppColors.cyan.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: fg,
+          fontWeight: FontWeight.w800,
+          fontSize: compact ? 10.5 : 11.5,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+}
+
+/// Twitter tarzı “X ile ilişkili” satırı — minik logo + kurum adı (+ opsiyonel tick).
+/// Basılınca kurum / topluluk profiline gider.
 class AffiliationBadge extends StatelessWidget {
   const AffiliationBadge({
     super.key,

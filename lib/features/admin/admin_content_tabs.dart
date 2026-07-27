@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/icons/mt_icons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/app_nav.dart';
 import '../../core/utils/app_share.dart';
@@ -14,6 +13,7 @@ import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
 import '../moderation/moderation_models.dart';
+import '../plus/plus_widgets.dart';
 import 'admin_permissions.dart';
 import 'admin_provider.dart';
 
@@ -167,13 +167,22 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-                  leading: UserAvatar(
-                    name: u.fullName,
-                    photoUrl: u.communityLogoUrl ?? u.photoUrl,
-                    isCommunity: u.isCommunity,
-                    radius: 24,
+                  leading: SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Center(
+                      child: UserAvatar(
+                        name: u.fullName,
+                        photoUrl: u.isCommunity
+                            ? (u.communityLogoUrl ?? u.photoUrl)
+                            : u.photoUrl,
+                        isCommunity: u.isCommunity,
+                        radius: 22,
+                      ),
+                    ),
                   ),
                   title: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Flexible(
                         child: Text(
@@ -182,13 +191,8 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (u.showGoldBadge) ...[
-                        const SizedBox(width: 6),
-                        const VerifiedBadge(gold: true, size: 15),
-                      ] else if (u.showBlueBadge) ...[
-                        const SizedBox(width: 6),
-                        const VerifiedBadge(gold: false, size: 15),
-                      ],
+                      const SizedBox(width: 6),
+                      UserVerificationBadges(user: u, size: 15),
                     ],
                   ),
                   subtitle: Text(

@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/storage/media_upload.dart';
 import '../../models/models.dart';
@@ -60,6 +64,7 @@ class StoriesProvider extends ChangeNotifier {
     }
     _loading = true;
     notifyListeners();
+    unawaited(_hydrateFromCallable());
     _sub = FirebaseFirestore.instance
         .collection('stories')
         .orderBy('createdAt', descending: true)
@@ -87,6 +92,37 @@ class StoriesProvider extends ChangeNotifier {
     );
   }
 
+  Future<void> _hydrateFromCallable() async {
+    final me = _auth?.user;
+    if (me == null || _viewerId == null) return;
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('getStoriesFeed');
+      final res = await callable.call({
+        'followingIds': me.following,
+        'limit': 200,
+      });
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      final raw = (map['items'] as List?) ?? [];
+      if (raw.isEmpty) return;
+      _items
+        ..clear()
+        ..addAll(
+          raw.map((e) {
+            final m = Map<String, dynamic>.from(e as Map);
+            final id = '${m.remove('id') ?? ''}';
+            return StoryItem.fromFirestore(id, m);
+          }),
+        );
+      _loading = false;
+      _error = null;
+      notifyListeners();
+      unawaited(_prefetchVisibleMedia());
+    } catch (e) {
+      debugPrint('[stories] getStoriesFeed: $e');
+    }
+  }
+
   bool _canSeeAuthor(String authorId) {
     final me = _viewerId;
     if (me == null) return false;
@@ -111,13 +147,16 @@ class StoriesProvider extends ChangeNotifier {
 
   Future<void> _prefetchVisibleMedia() async {
     final items = visibleItemsForViewer();
-    final imageUrls = items
-        .where((s) => s.mediaType != MediaType.video)
+    // Tüm görünür hikâyeleri arka planda ısıt (görsel + video URL).
+    final urls = items
         .map((s) => s.mediaUrl)
         .where((u) => u.startsWith('http'))
-        .take(60);
-    for (final url in imageUrls) {
-      unawaited(_prefetchUrl(url, isVideo: false));
+        .toList();
+    for (final url in urls) {
+      final isVideo = items.any(
+        (s) => s.mediaUrl == url && s.mediaType == MediaType.video,
+      );
+      unawaited(_prefetchUrl(url, isVideo: isVideo));
     }
   }
 
@@ -211,25 +250,40 @@ class StoriesProvider extends ChangeNotifier {
   Future<void> _prefetchUrl(String url, {required bool isVideo}) async {
     if (!url.startsWith('http')) return;
     try {
-      if (isVideo) return;
-      final stream = NetworkImage(url).resolve(ImageConfiguration.empty);
-      final completer = Completer<void>();
-      late ImageStreamListener listener;
-      listener = ImageStreamListener(
-        (info, sync) {
-          if (!completer.isCompleted) completer.complete();
-          stream.removeListener(listener);
-        },
-        onError: (e, st) {
-          if (!completer.isCompleted) completer.complete();
-          stream.removeListener(listener);
-        },
+      if (!isVideo) {
+        final stream = NetworkImage(url).resolve(ImageConfiguration.empty);
+        final completer = Completer<void>();
+        late ImageStreamListener listener;
+        listener = ImageStreamListener(
+          (info, sync) {
+            if (!completer.isCompleted) completer.complete();
+            stream.removeListener(listener);
+          },
+          onError: (e, st) {
+            if (!completer.isCompleted) completer.complete();
+            stream.removeListener(listener);
+          },
+        );
+        stream.addListener(listener);
+        await completer.future.timeout(
+          const Duration(seconds: 8),
+          onTimeout: () {},
+        );
+        return;
+      }
+      // Video: disk cache — tıklanınca anında hazır olsun.
+      if (kIsWeb) return;
+      final dir = await getTemporaryDirectory();
+      final name =
+          'story_${url.hashCode.abs().toRadixString(16)}${url.contains('.mp4') ? '.mp4' : '.bin'}';
+      final file = File('${dir.path}/$name');
+      if (await file.exists() && await file.length() > 1024) return;
+      final res = await http.get(Uri.parse(url)).timeout(
+        const Duration(seconds: 45),
       );
-      stream.addListener(listener);
-      await completer.future.timeout(
-        const Duration(seconds: 6),
-        onTimeout: () {},
-      );
+      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+        await file.writeAsBytes(res.bodyBytes, flush: true);
+      }
     } catch (_) {}
   }
 

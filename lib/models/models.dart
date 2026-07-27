@@ -169,7 +169,32 @@ class AppUser {
     return exp.isAfter(DateTime.now());
   }
 
-  bool get showGreenBadge => isPlusActive;
+  /// Plus yeşil tick — gold/mavi rozet varken gösterilmez.
+  bool get showGreenBadge =>
+      isPlusActive && !showGoldBadge && !showBlueBadge;
+
+  /// Profilde üniversite rozeti gösterilsin mi?
+  bool get showUniversityBadge {
+    final u = university.trim();
+    if (u.isEmpty || u == '—') return false;
+    return role == UserRole.student ||
+        role == UserRole.admin ||
+        isCommunity == false;
+  }
+
+  /// Kısa kampüs etiketi (rozet metni).
+  String get universityBadgeLabel {
+    final u = university.trim();
+    if (u.isEmpty) return '';
+    const map = {
+      'Gaziantep Üniversitesi': 'GAÜN',
+      'Gaziantep Bilim Ve Teknoloji Üniversitesi': 'GBTÜ',
+      'Gaziantep İslam Bilim Ve Teknoloji Üniversitesi': 'GİBTÜ',
+      'Hasan Kalyoncu Üniversitesi': 'HKÜ',
+      'Sanko Üniversitesi': 'Sanko',
+    };
+    return map[u] ?? (u.length > 18 ? '${u.substring(0, 16)}…' : u);
+  }
 
   int get plusDaysLeft {
     if (!isPlusActive) return 0;

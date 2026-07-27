@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fa;
 import 'package:flutter/foundation.dart';
@@ -32,7 +34,7 @@ class NotificationProvider extends ChangeNotifier {
     if (token != null) {
       await _saveToken(docId, token, profile: profile);
     } else {
-      debugPrint('[push] bindUser: token yok — bildirim izni / Google Play Services?');
+      debugPrint('[push] bindUser: token yok — APNs / izin gecikmesi; retry başlıyor');
       // Profil alanlarını yine de senkronla
       try {
         await FirebaseFirestore.instance.collection('users').doc(docId).set({
@@ -51,8 +53,25 @@ class NotificationProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint('[push] bindUser profile sync: $e');
       }
+      // iOS: APNs token gecikebilir — arka planda birkaç kez daha dene.
+      unawaited(_retryToken(docId, profile: profile));
     }
     await refresh();
+  }
+
+  /// iOS APNs gecikmesi için tekrarlı FCM token denemesi.
+  Future<void> _retryToken(String docId, {AppUser? profile}) async {
+    for (var i = 0; i < 8; i++) {
+      await Future<void>.delayed(Duration(seconds: 2 + i));
+      if (_userId != docId) return;
+      final token = await PushService.instance.getToken();
+      if (token != null) {
+        await _saveToken(docId, token, profile: profile);
+        debugPrint('[push] retryToken ok (attempt ${i + 1})');
+        return;
+      }
+    }
+    debugPrint('[push] retryToken: APNs/FCM alınamadı');
   }
 
   Future<void> _saveToken(

@@ -436,8 +436,17 @@ class AuthProvider extends ChangeNotifier {
     bool privileged = false,
   }) async {
     try {
-      final uid = authUid ?? fa.FirebaseAuth.instance.currentUser?.uid;
-      final docId = (uid != null && uid.isNotEmpty) ? uid : user.id;
+      final currentUid = fa.FirebaseAuth.instance.currentUser?.uid ?? '';
+      final targetDocId = _firestoreDocIdFor(user, authUid: authUid);
+      if (privileged &&
+          currentUid.isNotEmpty &&
+          targetDocId != currentUid &&
+          user.id != currentUid &&
+          _idAliases[user.id] != currentUid) {
+        // Başka kullanıcının ayrıcalıklı alanları yalnızca Cloud Functions ile.
+        return;
+      }
+      final docId = targetDocId;
       final data = <String, dynamic>{
         'email': user.email,
         'firstName': user.firstName,
@@ -838,13 +847,22 @@ class AuthProvider extends ChangeNotifier {
     unawaited(_syncProfileToFirestore(_user!));
   }
 
-  void upsertUser(AppUser user) {
+  void upsertUser(AppUser user, {bool syncRemote = true}) {
     _upsert(user);
     if (_user?.id == user.id) {
       _user = user;
     }
-    unawaited(_syncProfileToFirestore(user, privileged: true));
+    if (syncRemote) {
+      unawaited(_syncProfileToFirestore(user, privileged: true));
+    }
     notifyListeners();
+  }
+
+  String _firestoreDocIdFor(AppUser user, {String? authUid}) {
+    if (authUid != null && authUid.isNotEmpty) return authUid;
+    final aliased = _idAliases[user.id];
+    if (aliased != null && aliased.isNotEmpty) return aliased;
+    return user.id;
   }
 
   /// Firestore’daki tüm üyeleri dizine yükle (canlı arama).

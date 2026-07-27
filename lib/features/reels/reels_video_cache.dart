@@ -79,7 +79,8 @@ class ReelsVideoCache {
         .toList();
     _queue = videos;
 
-    final priority = videos.take(count).toList();
+    // İlk açılışta daha agresif ısıt.
+    final priority = videos.take(count.clamp(8, 40)).toList();
     for (var i = 0; i < priority.length; i += 3) {
       final chunk = priority.skip(i).take(3);
       await Future.wait(
@@ -90,7 +91,7 @@ class ReelsVideoCache {
     if (keepWarm) {
       final keep = {
         ...priority.map((r) => r.id),
-        ...videos.take(20).map((r) => r.id),
+        ...videos.take(36).map((r) => r.id),
       };
       await trim(keep);
       unawaited(_runBackgroundWarm());
@@ -108,9 +109,10 @@ class ReelsVideoCache {
           continue;
         }
         await obtain(reelId: r.id, url: r.mediaUrl);
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-        if (_controllers.length > 24) {
-          final keep = _queue.take(20).map((e) => e.id).toSet();
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        // Daha fazla controller tut — kaydırınca anlık.
+        if (_controllers.length > 48) {
+          final keep = _queue.take(40).map((e) => e.id).toSet();
           await trim(keep);
         }
       }

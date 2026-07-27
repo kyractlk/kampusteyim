@@ -251,11 +251,20 @@ class UserAvatar extends StatelessWidget {
 
     Widget avatar;
     if (useAsset) {
-      avatar = CircleAvatar(
-        radius: radius,
-        backgroundColor:
-            isCommunity ? AppColors.navy : AppColors.cyan.withValues(alpha: 0.22),
-        backgroundImage: AssetImage(url),
+      avatar = ClipOval(
+        child: Image.asset(
+          url,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => CircleAvatar(
+            radius: radius,
+            backgroundColor: isCommunity
+                ? AppColors.navy
+                : AppColors.cyan.withValues(alpha: 0.22),
+            child: _initials(),
+          ),
+        ),
       );
     } else if (useNetwork) {
       avatar = CircleAvatar(
@@ -290,11 +299,17 @@ class UserAvatar extends StatelessWidget {
       );
     }
 
-    if (onTap == null) return avatar;
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: avatar,
+    if (onTap == null) {
+      return SizedBox(width: size, height: size, child: avatar);
+    }
+    return SizedBox(
+      width: size,
+      height: size,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: avatar,
+      ),
     );
   }
 }
