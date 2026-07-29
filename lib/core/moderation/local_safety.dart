@@ -1,4 +1,5 @@
-/// Yerel Guard — gömülü küfür/nefret (harf kombinasyonu + obfuscation).
+/// Yerel Guard — yalnızca bariz küfür / nefret / cinsiyetçilik.
+/// Cümle içine gömülü harf kombinasyonları engellenmez (yönetim FP şikayeti).
 class LocalSafety {
   LocalSafety._();
 
@@ -22,15 +23,8 @@ class LocalSafety {
     return t;
   }
 
-  static String _compact(String text) {
-    final only = text.replaceAll(RegExp(r'[^a-z]'), '');
-    return only.replaceAllMapped(
-      RegExp(r'(.)\1{2,}'),
-      (m) => '${m[1]}${m[1]}',
-    );
-  }
-
-  static String _maskInnocent(String compact) {
+  /// Masum kelimeleri boşlukla ayır ki kısa kök yanlış pozitif üretmesin.
+  static String _maskInnocentWords(String text) {
     const safe = [
       'psikolojik',
       'psikoloji',
@@ -51,26 +45,22 @@ class LocalSafety {
       'universite',
       'asik',
     ];
-    var t = compact;
+    var t = text;
     for (final s in safe) {
-      t = t.replaceAll(s, 'x' * s.length);
+      t = t.replaceAll(s, ' ');
     }
     return t;
   }
 
-  static bool _obfuscationCarrier(String raw, String compact) {
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty || compact.length < 6) return false;
-    final tokens =
-        trimmed.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
-    return tokens.length == 1 && compact.length >= 8;
-  }
-
-  static const _always = <String>[
+  /// Net / uzun kökler — yanlış pozitif riski düşük.
+  static const _clear = <String>[
+    // nefret / ırkçılık
     'zenci',
     'nigger',
     'nigga',
     'heilhitler',
+    'faggot',
+    // küfür / cinsiyetçilik (bariz)
     'siktir',
     'sikerim',
     'sikeyim',
@@ -81,50 +71,48 @@ class LocalSafety {
     'yarrak',
     'yarrag',
     'gotunu',
+    'kahpe',
     'porno',
     'onlyfans',
     'fuckyou',
     'motherfucker',
   ];
 
-  static const _short = <String>['sik', 'amk', 'pic'];
+  /// Kısa kökler — yalnızca kelime sınırı (cümle içi / gömülü YOK).
+  static const _shortWords = <String>['sik', 'amk', 'pic'];
+
+  static bool _asWholeWord(String text, String stem) {
+    return RegExp('(?:^|[^a-z])${RegExp.escape(stem)}(?:[^a-z]|\$)')
+        .hasMatch(text);
+  }
 
   static String? blockReason(String content) {
-    // @mention'ları tarama dışı bırak (örn. muhendislik → sik false positive)
     final withoutMentions = content.replaceAll(
       RegExp(r'@[\wğüşıöçĞÜŞİÖÇ0-9_]+'),
       ' ',
     );
-    final t = _norm(withoutMentions);
-    final c = _compact(t);
-    final masked = _maskInnocent(c);
-    final obfuscated = _obfuscationCarrier(withoutMentions, c);
+    final t = _maskInnocentWords(_norm(withoutMentions));
 
-    for (final stem in _always) {
-      if (masked.contains(stem) || c.contains(stem) || t.contains(stem)) {
-        return 'Uygunsuz / nefret içeriği engellendi (AYS Tech Guard).';
+    for (final stem in _clear) {
+      if (_asWholeWord(t, stem) || t.contains(stem)) {
+        final hate = RegExp(r'zenci|nigger|nigga|heil|faggot').hasMatch(stem);
+        return hate
+            ? 'Nefret / ayrımcı içerik engellendi (AYS Tech Guard).'
+            : 'Küfür / uygunsuz içerik engellendi (AYS Tech Guard).';
       }
     }
 
-    for (final stem in _short) {
-      final asWord = RegExp('(?:^|[^a-z])$stem(?:[^a-z]|\$)');
-      if (asWord.hasMatch(t)) {
+    for (final stem in _shortWords) {
+      if (_asWholeWord(t, stem)) {
         return 'Küfür engellendi (AYS Tech Guard).';
       }
-      if (masked.contains(stem) &&
-          (obfuscated ||
-              (c.length >= 8 &&
-                  !withoutMentions.trim().contains(RegExp(r'\s'))))) {
-        return 'Küfür engellendi (gömülü harf — AYS Tech Guard).';
-      }
-      if (RegExp(stem.split('').join(r'[\W_]+'), caseSensitive: false)
-          .hasMatch(withoutMentions)) {
-        return 'Küfür engellendi (ayrık harf — AYS Tech Guard).';
-      }
     }
 
-    if (RegExp(r'(olum|oldurun|katledin).{0,40}(zenci|yahudi|ermeni)').hasMatch(t) ||
-        RegExp(r'(zenci|yahudi|ermeni).{0,40}(olum|oldurun|katledin)').hasMatch(t)) {
+    // Bariz nefret + şiddet (ırk hedefi)
+    if (RegExp(r'(olum|oldurun|katledin).{0,40}(zenci|yahudi|ermeni)')
+            .hasMatch(t) ||
+        RegExp(r'(zenci|yahudi|ermeni).{0,40}(olum|oldurun|katledin)')
+            .hasMatch(t)) {
       return 'Nefret / şiddet engellendi (AYS Tech Guard).';
     }
     return null;

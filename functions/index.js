@@ -1955,8 +1955,8 @@ exports.preReviewReport = onCall({ region: 'europe-west1', timeoutSeconds: 60 },
 });
 
 /**
- * Kampüs zero-tolerance: harf-harf / gömülü küfür+nefret / leetspeak / rastgele.
- * OpenAI kotası olmasa da çalışır.
+ * Yerel Guard — yalnızca bariz küfür / ırkçılık / cinsiyetçilik.
+ * Cümle içine gömülü harf kombinasyonları engellenmez; şüphe AI’da admin’e gider.
  */
 function normalizeForSafety(rawText) {
   let t = String(rawText || '')
@@ -1983,15 +1983,14 @@ function normalizeForSafety(rawText) {
   return t;
 }
 
-/** Harf dışı sil + tekrarları sıkıştır. */
 function compactLetters(text) {
   return String(text || '')
     .replace(/[^a-z]/g, '')
     .replace(/(.)\1{2,}/g, '$1$1');
 }
 
-/** Masum uzun kökleri maskele (kısa “asik” alt dize olarak silinmez — gömülü küfrü yutmasın). */
-function maskInnocentStems(compact) {
+/** Masum kelimeleri boşlukla sil — kısa kök false positive’ini azaltır. */
+function maskInnocentWords(text) {
   const safe = [
     'psikolojik',
     'psikoloji',
@@ -2012,26 +2011,16 @@ function maskInnocentStems(compact) {
     'universite',
     'asik',
   ];
-  let t = compact;
+  let t = text;
   for (const s of safe) {
-    if (t.includes(s)) t = t.split(s).join('x'.repeat(s.length));
+    if (t.includes(s)) t = t.split(s).join(' ');
   }
   return t;
 }
 
-/** Tek rastgele yığın — küfür gömme taşıyıcısı (cümle değil). */
-function looksLikeObfuscationCarrier(raw, compact) {
-  const trimmed = String(raw || '').trim();
-  if (!trimmed || compact.length < 6) return false;
-  const tokens = trimmed.split(/\s+/).filter(Boolean);
-  // Tek token + yeterince uzun = klavye smash / gömme
-  if (tokens.length === 1 && compact.length >= 8) return true;
-  return false;
-}
-
-/** Araya en az bir ayırıcı zorunlu: s i k / s.i.k — psikoloji içindeki sik’e uymaz. */
-function spacedStemRegex(stem) {
-  return new RegExp(stem.split('').join('[\\W_]+'), 'i');
+function asWholeWord(text, stem) {
+  const esc = stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[^a-z])${esc}(?:[^a-z]|$)`, 'i').test(text);
 }
 
 function blockHit(labels, summary) {
@@ -2043,21 +2032,16 @@ function blockHit(labels, summary) {
     labels,
     summary,
     message:
-      'Gönderin uygunsuz / nefret içeriği içerdiği için AYS Tech Guard tarafından engellendi. Kampüste buna yer yok.',
+      'Gönderin bariz küfür / nefret / cinsiyetçi içerik içerdiği için AYS Tech Guard tarafından engellendi.',
   };
 }
 
 function localSafetyScan(rawText) {
-  // @mention'ları çıkar — muhendislik vb. false positive üretmesin
   const scrubbed = String(rawText || '').replace(/@[\wğüşıöçĞÜŞİÖÇ0-9_]+/gi, ' ');
-  const text = normalizeForSafety(scrubbed);
+  const text = maskInnocentWords(normalizeForSafety(scrubbed));
   const compact = compactLetters(text);
-  const masked = maskInnocentStems(compact);
-  const obfuscated = looksLikeObfuscationCarrier(scrubbed, compact);
 
-  // 1) Uzun / net kökler — her yerde alt dize (gömülü dahil)
-  const alwaysStems = [
-    // nefret
+  const clearStems = [
     'zenci',
     'nigger',
     'nigga',
@@ -2067,22 +2051,18 @@ function localSafetyScan(rawText) {
     'faggot',
     'kike',
     'chink',
-    // küfür / NSFW (uzun — yanlış pozitif düşük)
     'siktir',
     'sikerim',
     'sikeyim',
     'sikis',
     'sikiyon',
-    'siktiğ',
     'siktig',
     'amcik',
     'amina',
     'amini',
     'orospu',
     'orosbucocugu',
-    'picler',
     'yarrak',
-    'yarrağ',
     'yarrag',
     'gotunu',
     'gotune',
@@ -2092,52 +2072,24 @@ function localSafetyScan(rawText) {
     'onlyfans',
     'fuckyou',
     'motherfucker',
-    'dumbass',
   ];
-  for (const stem of alwaysStems) {
+  for (const stem of clearStems) {
     const s = stem.replace(/ğ/g, 'g');
-    if (masked.includes(s) || compact.includes(s) || text.includes(s)) {
+    if (asWholeWord(text, s) || text.includes(s)) {
       const hate = /zenci|nigger|nigga|heil|killall|deathto|faggot|kike|chink/.test(s);
       return blockHit(
         [hate ? 'hate' : 'nsfw'],
         hate
-          ? 'Nefret / ayrımcı içerik (gömülü — yerel Guard).'
-          : 'Küfür / uygunsuz içerik (gömülü — yerel Guard).',
+          ? 'Nefret / ayrımcı içerik (yerel Guard).'
+          : 'Küfür / uygunsuz içerik (yerel Guard).',
       );
     }
   }
 
-  // 2) Kısa kökler — kelime / rastgele gömme / gerçekten ayrık harf
-  const shortStems = ['sik', 'amk', 'pic'];
-  for (const stem of shortStems) {
-    const asWord = new RegExp(`(?:^|[^a-z])${stem}(?:[^a-z]|$)`, 'i');
-    if (asWord.test(text)) {
+  // Kısa kökler — YALNIZCA kelime sınırı (gömülü / ayrık harf YOK)
+  for (const stem of ['sik', 'amk', 'pic']) {
+    if (asWholeWord(text, stem)) {
       return blockHit(['nsfw'], 'Küfür (yerel Guard).');
-    }
-    // Gömülü: tek yığın / boşluksuz uzun metin (asdsadasikasa)
-    if (
-      masked.includes(stem) &&
-      (obfuscated || (compact.length >= 8 && !/\s/.test(String(scrubbed || '').trim())))
-    ) {
-      return blockHit(['nsfw'], 'Küfür (gömülü harf kombinasyonu — yerel Guard).');
-    }
-    const raw = String(scrubbed || '');
-    if (spacedStemRegex(stem).test(raw)) {
-      return blockHit(['nsfw'], 'Küfür (ayrık harf — yerel Guard).');
-    }
-  }
-
-  // 3) Esnek nefret aralıkları
-  const spacedHate = [
-    /z[\W_]*e[\W_]*n[\W_]*c[\W_]*i+/i,
-    /n[\W_]*i+[\W_]*g+[\W_]*g+[\W_]*[ae]+[\W_]*r*/i,
-    /h[\W_]*e[\W_]*i[\W_]*l[\W_]*h[\W_]*i[\W_]*t[\W_]*l[\W_]*e[\W_]*r/i,
-    /s[\W_]*i[\W_]*k[\W_]*t[\W_]*i[\W_]*r/i,
-    /o[\W_]*r[\W_]*o[\W_]*s[\W_]*p[\W_]*u/i,
-  ];
-  for (const re of spacedHate) {
-    if (re.test(text) || re.test(rawText || '')) {
-      return blockHit(['hate'], 'Nefret / küfür (ayrıştırılmış yazım — yerel Guard).');
     }
   }
 
@@ -2156,11 +2108,62 @@ function localSafetyScan(rawText) {
   ];
   for (const re of hatePatterns) {
     if (re.test(text) || re.test(compact)) {
-      return blockHit(['hate'], 'Nefret / şiddet (yerel Guard kuralı).');
+      return blockHit(['hate'], 'Nefret / şiddet (yerel Guard).');
     }
   }
 
   return { hit: false };
+}
+
+/** Guard şüphesi → admin şikayet kuyruğu (ceza / silme YOK). */
+async function createGuardAdminReport({
+  postId,
+  authorId,
+  content,
+  summary,
+  labels,
+  confidence,
+}) {
+  if (!postId) return null;
+  const id = `r_guard_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await db.collection('reports').doc(id).set({
+    targetType: 'post',
+    targetId: String(postId),
+    targetOwnerId: authorId ? String(authorId) : null,
+    reporterId: 'ays_guard',
+    reporterName: 'AYS Tech Guard',
+    reporterEmail: '',
+    reason: 'AYS Tech Guard şüphesi — admin incelemesi',
+    details: String(summary || '').slice(0, 2000),
+    createdAt: new Date().toISOString(),
+    status: 'open',
+    snapshotTitle: 'Guard otomatik şikayet',
+    snapshotBody: String(content || '').slice(0, 4000),
+    snapshotAuthor: authorId ? String(authorId) : '',
+    snapshotUrl: '',
+    aiDecision: 'needs_admin',
+    aiSummary: String(summary || '').slice(0, 2000),
+    aiConfidence: Number(confidence) || 0,
+    aiActed: false,
+    aiAdminNote: 'Bot şüpheli buldu; engellemedi. İnsan admin kararı bekleniyor.',
+    aiLabels: Array.isArray(labels) ? labels.map(String) : ['other'],
+    fromGuard: true,
+  });
+  await db.collection('moderation_actions').add({
+    userId: authorId || null,
+    postId: String(postId),
+    type: 'flag_admin',
+    decision: 'flag',
+    action: 'none',
+    confidence: Number(confidence) || 0,
+    summary: String(summary || ''),
+    labels: Array.isArray(labels) ? labels.map(String) : [],
+    actorId: 'ays_guard',
+    auto: true,
+    reportId: id,
+    createdAt: new Date().toISOString(),
+  });
+  return id;
 }
 
 /**
@@ -2247,22 +2250,19 @@ async function runGuardPostReview({
           {
             role: 'system',
             content:
-              'You are AYS Tech Guard for KampüsteyimAPP (GAÜN campus). ZERO TOLERANCE. Language-agnostic (TR/EN/any). Return ONLY JSON: {"decision":"allow"|"warn"|"block","action":"none"|"warn"|"mute"|"postBan","confidence":0-1,"summary":"Turkish short reason","labels":["safe"|"spam"|"phishing"|"malware"|"nsfw"|"hate"|"harassment"|"scam"|"other"],"message":"Turkish user-facing message"}. HARD RULES: (1) Hate/slurs/threats/NSFW/swears/phishing/malware → ALWAYS block+postBan confidence>=0.95. (2) Scan letter-by-letter combinations: bad words hidden in gibberish (asdsadasikasa→sik, asdalsdaezenciaşfsad→zenci), spaced (s i k), leetspeak, repeats — BLOCK. Turkish swears (sik, siktir, amk, orospu, …) and EN equivalents count even mid-string. (3) Innocent words OK: psikoloji, şikayet, aşık, klasik, müzik, fizik, mühendislik, mühendis, @mentions/handles. Never block only because of @username tags. (4) Doubt → block. Campus is not for maybe. Official links ok: ayskampuss, aystech, gantep.edu.tr.',
+              'You are AYS Tech Guard for KampüsteyimAPP (Turkish campus). Return ONLY JSON: {"decision":"allow"|"flag"|"block","action":"none"|"postBan","confidence":0-1,"summary":"Turkish short reason","labels":["safe"|"spam"|"phishing"|"malware"|"nsfw"|"hate"|"sexism"|"harassment"|"scam"|"other"],"message":"Turkish user-facing message"}. POLICY: (1) BLOCK only CLEAR, unambiguous swearing / racism / sexism / explicit NSFW / malware (confidence>=0.9, action postBan). (2) Do NOT block words hidden inside other words or gibberish mid-string (e.g. psikoloji, mühendislik, asdsadasikasa). Do NOT invent swears from letter fragments. (3) If suspicious but not clearly a swear/hate/sexism: decision=flag (admin report only) — NEVER block or punish the user. (4) Doubt → flag, not block. (5) Innocent campus talk, mentions, jokes without clear slurs → allow. Official links ok: ayskampuss, aystech, gantep.edu.tr.',
             },
             {
               role: 'user',
               content: JSON.stringify({
                 content: text.slice(0, 4000),
-                compactPreview: compactLetters(normalizeForSafety(text)).slice(0, 500),
-                maskedPreview: maskInnocentStems(
-                  compactLetters(normalizeForSafety(text)),
-                ).slice(0, 500),
+                textPreview: maskInnocentWords(normalizeForSafety(text)).slice(0, 800),
                 urls: urls.slice(0, 20),
                 riskyUrls: riskyUrls.slice(0, 20),
                 fileNames: files.slice(0, 20),
                 authorId,
                 postId,
-                policy: 'zero_tolerance_campus_letter_scan',
+                policy: 'clear_swear_hate_sexism_only_else_flag_admin',
               }),
             },
         ],
@@ -2277,12 +2277,12 @@ async function runGuardPostReview({
       // Kota / API yoksa: yerel zaten geçtiyse allow; şüpheli URL varsa uyar
       if (riskyUrls.length >= 2) {
         ai = {
-          decision: 'warn',
-          action: 'warn',
-          confidence: 0.75,
-          summary: 'Birden fazla harici bağlantı — Guard inceledi (AI kota/hata).',
+          decision: 'flag',
+          action: 'none',
+          confidence: 0.7,
+          summary: 'Birden fazla harici bağlantı — admin incelemesi (AI kota/hata).',
           labels: ['other'],
-          message: 'Harici bağlantılar dikkatle incelendi.',
+          message: '',
         };
       }
     }
@@ -2376,19 +2376,34 @@ async function runGuardPostReview({
     }
   }
 
-  const blocked = decision === 'block' && confidence >= 0.8;
-  const warnOnly = decision === 'warn' && confidence >= 0.7;
+  // Yalnızca bariz küfür/nefret/cinsiyetçilik → block. Şüphe → admin report.
+  const blocked = decision === 'block' && confidence >= 0.9;
+  const flagAdmin =
+    !blocked &&
+    (decision === 'flag' ||
+      decision === 'warn' ||
+      (decision === 'block' && confidence < 0.9)) &&
+    confidence >= 0.55;
 
   let appliedType = 'none';
-  if (blocked || warnOnly || (action !== 'none' && confidence >= 0.8)) {
+  if (flagAdmin) {
+    try {
+      await createGuardAdminReport({
+        postId,
+        authorId: authorId || uid,
+        content: text,
+        summary: summary || message || 'Şüpheli içerik',
+        labels: Array.isArray(ai.labels) ? ai.labels : ['other'],
+        confidence,
+      });
+      appliedType = 'flag_admin';
+    } catch (e) {
+      console.error('createGuardAdminReport', e?.message || e);
+    }
+  } else if (blocked || (action !== 'none' && decision === 'block' && confidence >= 0.9)) {
     const user = await findUserDoc();
-    const type = blocked
-      ? action === 'mute'
-        ? 'mute'
-        : action === 'warn'
-          ? 'warn'
-          : 'postBan'
-      : 'warn';
+    const type =
+      action === 'mute' ? 'mute' : action === 'warn' ? 'warn' : 'postBan';
     appliedType = type;
     const until =
       type === 'mute'
@@ -2461,13 +2476,14 @@ async function runGuardPostReview({
 
   return {
     blocked,
-    warning: warnOnly ? message || summary : null,
+    warning: null,
+    flagged: flagAdmin,
     action: appliedType,
-    decision,
+    decision: flagAdmin ? 'flag' : decision,
     confidence,
     message: blocked
       ? message ||
-        'Gönderin AYS Tech Guard tarafından engellendi (zararlı/NSFW/şüpheli link).'
+        'Gönderin AYS Tech Guard tarafından engellendi (bariz küfür/nefret/cinsiyetçilik).'
       : message,
   };
 }
