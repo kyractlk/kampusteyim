@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- ProMotion 120Hz yolu VSyncClient crash’ini tetiklemesin (flutter#183900) -->
+	<!-- ProMotion 120Hz tercihini kapat (ek güvenlik; asıl fix explicit engine) -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<false/>
 	<!-- Impeller opsiyonel; motor crash’inden bağımsız, stabilite için kapalı -->
@@ -33,7 +33,26 @@
 	<!-- Standart HTTPS/TLS — Missing Compliance atlanır -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<!-- UIScene KALDIRILDI: App Store review cihazlarında UIScene + ProMotion VSync SIGSEGV -->
+	<!-- UIScene ZORUNLU (iOS 26): storyboard YOK — SceneDelegate explicit engine -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

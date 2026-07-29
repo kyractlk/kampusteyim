@@ -60,16 +60,36 @@ workflows:
       - name: Build number
         script: |
           # App Store’da son yüklenen cfBundleVersion’dan yüksek olmalı
-          BN="${BUILD_NUMBER:-31}"
-          if [ "$BN" -le 30 ]; then BN=31; fi
+          BN="${BUILD_NUMBER:-32}"
+          if [ "$BN" -le 31 ]; then BN=32; fi
           sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Flutter IPA RELEASE only
         script: |
           set -e
           echo "Building RELEASE IPA (never Debug)…"
-          if grep -q "UIApplicationSceneManifest" ios/Runner/Info.plist; then
-            echo "ERROR: UIApplicationSceneManifest still in Info.plist"
+          if ! grep -q "UIApplicationSceneManifest" ios/Runner/Info.plist; then
+            echo "ERROR: UIApplicationSceneManifest missing (iOS 26 requires SceneDelegate)"
+            exit 1
+          fi
+          if grep -q "UISceneStoryboardFile" ios/Runner/Info.plist; then
+            echo "ERROR: UISceneStoryboardFile must not be set (implicit engine crash)"
+            exit 1
+          fi
+          if grep -q 'customClass="FlutterViewController"' ios/Runner/Base.lproj/Main.storyboard; then
+            echo "ERROR: Main.storyboard still uses FlutterViewController"
+            exit 1
+          fi
+          if [ ! -f ios/Runner/VSyncCrashGuard.m ]; then
+            echo "ERROR: VSyncCrashGuard.m missing"
+            exit 1
+          fi
+          if ! grep -q "VSyncCrashGuard.m in Sources" ios/Runner.xcodeproj/project.pbxproj; then
+            echo "ERROR: VSyncCrashGuard.m not in Xcode Sources"
+            exit 1
+          fi
+          if ! grep -q "AppFlutterHost" ios/Runner/SceneDelegate.swift; then
+            echo "ERROR: SceneDelegate must use explicit AppFlutterHost engine"
             exit 1
           fi
           if [ ! -f ios/Runner/PrivacyInfo.xcprivacy ]; then
@@ -78,10 +98,6 @@ workflows:
           fi
           if ! grep -q "PrivacyInfo.xcprivacy in Resources" ios/Runner.xcodeproj/project.pbxproj; then
             echo "ERROR: PrivacyInfo.xcprivacy not in Xcode Resources"
-            exit 1
-          fi
-          if ! grep -q "installTouchRateCorrectionNoOp\|touch-rate VSync" ios/Runner/AppDelegate.swift; then
-            echo "ERROR: ProMotion VSync workaround missing from AppDelegate"
             exit 1
           fi
           flutter build ipa --release \
