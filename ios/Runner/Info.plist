@@ -5,9 +5,6 @@
 	<!-- ProMotion 120Hz tercihini kapat (ek güvenlik; asıl fix explicit engine) -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<false/>
-	<!-- Impeller opsiyonel; motor crash’inden bağımsız, stabilite için kapalı -->
-	<key>FLTEnableImpeller</key>
-	<false/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

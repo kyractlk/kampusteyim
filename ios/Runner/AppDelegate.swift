@@ -19,8 +19,13 @@ import FirebaseMessaging
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    if FirebaseApp.app() == nil {
+    // Plist yoksa FirebaseApp.configure() NSException atıp uygulamayı öldürür;
+    // Dart tarafı DefaultFirebaseOptions ile zaten init ediyor.
+    if FirebaseApp.app() == nil,
+      Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
       FirebaseApp.configure()
+    } else if FirebaseApp.app() == nil {
+      NSLog("[KampüsteyimAPP] GoogleService-Info.plist bundle’da yok — native Firebase atlandı")
     }
 
     AppFlutterHost.prepare()
@@ -37,7 +42,9 @@ import FirebaseMessaging
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
   ) {
-    Messaging.messaging().apnsToken = deviceToken
+    if FirebaseApp.app() != nil {
+      Messaging.messaging().apnsToken = deviceToken
+    }
     let hex = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
     NSLog("[KampüsteyimAPP] APNs token ok (\(deviceToken.count) bytes) \(hex.prefix(16))…")
     super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
