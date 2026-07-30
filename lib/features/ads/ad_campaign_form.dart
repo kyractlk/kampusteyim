@@ -2,7 +2,9 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/storage/ad_image_upload.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/safe_network_image.dart';
 import '../../data/mock/mock_data.dart';
 import '../commerce/commerce_service.dart';
 
@@ -13,17 +15,22 @@ class AdCampaignFormSheet extends StatefulWidget {
     required this.ownerType,
     this.events = const [],
     this.jobs = const [],
+    this.allowEventLink = true,
   });
 
   final String ownerType; // company | community
   final List<({String id, String title})> events;
   final List<({String id, String title})> jobs;
 
+  /// Organizatör olmayan firmalarda etkinlik bağlantısı gizlenir.
+  final bool allowEventLink;
+
   static Future<bool?> open(
     BuildContext context, {
     required String ownerType,
     List<({String id, String title})> events = const [],
     List<({String id, String title})> jobs = const [],
+    bool allowEventLink = true,
   }) {
     return showModalBottomSheet<bool>(
       context: context,
@@ -33,6 +40,7 @@ class AdCampaignFormSheet extends StatefulWidget {
         ownerType: ownerType,
         events: events,
         jobs: jobs,
+        allowEventLink: allowEventLink,
       ),
     );
   }
@@ -51,6 +59,9 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
   final _pushTitle = TextEditingController();
   final _pushBody = TextEditingController();
   final _emailSubject = TextEditingController();
+  final _emailHeadline = TextEditingController();
+  final _emailBody = TextEditingController();
+  final _ctaLabel = TextEditingController(text: 'Detayları Gör');
   final _linkUrl = TextEditingController();
 
   final _placements = <String>{'feed'};
@@ -61,6 +72,10 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
   String? _linkEventId;
   String? _linkJobId;
   bool _busy = false;
+  bool _uploading = false;
+  String _uploadStage = '';
+  double _uploadProgress = 0;
+  Map<String, String> _imageVariants = {};
 
   @override
   void initState() {
@@ -83,6 +98,9 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
       _pushTitle,
       _pushBody,
       _emailSubject,
+      _emailHeadline,
+      _emailBody,
+      _ctaLabel,
       _linkUrl,
     ]) {
       c.dispose();
@@ -90,18 +108,74 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
     super.dispose();
   }
 
+  Future<void> _pickUploadImage() async {
+    setState(() {
+      _uploading = true;
+      _uploadStage = 'seçim';
+      _uploadProgress = 0;
+    });
+    try {
+      final result = await AdImageUpload.pickAndUpload(
+        onProgress: (stage, p) {
+          if (!mounted) return;
+          setState(() {
+            _uploadStage = stage;
+            _uploadProgress = p;
+          });
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _imageUrl.text = result.imageUrl;
+        _imageVariants = Map<String, String>.from(result.variants);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Görsel yüklendi · feed / reels / hikâye boyutları hazır'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = '$e';
+      if (!msg.contains('Görsel seçilmedi')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Yükleme: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _uploading = false;
+          _uploadProgress = 0;
+          _uploadStage = '';
+        });
+      }
+    }
+  }
+
   Future<void> _submit() async {
+    if (_imageUrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce reklam görseli yükleyin')),
+      );
+      return;
+    }
     setState(() => _busy = true);
     try {
+      var linkType = _linkType;
+      if (!widget.allowEventLink && linkType == 'event') {
+        linkType = 'none';
+      }
       await CommerceService.submitAd({
         'title': _title.text.trim(),
         'body': _body.text.trim(),
         'imageUrl': _imageUrl.text.trim(),
+        'imageVariants': _imageVariants,
         'adKind': _adKind,
         'placements': _placements.toList(),
         'targetCities': _cities.toList(),
         'targetUniversities': _unis.toList(),
-        'linkType': _linkType,
+        'linkType': linkType,
         'linkEventId': _linkEventId,
         'linkJobId': _linkJobId,
         'linkUrl': _linkUrl.text.trim(),
@@ -111,6 +185,9 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
         'pushTitle': _pushTitle.text.trim(),
         'pushBody': _pushBody.text.trim(),
         'emailSubject': _emailSubject.text.trim(),
+        'emailHeadline': _emailHeadline.text.trim(),
+        'emailBody': _emailBody.text.trim(),
+        'ctaLabel': _ctaLabel.text.trim(),
       });
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -168,9 +245,50 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
               maxLines: 3,
               decoration: const InputDecoration(labelText: 'Metin'),
             ),
-            TextField(
-              controller: _imageUrl,
-              decoration: const InputDecoration(labelText: 'Görsel URL'),
+            const SizedBox(height: 10),
+            const Text(
+              'Reklam görseli',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Galeriden yükleyin. Sistem feed (16:9), reels (4:5) ve '
+              'hikâye (9:16) boyutlarını otomatik üretir.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 8),
+            if (_imageUrl.text.trim().isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: SafeNetworkImage(
+                    url: _imageUrl.text.trim(),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            if (_uploading) ...[
+              const SizedBox(height: 8),
+              LinearProgressIndicator(value: _uploadProgress.clamp(0.05, 1)),
+              const SizedBox(height: 4),
+              Text(
+                _uploadStage.isEmpty ? 'Yükleniyor…' : _uploadStage,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: (_busy || _uploading) ? null : _pickUploadImage,
+              icon: const Icon(Icons.upload_file_outlined),
+              label: Text(
+                _imageUrl.text.trim().isEmpty
+                    ? 'Görsel yükle'
+                    : 'Görseli değiştir',
+              ),
             ),
             const SizedBox(height: 8),
             const Text('Mecralar', style: TextStyle(fontWeight: FontWeight.w800)),
@@ -234,17 +352,24 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
             ),
             DropdownButtonFormField<String>(
               initialValue: _linkType,
-              items: const [
-                DropdownMenuItem(value: 'none', child: Text('Bağlantı yok')),
-                DropdownMenuItem(value: 'event', child: Text('Etkinlik')),
-                DropdownMenuItem(value: 'job', child: Text('İş / staj')),
-                DropdownMenuItem(value: 'sponsor', child: Text('Sponsor')),
-                DropdownMenuItem(value: 'url', child: Text('URL')),
+              items: [
+                const DropdownMenuItem(value: 'none', child: Text('Bağlantı yok')),
+                if (widget.allowEventLink)
+                  const DropdownMenuItem(value: 'event', child: Text('Etkinlik')),
+                const DropdownMenuItem(value: 'job', child: Text('İş / staj')),
+                if (widget.ownerType == 'community')
+                  const DropdownMenuItem(
+                    value: 'sponsor',
+                    child: Text('Sponsor'),
+                  ),
+                const DropdownMenuItem(value: 'url', child: Text('URL')),
               ],
               onChanged: (v) => setState(() => _linkType = v ?? 'none'),
               decoration: const InputDecoration(labelText: 'Öne çıkar'),
             ),
-            if (_linkType == 'event' && widget.events.isNotEmpty)
+            if (widget.allowEventLink &&
+                _linkType == 'event' &&
+                widget.events.isNotEmpty)
               DropdownButtonFormField<String>(
                 initialValue: _linkEventId ?? widget.events.first.id,
                 items: [
@@ -292,11 +417,32 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
                 decoration: const InputDecoration(labelText: 'Push metin'),
               ),
             ],
-            if (_placements.contains('email'))
+            if (_placements.contains('email')) ...[
               TextField(
                 controller: _emailSubject,
                 decoration: const InputDecoration(labelText: 'E-posta konu'),
               ),
+              TextField(
+                controller: _emailHeadline,
+                decoration: const InputDecoration(labelText: 'E-posta başlığı'),
+              ),
+              TextField(
+                controller: _emailBody,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'E-posta reklam metni',
+                  helperText:
+                      'Kurumsal HTML şablona yerleştirilir; uygulama linki eklenmez.',
+                ),
+              ),
+              TextField(
+                controller: _ctaLabel,
+                decoration: const InputDecoration(
+                  labelText: 'Buton metni',
+                  hintText: 'İncele / Başvur / Satın Al',
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             FilledButton(
               onPressed: _busy ? null : _submit,

@@ -21,6 +21,90 @@ function commerceModule({
     return new Date().toISOString();
   }
 
+  async function resolveAdOwner(uid) {
+    const userSnap = await db.collection('users').doc(uid).get();
+    const user = userSnap.data() || {};
+    const role = String(user.role || '');
+    let ownerId = uid;
+    let ownerType =
+      role === 'community' ? 'community' : role === 'company' ? 'company' : '';
+    if (
+      user.panelAccess === true &&
+      user.panelOrgId &&
+      ['company', 'community'].includes(String(user.panelOrgType || ''))
+    ) {
+      ownerId = String(user.panelOrgId);
+      ownerType = String(user.panelOrgType);
+    }
+    if (!['company', 'community'].includes(ownerType)) {
+      throw new HttpsError('permission-denied', 'Firma veya topluluk gerekli');
+    }
+    return { ownerId, ownerType, user };
+  }
+
+  async function assertAdOwner(uid, ad) {
+    const ctx = await resolveAdOwner(uid);
+    if (String(ad.ownerId || '') !== ctx.ownerId) {
+      throw new HttpsError('permission-denied', 'Bu kampanya size ait değil');
+    }
+    return ctx;
+  }
+
+  function safeUrl(value, max = 500) {
+    const url = sanitizePlainText(value || '', max);
+    return /^https:\/\//i.test(url) ? url : '';
+  }
+
+  /** Reklam kartında yayıncı hesabı gibi gösterilecek profil özeti. */
+  function ownerProfileSnapshot(ownerId, org = {}, ownerType = '') {
+    const displayName = String(
+      org.companyName ||
+        org.displayName ||
+        `${org.firstName || ''} ${org.lastName || ''}`.trim() ||
+        org.username ||
+        ownerId,
+    ).trim();
+    const username = String(org.username || '')
+      .trim()
+      .replace(/^@/, '')
+      .toLowerCase();
+    const photoUrl =
+      safeUrl(org.communityLogoUrl || '', 500) ||
+      safeUrl(org.photoUrl || '', 500) ||
+      '';
+    return {
+      ownerId: String(ownerId || ''),
+      ownerType: String(ownerType || org.role || ''),
+      ownerName: displayName,
+      ownerUsername: username,
+      ownerPhotoUrl: photoUrl,
+      ownerHandle: username ? `@${username}` : displayName,
+      isCommunity:
+        ownerType === 'community' || String(org.role || '') === 'community',
+    };
+  }
+
+  function normalizeAdVariants(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    for (const key of ['feed', 'reels', 'stories', 'email', 'push', 'master']) {
+      const value = safeUrl(raw[key], 500);
+      if (value) out[key] = value;
+    }
+    return out;
+  }
+
+  function adPublicStatus(ad) {
+    const status = String(ad.status || '');
+    if (!['active', 'approved'].includes(status)) return status;
+    const now = Date.now();
+    const start = Date.parse(ad.scheduleStart || '');
+    const end = Date.parse(ad.scheduleEnd || '');
+    if (Number.isFinite(start) && now < start) return 'scheduled';
+    if (Number.isFinite(end) && now > end) return 'completed';
+    return 'active';
+  }
+
   async function getOrganizerSettings(uid) {
     const snap = await db.collection('users').doc(uid).get();
     const u = snap.data() || {};
@@ -559,7 +643,7 @@ function commerceModule({
     if (!adId) return { ok: false };
     await db.collection(ADS).doc(adId).set(
       {
-        status: 'approved',
+        status: 'paid_review',
         paymentStatus: 'paid',
         paidAt: nowIso(),
         updatedAt: nowIso(),
@@ -578,36 +662,16 @@ function commerceModule({
     async (request) => {
       if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
       const uid = request.auth.uid;
-      const userSnap = await db.collection('users').doc(uid).get();
-      const user = userSnap.data() || {};
-      const role = String(user.role || '');
-      let ownerId = uid;
-      let ownerType = role === 'community' ? 'community' : role === 'company' ? 'company' : '';
-      // Panel staff
-      if (
-        user.panelAccess === true &&
-        user.panelOrgId &&
-        ['company', 'community'].includes(String(user.panelOrgType || ''))
-      ) {
-        ownerId = String(user.panelOrgId);
-        ownerType = String(user.panelOrgType);
-      }
-      if (!['company', 'community'].includes(ownerType)) {
-        throw new HttpsError('permission-denied', 'Firma veya topluluk gerekli');
-      }
+      const { ownerId, ownerType } = await resolveAdOwner(uid);
       const orgSnap = await db.collection('users').doc(ownerId).get();
       const org = orgSnap.data() || {};
-      const ownerName = String(
-        org.companyName ||
-          org.displayName ||
-          `${org.firstName || ''} ${org.lastName || ''}`.trim() ||
-          org.username ||
-          ownerId,
-      );
+      const profile = ownerProfileSnapshot(ownerId, org, ownerType);
+      const ownerName = profile.ownerName;
 
       const title = sanitizePlainText(request.data?.title || '', 120);
       const body = sanitizePlainText(request.data?.body || '', 800);
-      const imageUrl = sanitizePlainText(request.data?.imageUrl || '', 500);
+      const imageUrl = safeUrl(request.data?.imageUrl, 500);
+      const imageVariants = normalizeAdVariants(request.data?.imageVariants);
       const placements = Array.isArray(request.data?.placements)
         ? request.data.placements
             .map((x) => String(x).toLowerCase())
@@ -650,12 +714,16 @@ function commerceModule({
         ownerType,
         ownerId,
         ownerName,
+        ownerUsername: profile.ownerUsername,
+        ownerPhotoUrl: profile.ownerPhotoUrl,
+        ownerHandle: profile.ownerHandle,
         companyId: ownerType === 'company' ? ownerId : null,
         companyName: ownerType === 'company' ? ownerName : null,
         communityId: ownerType === 'community' ? ownerId : null,
         title,
         body,
         imageUrl,
+        imageVariants,
         adKind,
         placements,
         targetCities,
@@ -672,8 +740,41 @@ function commerceModule({
         pushTitle: sanitizePlainText(request.data?.pushTitle || '', 80),
         pushBody: sanitizePlainText(request.data?.pushBody || '', 200),
         emailSubject: sanitizePlainText(request.data?.emailSubject || '', 120),
-        status: adKind === 'sponsor_paid' ? 'pending_quote' : 'pending',
-        paymentStatus: adKind === 'sponsor_paid' ? 'unquoted' : 'n/a',
+        emailHeadline: sanitizePlainText(
+          request.data?.emailHeadline || title,
+          160,
+        ),
+        emailBody: sanitizePlainText(request.data?.emailBody || body, 1200),
+        ctaLabel: sanitizePlainText(request.data?.ctaLabel || 'Detayları Gör', 50),
+        status:
+          ownerType === 'company' || adKind === 'sponsor_paid'
+            ? 'pending_quote'
+            : 'pending_review',
+        paymentStatus:
+          ownerType === 'company' || adKind === 'sponsor_paid'
+            ? 'unquoted'
+            : 'not_required',
+        metrics: {
+          impressions: 0,
+          reach: 0,
+          clicks: 0,
+          emailSent: 0,
+          emailOpened: 0,
+          emailClicks: 0,
+          pushSent: 0,
+        },
+        metricsByPlacement: {},
+        deliveryLocations: {},
+        statusHistory: [
+          {
+            status:
+              ownerType === 'company' || adKind === 'sponsor_paid'
+                ? 'pending_quote'
+                : 'pending_review',
+            at: nowIso(),
+            by: uid,
+          },
+        ],
         createdBy: uid,
         createdAt: nowIso(),
         updatedAt: nowIso(),
@@ -693,16 +794,64 @@ function commerceModule({
       if (!id || !(amount > 0)) {
         throw new HttpsError('invalid-argument', 'adId ve tutar gerekli');
       }
+      const adSnap = await db.collection(ADS).doc(id).get();
+      if (!adSnap.exists) throw new HttpsError('not-found', 'Reklam yok');
+      const ad = adSnap.data() || {};
+      if (['active', 'completed', 'cancelled'].includes(String(ad.status || ''))) {
+        throw new HttpsError('failed-precondition', 'Bu kampanyaya teklif verilemez');
+      }
+      await db.collection(ADS).doc(id).set(
+        {
+          status: 'quoted',
+          paymentStatus: 'offer_pending',
+          quotedAmount: amount,
+          quotedBy: request.auth.uid,
+          quotedAt: nowIso(),
+          quoteNote: sanitizePlainText(request.data?.quoteNote || '', 500),
+          statusHistory: FieldValue.arrayUnion({
+            status: 'quoted',
+            at: nowIso(),
+            by: request.auth.uid,
+          }),
+          updatedAt: nowIso(),
+        },
+        { merge: true },
+      );
+      return {
+        ok: true,
+        amount,
+        status: 'quoted',
+      };
+    },
+  );
+
+  const acceptAdQuote = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      const uid = request.auth.uid;
+      const id = String(request.data?.adId || request.data?.id || '').trim();
+      if (!id) throw new HttpsError('invalid-argument', 'adId gerekli');
+      const ref = db.collection(ADS).doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) throw new HttpsError('not-found', 'Reklam yok');
+      const ad = snap.data() || {};
+      await assertAdOwner(uid, ad);
+      if (ad.status !== 'quoted' || !(Number(ad.quotedAmount) > 0)) {
+        throw new HttpsError('failed-precondition', 'Kabul edilebilir teklif yok');
+      }
+
       const paymentsSnap = await db.doc('app_config/payments').get();
       const pay = paymentsSnap.data() || {};
+      if (!pay.iban || !pay.ibanHolder) {
+        throw new HttpsError('failed-precondition', 'Platform IBAN bilgisi eksik');
+      }
       const orderRef = db.collection('payment_orders').doc();
       const code = `KADS-${orderRef.id.slice(0, 8).toUpperCase()}-${crypto
         .randomBytes(2)
         .toString('hex')
         .toUpperCase()}`;
-      const adSnap = await db.collection(ADS).doc(id).get();
-      if (!adSnap.exists) throw new HttpsError('not-found', 'Reklam yok');
-      const ad = adSnap.data() || {};
+      const amount = Number(ad.quotedAmount);
       await orderRef.set({
         id: orderRef.id,
         uid: ad.ownerId,
@@ -717,18 +866,22 @@ function commerceModule({
         createdAt: nowIso(),
         updatedAt: nowIso(),
       });
-      await db.collection(ADS).doc(id).set(
+      await ref.set(
         {
           status: 'awaiting_payment',
-          paymentStatus: 'quoted',
-          quotedAmount: amount,
+          paymentStatus: 'awaiting_transfer',
+          offerAcceptedAt: nowIso(),
+          offerAcceptedBy: uid,
           ibanReference: code,
           paymentOrderId: orderRef.id,
           payoutIban: String(pay.iban || ''),
           payoutIbanHolder: String(pay.ibanHolder || ''),
           payoutBank: String(pay.ibanBank || ''),
-          quotedBy: request.auth.uid,
-          quotedAt: nowIso(),
+          statusHistory: FieldValue.arrayUnion({
+            status: 'awaiting_payment',
+            at: nowIso(),
+            by: uid,
+          }),
           updatedAt: nowIso(),
         },
         { merge: true },
@@ -736,12 +889,263 @@ function commerceModule({
       return {
         ok: true,
         orderId: orderRef.id,
-        ibanReference: code,
         amount,
-        iban: pay.iban || '',
-        ibanHolder: pay.ibanHolder || '',
+        ibanReference: code,
+        iban: pay.iban,
+        ibanHolder: pay.ibanHolder,
         ibanBank: pay.ibanBank || '',
       };
+    },
+  );
+
+  const declineAdQuote = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      const uid = request.auth.uid;
+      const id = String(request.data?.adId || request.data?.id || '').trim();
+      const ref = db.collection(ADS).doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) throw new HttpsError('not-found', 'Reklam yok');
+      const ad = snap.data() || {};
+      await assertAdOwner(uid, ad);
+      if (ad.status !== 'quoted') {
+        throw new HttpsError('failed-precondition', 'Reddedilebilir teklif yok');
+      }
+      await ref.set(
+        {
+          status: 'quote_declined',
+          paymentStatus: 'offer_declined',
+          quoteDeclineReason: sanitizePlainText(request.data?.reason || '', 300),
+          statusHistory: FieldValue.arrayUnion({
+            status: 'quote_declined',
+            at: nowIso(),
+            by: uid,
+          }),
+          updatedAt: nowIso(),
+        },
+        { merge: true },
+      );
+      return { ok: true };
+    },
+  );
+
+  const getMyAdCampaigns = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      const { ownerId } = await resolveAdOwner(request.auth.uid);
+      const snap = await db.collection(ADS).where('ownerId', '==', ownerId).limit(100).get();
+      const ads = snap.docs
+        .map((d) => {
+          const data = d.data() || {};
+          return { id: d.id, ...data, displayStatus: adPublicStatus(data) };
+        })
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+      return { ok: true, ads };
+    },
+  );
+
+  const updateAdCampaign = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      const uid = request.auth.uid;
+      const id = String(request.data?.adId || request.data?.id || '').trim();
+      const ref = db.collection(ADS).doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) throw new HttpsError('not-found', 'Reklam yok');
+      const ad = snap.data() || {};
+      await assertAdOwner(uid, ad);
+      const status = adPublicStatus(ad);
+      if (
+        ['awaiting_payment', 'paid_review', 'completed', 'cancelled'].includes(status)
+      ) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Bu aşamada kampanya düzenlenemez',
+        );
+      }
+      const active = ['active', 'scheduled', 'paused', 'approved'].includes(status);
+      const patch = {
+        updatedAt: nowIso(),
+        editedBy: uid,
+        editedAt: nowIso(),
+      };
+      const textFields = {
+        title: 120,
+        body: 800,
+        linkUrl: 400,
+        pushTitle: 80,
+        pushBody: 200,
+        emailSubject: 120,
+        emailHeadline: 160,
+        emailBody: 1200,
+        ctaLabel: 50,
+      };
+      for (const [key, max] of Object.entries(textFields)) {
+        if (request.data?.[key] != null) {
+          patch[key] =
+            key === 'linkUrl'
+              ? safeUrl(request.data[key], max)
+              : sanitizePlainText(request.data[key], max);
+        }
+      }
+      if (request.data?.imageUrl != null) {
+        patch.imageUrl = safeUrl(request.data.imageUrl, 500);
+      }
+      if (request.data?.imageVariants != null) {
+        patch.imageVariants = normalizeAdVariants(request.data.imageVariants);
+      }
+      // Aktif kampanyada fiyatı etkileyen hedef/mecralar değişmez.
+      if (!active) {
+        if (Array.isArray(request.data?.placements)) {
+          patch.placements = request.data.placements
+            .map((x) => String(x).toLowerCase())
+            .filter((x) => ['feed', 'reels', 'stories', 'push', 'email'].includes(x));
+        }
+        if (Array.isArray(request.data?.targetCities)) {
+          patch.targetCities = request.data.targetCities
+            .map((x) => sanitizePlainText(x, 80))
+            .filter(Boolean);
+        }
+        if (Array.isArray(request.data?.targetUniversities)) {
+          patch.targetUniversities = request.data.targetUniversities
+            .map((x) => sanitizePlainText(x, 120))
+            .filter(Boolean);
+        }
+        for (const key of ['scheduleStart', 'scheduleEnd', 'preferredHours']) {
+          if (request.data?.[key] != null) {
+            patch[key] = sanitizePlainText(request.data[key], 120);
+          }
+        }
+        if (ad.status === 'quoted' || ad.status === 'quote_declined') {
+          patch.status = 'pending_quote';
+          patch.paymentStatus = 'requote_required';
+          patch.quotedAmount = FieldValue.delete();
+          patch.statusHistory = FieldValue.arrayUnion({
+            status: 'pending_quote',
+            at: nowIso(),
+            by: uid,
+          });
+        }
+      }
+      await ref.set(patch, { merge: true });
+      return { ok: true, status: patch.status || ad.status };
+    },
+  );
+
+  const deleteAdCampaign = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      const uid = request.auth.uid;
+      const id = String(request.data?.adId || request.data?.id || '').trim();
+      const ref = db.collection(ADS).doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) return { ok: true, alreadyDeleted: true };
+      const ad = snap.data() || {};
+      await assertAdOwner(uid, ad);
+      const status = adPublicStatus(ad);
+      if (['active', 'scheduled', 'paused', 'approved'].includes(status)) {
+        await ref.set(
+          {
+            status: 'cancelled',
+            cancelledAt: nowIso(),
+            cancelledBy: uid,
+            statusHistory: FieldValue.arrayUnion({
+              status: 'cancelled',
+              at: nowIso(),
+              by: uid,
+            }),
+            updatedAt: nowIso(),
+          },
+          { merge: true },
+        );
+        return { ok: true, cancelled: true };
+      }
+      if (['awaiting_payment', 'paid_review'].includes(status)) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Ödeme sürecindeki kampanya silinemez',
+        );
+      }
+      await ref.delete();
+      return { ok: true, deleted: true };
+    },
+  );
+
+  const adminDeleteAdCampaign = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      await assertPlatformAdmin(request.auth.uid);
+      const id = String(request.data?.adId || request.data?.id || '').trim();
+      if (!id) throw new HttpsError('invalid-argument', 'adId gerekli');
+      await db.collection(ADS).doc(id).delete();
+      return { ok: true };
+    },
+  );
+
+  const trackAdEvent = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) return { ok: true, ignored: true };
+      const id = String(request.data?.adId || '').trim();
+      const event = String(request.data?.event || '').toLowerCase();
+      const placement = String(request.data?.placement || 'feed').toLowerCase();
+      if (!id || !['impression', 'click'].includes(event)) {
+        throw new HttpsError('invalid-argument', 'Geçersiz reklam olayı');
+      }
+      if (!['feed', 'reels', 'stories', 'push', 'email'].includes(placement)) {
+        throw new HttpsError('invalid-argument', 'Geçersiz yerleşim');
+      }
+      const ref = db.collection(ADS).doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) throw new HttpsError('not-found', 'Reklam yok');
+      const ad = snap.data() || {};
+      if (!['active', 'approved'].includes(String(ad.status || ''))) {
+        return { ok: true, ignored: true };
+      }
+      const metric = event === 'click' ? 'clicks' : 'impressions';
+      const patch = {
+        [`metrics.${metric}`]: FieldValue.increment(1),
+        [`metricsByPlacement.${placement}.${metric}`]: FieldValue.increment(1),
+        lastMetricAt: nowIso(),
+      };
+      const city = sanitizePlainText(request.data?.city || '', 80)
+        .toLowerCase()
+        .replace(/[^a-z0-9çğıöşü]+/gi, '_')
+        .slice(0, 50);
+      const university = sanitizePlainText(request.data?.university || '', 120)
+        .toLowerCase()
+        .replace(/[^a-z0-9çğıöşü]+/gi, '_')
+        .slice(0, 70);
+      const locationKey = university || city;
+      if (locationKey) {
+        patch[`deliveryLocations.${locationKey}.${metric}`] = FieldValue.increment(1);
+      }
+      const authUid = String(request.auth.uid || '');
+      if (event === 'impression' && authUid) {
+        const reachId = crypto
+          .createHash('sha256')
+          .update(`${id}:${authUid}`)
+          .digest('hex');
+        const reachRef = db.collection('ad_reach').doc(reachId);
+        const reachSnap = await reachRef.get();
+        if (!reachSnap.exists) {
+          patch['metrics.reach'] = FieldValue.increment(1);
+          patch[`metricsByPlacement.${placement}.reach`] = FieldValue.increment(1);
+          await reachRef.set({
+            adId: id,
+            ownerId: ad.ownerId,
+            firstPlacement: placement,
+            createdAt: nowIso(),
+          });
+        }
+      }
+      await ref.set(patch, { merge: true });
+      return { ok: true };
     },
   );
 
@@ -752,8 +1156,26 @@ function commerceModule({
       await assertPlatformAdmin(request.auth.uid);
       const id = String(request.data?.id || '').trim();
       if (!id) throw new HttpsError('invalid-argument', 'id gerekli');
+      const currentSnap = await db.collection(ADS).doc(id).get();
+      if (!currentSnap.exists) throw new HttpsError('not-found', 'Reklam yok');
+      const currentAd = currentSnap.data() || {};
       const status = String(request.data?.status || '').trim();
-      if (!['approved', 'rejected', 'pending', 'ended'].includes(status)) {
+      if (
+        ![
+          'active',
+          'paused',
+          'completed',
+          'rejected',
+          'pending_review',
+          'pending_quote',
+          'paid_review',
+          'cancelled',
+          // legacy
+          'approved',
+          'pending',
+          'ended',
+        ].includes(status)
+      ) {
         throw new HttpsError('invalid-argument', 'Geçersiz status');
       }
       const patch = {
@@ -767,6 +1189,16 @@ function commerceModule({
         patch.endedAt = nowIso();
         patch.endedBy = request.auth.uid;
       }
+      if (status === 'active' || status === 'approved') {
+        patch.activatedAt = adPublicStatus({ ...currentAd, ...patch }) === 'scheduled'
+          ? null
+          : nowIso();
+      }
+      patch.statusHistory = FieldValue.arrayUnion({
+        status,
+        at: nowIso(),
+        by: request.auth.uid,
+      });
       const editable = [
         'title',
         'body',
@@ -782,6 +1214,9 @@ function commerceModule({
         'pushTitle',
         'pushBody',
         'emailSubject',
+        'emailHeadline',
+        'emailBody',
+        'ctaLabel',
         'targetCities',
         'targetUniversities',
       ];
@@ -814,11 +1249,11 @@ function commerceModule({
         .trim();
       const snap = await db
         .collection(ADS)
-        .where('status', '==', 'approved')
+        .where('status', 'in', ['active', 'approved'])
         .limit(100)
         .get();
       const now = Date.now();
-      const list = [];
+      const candidates = [];
       for (const doc of snap.docs) {
         const a = { id: doc.id, ...doc.data() };
         if (a.endedAt) continue;
@@ -851,22 +1286,63 @@ function commerceModule({
           if (!(cityOk && uniOk)) continue;
         } else if (cities.length && !cityOk) continue;
         else if (unis.length && !uniOk) continue;
+        candidates.push(a);
+      }
 
+      const ownerIds = [
+        ...new Set(
+          candidates
+            .map((a) => String(a.ownerId || a.companyId || a.communityId || ''))
+            .filter(Boolean),
+        ),
+      ];
+      const ownerMap = {};
+      if (ownerIds.length) {
+        const refs = ownerIds.map((id) => db.collection('users').doc(id));
+        const ownerSnaps = await db.getAll(...refs);
+        for (const s of ownerSnaps) {
+          if (!s.exists) continue;
+          ownerMap[s.id] = s.data() || {};
+        }
+      }
+
+      const list = [];
+      for (const a of candidates) {
+        const ownerId = String(a.ownerId || a.companyId || a.communityId || '');
+        const live = ownerMap[ownerId] || {};
+        const profile = ownerProfileSnapshot(
+          ownerId,
+          {
+            companyName: a.ownerName || a.companyName,
+            username: a.ownerUsername,
+            photoUrl: a.ownerPhotoUrl,
+            communityLogoUrl: a.ownerPhotoUrl,
+            ...live,
+          },
+          a.ownerType,
+        );
         list.push({
           id: a.id,
           title: a.title,
           body: a.body,
           imageUrl: a.imageUrl,
+          imageVariants: a.imageVariants || {},
           placements: a.placements,
           linkType: a.linkType,
           linkEventId: a.linkEventId,
           linkJobId: a.linkJobId,
           linkUrl: a.linkUrl,
-          companyName: a.ownerName || a.companyName,
-          ownerType: a.ownerType,
+          companyName: profile.ownerName,
+          ownerId: profile.ownerId,
+          ownerType: profile.ownerType || a.ownerType,
+          ownerName: profile.ownerName,
+          ownerUsername: profile.ownerUsername,
+          ownerPhotoUrl: profile.ownerPhotoUrl,
+          ownerHandle: profile.ownerHandle,
+          isCommunity: profile.isCommunity,
           adKind: a.adKind,
           scheduleEnd: a.scheduleEnd,
-          badge: 'REKLAM',
+          badge: 'Sponsorlu',
         });
       }
       for (let i = list.length - 1; i > 0; i--) {
@@ -907,6 +1383,13 @@ function commerceModule({
     createEventDiscount,
     submitAdCampaign,
     quoteAdCampaign,
+    acceptAdQuote,
+    declineAdQuote,
+    getMyAdCampaigns,
+    updateAdCampaign,
+    deleteAdCampaign,
+    adminDeleteAdCampaign,
+    trackAdEvent,
     adminReviewAdCampaign,
     getActiveAds,
     getMyTickets,

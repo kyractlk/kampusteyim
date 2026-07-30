@@ -48,6 +48,14 @@ service firebase.storage {
         );
     }
 
+    match /ads/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && underSize()
+        && request.resource.contentType.matches('image/.*');
+    }
+
     match /stories/{userId}/{allPaths=**} {
       allow read: if signedIn();
       allow write: if signedIn()

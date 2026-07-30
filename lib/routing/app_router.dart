@@ -21,6 +21,7 @@ import '../features/feedback/feedback_screen.dart';
 import '../features/reels/reels_screen.dart';
 import '../features/home/home_shell.dart';
 import '../features/jobs/company_portal.dart';
+import '../features/jobs/company_ads_screen.dart';
 import '../features/jobs/company_events_screen.dart';
 import '../features/commerce/company_organizer_hub.dart';
 import '../features/commerce/my_tickets_screen.dart';
@@ -337,6 +338,11 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/firma/events',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (_, _) => const CompanyEventsScreen(),
+      ),
+      GoRoute(
+        path: '/firma/ads',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (_, _) => const CompanyAdsScreen(),
       ),
       GoRoute(
         path: '/firma/organizer',

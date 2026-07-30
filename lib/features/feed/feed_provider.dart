@@ -41,7 +41,7 @@ class FeedProvider extends ChangeNotifier {
 
   List<Post> get posts {
     return _posts
-        .where((p) => !p.isDeleted)
+        .where((p) => !p.isDeleted && !p.hiddenFromFeed)
         .map(
           (p) => p.copyWith(
             isLiked: _likedLocal.contains(p.id),
@@ -87,13 +87,7 @@ class FeedProvider extends ChangeNotifier {
       });
     return keys
         .take(limit)
-        .map(
-          (t) => (
-            tag: t,
-            score: scores[t]!,
-            posts: counts[t]!,
-          ),
-        )
+        .map((t) => (tag: t, score: scores[t]!, posts: counts[t]!))
         .toList();
   }
 
@@ -109,8 +103,7 @@ class FeedProvider extends ChangeNotifier {
     }
   }
 
-  List<Post> postsByAuthor(String authorId) =>
-      postsByAuthors({authorId});
+  List<Post> postsByAuthor(String authorId) => postsByAuthors({authorId});
 
   List<Post> postsByAuthors(Set<String> authorIds) {
     if (authorIds.isEmpty) return const [];
@@ -134,18 +127,19 @@ class FeedProvider extends ChangeNotifier {
   }
 
   List<Comment> commentsFor(String postId) {
-    final list = _comments
-        .where((c) => c.postId == postId && !c.isDeleted)
-        .map(
-          (c) => c.copyWith(
-            replies: c.replies.where((r) => !r.isDeleted).toList(),
-          ),
-        )
-        .toList()
-      ..sort((a, b) {
-        if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
-        return b.createdAt.compareTo(a.createdAt);
-      });
+    final list =
+        _comments
+            .where((c) => c.postId == postId && !c.isDeleted)
+            .map(
+              (c) => c.copyWith(
+                replies: c.replies.where((r) => !r.isDeleted).toList(),
+              ),
+            )
+            .toList()
+          ..sort((a, b) {
+            if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+            return b.createdAt.compareTo(a.createdAt);
+          });
     return list;
   }
 
@@ -153,8 +147,10 @@ class FeedProvider extends ChangeNotifier {
     final local = postByIdIncludingDeleted(id);
     if (local != null) return local;
     try {
-      final doc =
-          await FirebaseFirestore.instance.collection('posts').doc(id).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(id)
+          .get();
       if (!doc.exists || doc.data() == null) return null;
       final post = Post.fromMap(doc.id, doc.data()!);
       final i = _posts.indexWhere((p) => p.id == id);
@@ -303,9 +299,7 @@ class FeedProvider extends ChangeNotifier {
   void _bindFirestore() {
     final db = FirebaseFirestore.instance;
     _postsSub = db.collection('posts').snapshots().listen((snap) async {
-      final remote = snap.docs
-          .map((d) => Post.fromMap(d.id, d.data()))
-          .toList()
+      final remote = snap.docs.map((d) => Post.fromMap(d.id, d.data())).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (remote.isEmpty) {
         _posts = [];
@@ -326,20 +320,18 @@ class FeedProvider extends ChangeNotifier {
 
     _annSub = db.collection('announcements').snapshots().listen((snap) {
       if (snap.docs.isEmpty) return;
-      final remote = snap.docs
-          .map((d) => Announcement.fromMap(d.id, d.data()))
-          .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final remote =
+          snap.docs.map((d) => Announcement.fromMap(d.id, d.data())).toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _announcements = remote;
       notifyListeners();
     }, onError: (e) => debugPrint('[feed] announcements stream: $e'));
 
     _eventsSub = db.collection('events').snapshots().listen((snap) {
       if (snap.docs.isEmpty) return;
-      final remote = snap.docs
-          .map((d) => CampusEvent.fromMap(d.id, d.data()))
-          .toList()
-        ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
+      final remote =
+          snap.docs.map((d) => CampusEvent.fromMap(d.id, d.data())).toList()
+            ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
       _events = remote;
       notifyListeners();
       _enforceEventDeadlines();
@@ -383,8 +375,9 @@ class FeedProvider extends ChangeNotifier {
     for (var i = 0; i < _events.length; i++) {
       final e = _events[i];
       if (!e.isDeadlinePassed || !e.applicationsOpen) continue;
-      final hadPending =
-          e.applications.any((a) => a.status == EventApplicationStatus.pending);
+      final hadPending = e.applications.any(
+        (a) => a.status == EventApplicationStatus.pending,
+      );
       if (!hadPending && !e.applicationsOpen) continue;
 
       final apps = e.applications.map((a) {
@@ -470,10 +463,7 @@ class FeedProvider extends ChangeNotifier {
     _writePost(updated.copyWith(isLiked: false));
   }
 
-  void toggleRepost({
-    required String postId,
-    required AppUser user,
-  }) {
+  void toggleRepost({required String postId, required AppUser user}) {
     final i = _posts.indexWhere((p) => p.id == postId);
     if (i < 0) return;
     final post = _posts[i];
@@ -531,9 +521,7 @@ class FeedProvider extends ChangeNotifier {
         .map((m) => m.fileName ?? m.url)
         .where((s) => s.trim().isNotEmpty)
         .toList();
-    final localBlock = LocalSafety.blockReason(
-      [text, ...fileNames].join('\n'),
-    );
+    final localBlock = LocalSafety.blockReason([text, ...fileNames].join('\n'));
     if (localBlock != null) return localBlock;
 
     final tags = HashtagUtils.extractUnique(text);
@@ -551,8 +539,9 @@ class FeedProvider extends ChangeNotifier {
 
     // AYS Tech Guard: içerik + link + dosya denetimi
     try {
-      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
-          .httpsCallable('moderatePostContent');
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'europe-west1',
+      ).httpsCallable('moderatePostContent');
       final res = await callable.call({
         'postId': post.id,
         'authorId': authorId,
@@ -569,21 +558,25 @@ class FeedProvider extends ChangeNotifier {
         lastPostedId = post.id;
         notifyListeners();
         await _writePost(post);
-        unawaited(_notifyMentions(
-          content: text,
-          postId: post.id,
-          actorId: authorId,
-          actorName: authorName,
-          directory: directory,
-        ));
-        if (!skipReelMirror) {
-          unawaited(_mirrorVideoToReels(
-            post: post,
-            authorId: authorId,
-            authorName: authorName,
-            authorHandle: authorHandle,
+        unawaited(
+          _notifyMentions(
+            content: text,
+            postId: post.id,
+            actorId: authorId,
+            actorName: authorName,
             directory: directory,
-          ));
+          ),
+        );
+        if (!skipReelMirror) {
+          unawaited(
+            _mirrorVideoToReels(
+              post: post,
+              authorId: authorId,
+              authorName: authorName,
+              authorHandle: authorHandle,
+              directory: directory,
+            ),
+          );
         }
         return 'WARN:${data['warning']}';
       }
@@ -595,21 +588,25 @@ class FeedProvider extends ChangeNotifier {
     lastPostedId = post.id;
     notifyListeners();
     await _writePost(post);
-    unawaited(_notifyMentions(
-      content: text,
-      postId: post.id,
-      actorId: authorId,
-      actorName: authorName,
-      directory: directory,
-    ));
-    if (!skipReelMirror) {
-      unawaited(_mirrorVideoToReels(
-        post: post,
-        authorId: authorId,
-        authorName: authorName,
-        authorHandle: authorHandle,
+    unawaited(
+      _notifyMentions(
+        content: text,
+        postId: post.id,
+        actorId: authorId,
+        actorName: authorName,
         directory: directory,
-      ));
+      ),
+    );
+    if (!skipReelMirror) {
+      unawaited(
+        _mirrorVideoToReels(
+          post: post,
+          authorId: authorId,
+          authorName: authorName,
+          authorHandle: authorHandle,
+          directory: directory,
+        ),
+      );
     }
     return null;
   }
@@ -747,9 +744,7 @@ class FeedProvider extends ChangeNotifier {
       final i = _comments.indexWhere((c) => c.id == parentId);
       if (i < 0) return;
       final parent = _comments[i];
-      final updated = parent.copyWith(
-        replies: [comment, ...parent.replies],
-      );
+      final updated = parent.copyWith(replies: [comment, ...parent.replies]);
       _comments[i] = updated;
       _writeComment(updated);
     }
@@ -821,8 +816,9 @@ class FeedProvider extends ChangeNotifier {
     for (var i = 0; i < _comments.length; i++) {
       final c = _comments[i];
       if (c.postId != postId) continue;
-      final updated =
-          c.copyWith(isPinned: c.id == commentId ? !c.isPinned : false);
+      final updated = c.copyWith(
+        isPinned: c.id == commentId ? !c.isPinned : false,
+      );
       _comments[i] = updated;
       _writeComment(updated);
     }
@@ -848,10 +844,7 @@ class FeedProvider extends ChangeNotifier {
     );
     if (already || event.isApplied) return 'Zaten başvurdun';
 
-    final blocked = event.applyBlockedReason(
-      user: applicant,
-      follows: follows,
-    );
+    final blocked = event.applyBlockedReason(user: applicant, follows: follows);
     if (blocked.isNotEmpty) return blocked;
 
     final apps = [
@@ -896,17 +889,19 @@ class FeedProvider extends ChangeNotifier {
     notifyListeners();
     await _writeEvent(event);
     if (notifyAudience) {
-      unawaited(_notifyAudienceBroadcast(
-        kind: 'event',
-        actorId: event.communityId ?? '',
-        actorName: event.communityName ?? 'Topluluk',
-        audience: event.audience,
-        title: 'Yeni etkinlik',
-        body: event.title,
-        emoji: '📅',
-        targetId: event.id,
-        sendEmail: event.audience == 'followers',
-      ));
+      unawaited(
+        _notifyAudienceBroadcast(
+          kind: 'event',
+          actorId: event.communityId ?? '',
+          actorName: event.communityName ?? 'Topluluk',
+          audience: event.audience,
+          title: 'Yeni etkinlik',
+          body: event.title,
+          emoji: '📅',
+          targetId: event.id,
+          sendEmail: event.audience == 'followers',
+        ),
+      );
     }
   }
 
@@ -991,17 +986,19 @@ class FeedProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[feed] writeAnnouncementPost: $e');
     }
-    unawaited(_notifyAudienceBroadcast(
-      kind: 'announcement',
-      actorId: announcement.communityId ?? '',
-      actorName: announcement.communityName ?? 'Topluluk',
-      audience: announcement.audience,
-      title: 'Topluluk duyurusu',
-      body: announcement.title,
-      emoji: '📢',
-      targetId: announcement.id,
-      sendEmail: true,
-    ));
+    unawaited(
+      _notifyAudienceBroadcast(
+        kind: 'announcement',
+        actorId: announcement.communityId ?? '',
+        actorName: announcement.communityName ?? 'Topluluk',
+        audience: announcement.audience,
+        title: 'Topluluk duyurusu',
+        body: announcement.title,
+        emoji: '📢',
+        targetId: announcement.id,
+        sendEmail: true,
+      ),
+    );
   }
 
   Future<void> _notifyAudienceBroadcast({
@@ -1017,8 +1014,9 @@ class FeedProvider extends ChangeNotifier {
   }) async {
     if (actorId.isEmpty) return;
     try {
-      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
-          .httpsCallable('notifyAudience');
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'europe-west1',
+      ).httpsCallable('notifyAudience');
       await callable.call({
         'kind': kind,
         'actorId': actorId,
@@ -1061,9 +1059,7 @@ class FeedProvider extends ChangeNotifier {
 
     // Red sonrası slot açılır; kadro doluysa ve red ise başvurular yeniden açılabilir
     if (!approve && updated.isRosterFull == false) {
-      updated = updated.copyWith(
-        applicationsOpen: !updated.isDeadlinePassed,
-      );
+      updated = updated.copyWith(applicationsOpen: !updated.isDeadlinePassed);
     }
 
     _events[i] = updated;
@@ -1075,7 +1071,9 @@ class FeedProvider extends ChangeNotifier {
         toUserId: target!.userId,
         copy: approve
             ? NotificationCopy.eventApplicationApproved(eventTitle: event.title)
-            : NotificationCopy.eventApplicationRejected(eventTitle: event.title),
+            : NotificationCopy.eventApplicationRejected(
+                eventTitle: event.title,
+              ),
         type: 'community',
         targetId: event.id,
       );

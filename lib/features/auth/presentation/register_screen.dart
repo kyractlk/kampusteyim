@@ -145,9 +145,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           _busySide = null;
         });
         final msg = e.toString().replaceFirst('Exception: ', '');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
       }
     }
   }
@@ -169,7 +169,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!_kvkk || !_marketing) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('KVKK ve pazarlama metinlerini okuyup kabul etmelisin.'),
+          content: Text(
+            'KVKK ve pazarlama metinlerini okuyup kabul etmelisin.',
+          ),
         ),
       );
       return;
@@ -210,9 +212,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         context.go('/home');
       }
     } else if (auth.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(auth.error!)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(auth.error!)));
     }
   }
 
@@ -240,9 +242,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _verifyEmailCode() async {
     final code = _emailCode.text.trim();
     if (code.length != 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('6 haneli kodu gir')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('6 haneli kodu gir')));
       return;
     }
     setState(() => _verifyingCode = true);
@@ -262,9 +264,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          ticket != null
-              ? 'E-posta doğrulandı'
-              : (auth.error ?? 'Kod hatalı'),
+          ticket != null ? 'E-posta doğrulandı' : (auth.error ?? 'Kod hatalı'),
         ),
       ),
     );
@@ -284,15 +284,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
       if (!_emailVerified || _emailTicket == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Devam için e-posta kodunu doğrula.'),
-          ),
+          const SnackBar(content: Text('Devam için e-posta kodunu doğrula.')),
         );
         return;
       }
     } else if (_stepId == 'personal') {
-      final userOk =
-          RegExp(r'^[a-zA-Z0-9_]{3,24}$').hasMatch(_username.text.trim());
+      final userOk = RegExp(
+        r'^[a-zA-Z0-9_]{3,24}$',
+      ).hasMatch(_username.text.trim());
       if (_firstName.text.trim().isEmpty ||
           _lastName.text.trim().isEmpty ||
           !userOk) {
@@ -333,10 +332,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   children: [
                     const BrandHeader(compact: true, showAys: false),
                     const SizedBox(height: 20),
-                    _StepIndicator(step: _step, labels: _stepLabels)
-                        .animate()
-                        .fadeIn()
-                        .slideY(begin: 0.15),
+                    _StepIndicator(
+                      step: _step,
+                      labels: _stepLabels,
+                    ).animate().fadeIn().slideY(begin: 0.15),
                     const SizedBox(height: 16),
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 320),
@@ -396,10 +395,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           children: [
             Text(
               'Hesap',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w800),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -426,8 +424,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed:
-                        (_sendingCode || _emailVerified) ? null : _sendEmailCode,
+                    onPressed: (_sendingCode || _emailVerified)
+                        ? null
+                        : _sendEmailCode,
                     icon: _sendingCode
                         ? const SizedBox(
                             width: 16,
@@ -452,19 +451,52 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 counterText: '',
                 suffixIcon: _emailVerified
                     ? const Icon(Icons.verified, color: AppColors.lime)
-                    : IconButton(
-                        onPressed: _verifyingCode ? null : _verifyEmailCode,
-                        icon: _verifyingCode
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.check_circle_outline),
-                      ),
+                    : null,
               ),
               validator: (_) => _emailVerified ? null : 'Kodu doğrula',
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: FilledButton.icon(
+                onPressed: (_verifyingCode || _emailVerified)
+                    ? null
+                    : _verifyEmailCode,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.lime,
+                  foregroundColor: AppColors.navy,
+                  disabledBackgroundColor: _emailVerified
+                      ? AppColors.lime
+                      : null,
+                  disabledForegroundColor: _emailVerified
+                      ? AppColors.navy
+                      : null,
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                icon: _verifyingCode
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: AppColors.navy,
+                        ),
+                      )
+                    : Icon(
+                        _emailVerified
+                            ? Icons.verified
+                            : Icons.check_circle_outline,
+                      ),
+                label: Text(
+                  _emailVerified
+                      ? 'E-posta doğrulandı'
+                      : 'KODU DOĞRULA VE DEVAM ET',
+                ),
+              ),
             ),
             if (_security.requireStudentNo) ...[
               const SizedBox(height: 12),
@@ -474,8 +506,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   labelText: 'Öğrenci numarası',
                   prefixIcon: Icon(Icons.badge_outlined),
                 ),
-                validator: (v) =>
-                    v != null && v.trim().length >= 5 ? null : 'En az 5 karakter',
+                validator: (v) => v != null && v.trim().length >= 5
+                    ? null
+                    : 'En az 5 karakter',
               ),
             ],
             const SizedBox(height: 12),
@@ -503,10 +536,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           children: [
             Text(
               'Kişisel',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w800),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -565,10 +597,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           children: [
             Text(
               'Kampüs',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w800),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
@@ -606,10 +637,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           children: [
             Text(
               'Yasal onaylar',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w800),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 12),
             ConsentCheckRow(
@@ -639,10 +669,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       children: [
         Text(
           'Öğrenci doğrulama',
-          style: Theme.of(context)
-              .textTheme
-              .titleLarge
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 8),
         const Text(
@@ -690,17 +719,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
             onCamera: _uploading
                 ? null
                 : () => _runUpload(
-                      side: 'front',
-                      pick: StudentDocUpload.captureCardImage,
-                      expectPdf: false,
-                    ),
+                    side: 'front',
+                    pick: StudentDocUpload.captureCardImage,
+                    expectPdf: false,
+                  ),
             onGallery: _uploading
                 ? null
                 : () => _runUpload(
-                      side: 'front',
-                      pick: StudentDocUpload.pickCardImage,
-                      expectPdf: false,
-                    ),
+                    side: 'front',
+                    pick: StudentDocUpload.pickCardImage,
+                    expectPdf: false,
+                  ),
           ),
           if (_security.requireCardBothSides) ...[
             const SizedBox(height: 10),
@@ -711,17 +740,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
               onCamera: _uploading
                   ? null
                   : () => _runUpload(
-                        side: 'back',
-                        pick: StudentDocUpload.captureCardImage,
-                        expectPdf: false,
-                      ),
+                      side: 'back',
+                      pick: StudentDocUpload.captureCardImage,
+                      expectPdf: false,
+                    ),
               onGallery: _uploading
                   ? null
                   : () => _runUpload(
-                        side: 'back',
-                        pick: StudentDocUpload.pickCardImage,
-                        expectPdf: false,
-                      ),
+                      side: 'back',
+                      pick: StudentDocUpload.pickCardImage,
+                      expectPdf: false,
+                    ),
             ),
           ],
         ],
@@ -736,10 +765,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             onGallery: _uploading
                 ? null
                 : () => _runUpload(
-                      side: 'pdf',
-                      pick: StudentDocUpload.pickPdf,
-                      expectPdf: true,
-                    ),
+                    side: 'pdf',
+                    pick: StudentDocUpload.pickPdf,
+                    expectPdf: true,
+                  ),
           ),
         ],
       ],
@@ -789,7 +818,10 @@ class _TypeTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
                     Text(
                       subtitle,
                       style: const TextStyle(
@@ -913,11 +945,9 @@ class _StepIndicator extends StatelessWidget {
                 Text(
                   labels[i],
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: active
-                            ? AppColors.navy
-                            : AppColors.textSecondary,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    color: active ? AppColors.navy : AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),

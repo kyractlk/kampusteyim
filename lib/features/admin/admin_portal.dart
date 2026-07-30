@@ -141,7 +141,8 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
       if (admin.can(me, AdminPermission.managePlus) ||
           admin.can(me, AdminPermission.createCompany) ||
           admin.can(me, AdminPermission.reviewLeads) ||
-          admin.can(me, AdminPermission.manageAds))
+          admin.can(me, AdminPermission.manageAds) ||
+          admin.can(me, AdminPermission.reviewPayments))
         _AdminTab(
           label: 'Ticaret',
           icon: const Icon(Icons.storefront_outlined),
@@ -150,6 +151,7 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
             AdminPermission.createCompany,
             AdminPermission.reviewLeads,
             AdminPermission.manageAds,
+            AdminPermission.reviewPayments,
           ],
           builder: () => const AdminCommerceTab(),
         ),
@@ -285,8 +287,9 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
 
     final tabIndex = _tab.clamp(0, tabs.length - 1);
     final wide = MediaQuery.sizeOf(context).width >= 900;
-    final pendingReports =
-        admin.reports.where((r) => r.status == ReportStatus.open).length;
+    final pendingReports = admin.reports
+        .where((r) => r.status == ReportStatus.open)
+        .length;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -312,7 +315,9 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
                   ),
                   Text(
                     myRole?.name ??
-                        (me.isSuperAdmin ? 'Süper Admin · tam yetki' : 'Personel'),
+                        (me.isSuperAdmin
+                            ? 'Süper Admin · tam yetki'
+                            : 'Personel'),
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -330,8 +335,10 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
               padding: const EdgeInsets.only(right: 8),
               child: Center(
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.surfaceMuted,
                     borderRadius: BorderRadius.circular(20),
@@ -390,10 +397,12 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
                               onDestinationSelected: (i) =>
                                   setState(() => _tab = i),
                               labelType: NavigationRailLabelType.all,
-                              indicatorColor:
-                                  AppColors.cyan.withValues(alpha: 0.18),
-                              selectedIconTheme:
-                                  const IconThemeData(color: AppColors.navy),
+                              indicatorColor: AppColors.cyan.withValues(
+                                alpha: 0.18,
+                              ),
+                              selectedIconTheme: const IconThemeData(
+                                color: AppColors.navy,
+                              ),
                               unselectedIconTheme: const IconThemeData(
                                 color: AppColors.textSecondary,
                               ),
@@ -464,7 +473,11 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
                     onPressed: () => Navigator.pop(ctx, c.id),
                     child: Text(
                       '${c.fullName.trim().isEmpty ? c.firstName : c.fullName}'
-                      '${c.isCompany ? ' · firma' : c.isCommunity ? ' · topluluk' : ''}',
+                      '${c.isCompany
+                          ? ' · firma'
+                          : c.isCommunity
+                          ? ' · topluluk'
+                          : ''}',
                     ),
                   ),
                 )
@@ -515,6 +528,7 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
               .collection('embassies')
               .where('active', isEqualTo: true)
               .get();
+          if (!context.mounted) return;
           String? embassyId = u.embassyId;
           if (v == 'ambassador' && embassies.docs.isNotEmpty) {
             embassyId = await showDialog<String>(
@@ -540,9 +554,9 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
             if (embassyId == null) return;
             if (embassyId.isEmpty) embassyId = null;
           }
-          final callable =
-              FirebaseFunctions.instanceFor(region: 'europe-west1')
-                  .httpsCallable('adminSetCampusAmbassador');
+          final callable = FirebaseFunctions.instanceFor(
+            region: 'europe-west1',
+          ).httpsCallable('adminSetCampusAmbassador');
           await callable.call({
             'userKey': u.id,
             'active': v == 'ambassador',
@@ -568,12 +582,10 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
       case 'organizer':
       case 'unorganizer':
         try {
-          await FirebaseFirestore.instance.collection('users').doc(u.id).set({
-            'isEventOrganizer': v == 'organizer',
-            'updatedAt': DateTime.now().toIso8601String(),
-          }, SetOptions(merge: true));
-          auth.upsertUser(
-            u.copyWith(isEventOrganizer: v == 'organizer'),
+          await admin.setEventOrganizer(
+            auth: auth,
+            userId: u.id,
+            value: v == 'organizer',
           );
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -588,9 +600,9 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           }
         } catch (e) {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Güncellenemedi: $e')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Güncellenemedi: $e')));
           }
         }
       case 'warn':
@@ -640,11 +652,7 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
       case 'make_admin':
         final roleId = await _pickRole(context, admin);
         if (roleId != null) {
-          await admin.assignStaffRole(
-            auth: auth,
-            userId: u.id,
-            roleId: roleId,
-          );
+          await admin.assignStaffRole(auth: auth, userId: u.id, roleId: roleId);
         }
       case 'delete_account':
         final confirm1 = await showDialog<bool>(
@@ -672,14 +680,18 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Son onay'),
-            content: Text('“${u.fullName}” hesabını silmek istediğine emin misin?'),
+            content: Text(
+              '“${u.fullName}” hesabını silmek istediğine emin misin?',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: const Text('Vazgeç'),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.crimson,
+                ),
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text('Hesabı sil'),
               ),
@@ -688,19 +700,19 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
         );
         if (confirm2 != true || !context.mounted) return;
         try {
-          final callable =
-              FirebaseFunctions.instanceFor(region: 'europe-west1')
-                  .httpsCallable('adminDeleteAccount');
+          final callable = FirebaseFunctions.instanceFor(
+            region: 'europe-west1',
+          ).httpsCallable('adminDeleteAccount');
           await callable.call({'uid': u.id, 'email': u.email});
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${u.fullName} silindi')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('${u.fullName} silindi')));
         } catch (e) {
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Silinemedi: $e')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Silinemedi: $e')));
         }
       case 'profile':
         if (context.mounted) context.push('/user/${u.id}');
@@ -721,8 +733,10 @@ Future<String?> _pickRole(BuildContext context, AdminProvider admin) {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(r.name,
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(
+                    r.name,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   Text(
                     '${r.permissions.length} yetki · ${r.description}',
                     style: const TextStyle(
@@ -802,10 +816,14 @@ class _CreateAccountsTabState extends State<_CreateAccountsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final canCompany =
-        widget.admin.can(widget.me, AdminPermission.createCompany);
-    final canCommunity =
-        widget.admin.can(widget.me, AdminPermission.createCommunity);
+    final canCompany = widget.admin.can(
+      widget.me,
+      AdminPermission.createCompany,
+    );
+    final canCommunity = widget.admin.can(
+      widget.me,
+      AdminPermission.createCommunity,
+    );
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -815,12 +833,13 @@ class _CreateAccountsTabState extends State<_CreateAccountsTab> {
         Text(
           'Firma ve topluluk hesapları Firebase Auth + profil olarak açılır. '
           'Boş bırakırsan geçici şifre otomatik üretilir.',
-          style: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.95)),
+          style: TextStyle(
+            color: AppColors.textSecondary.withValues(alpha: 0.95),
+          ),
         ),
         if (canCompany) ...[
           const SizedBox(height: 20),
-          Text('Firma hesabı',
-              style: Theme.of(context).textTheme.titleMedium),
+          Text('Firma hesabı', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           TextField(
             controller: _companyName,
@@ -878,8 +897,10 @@ class _CreateAccountsTabState extends State<_CreateAccountsTab> {
         ],
         if (canCommunity) ...[
           const Divider(height: 36),
-          Text('Topluluk hesabı',
-              style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Topluluk hesabı',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 8),
           TextField(
             controller: _commName,
@@ -943,11 +964,7 @@ class _CreateAccountsTabState extends State<_CreateAccountsTab> {
 // ─── Roller ───
 
 class _RolesTab extends StatelessWidget {
-  const _RolesTab({
-    required this.admin,
-    required this.auth,
-    required this.me,
-  });
+  const _RolesTab({required this.admin, required this.auth, required this.me});
   final AdminProvider admin;
   final AuthProvider auth;
   final AppUser me;
@@ -966,9 +983,9 @@ class _RolesTab extends StatelessWidget {
             Expanded(
               child: Text(
                 'Roller & yetkiler',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
             if (admin.rolesLoading)
@@ -1051,8 +1068,9 @@ class _RolesTab extends StatelessWidget {
                   for (final entry in groups.entries) ...[
                     Builder(
                       builder: (_) {
-                        final inGroup =
-                            entry.value.where(perms.contains).toList();
+                        final inGroup = entry.value
+                            .where(perms.contains)
+                            .toList();
                         if (inGroup.isEmpty) return const SizedBox.shrink();
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
@@ -1092,8 +1110,7 @@ class _RolesTab extends StatelessWidget {
                     children: [
                       if (!role.isSuper)
                         TextButton(
-                          onPressed: () =>
-                              _openEditor(context, existing: role),
+                          onPressed: () => _openEditor(context, existing: role),
                           child: const Text('İzinleri düzenle'),
                         ),
                       if (!role.isSystem && !role.isSuper)
@@ -1120,17 +1137,17 @@ class _RolesTab extends StatelessWidget {
   Future<void> _openEditor(BuildContext context, {StaffRole? existing}) async {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final descCtrl = TextEditingController(text: existing?.description ?? '');
-    final selected = <AdminPermission>{
-      ...(existing?.permissions ?? {}),
-    };
+    final selected = <AdminPermission>{...(existing?.permissions ?? {})};
 
     final saved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
         return Dialog(
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 640, maxHeight: 720),
             child: StatefulBuilder(
@@ -1141,7 +1158,9 @@ class _RolesTab extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        existing == null ? 'Yeni rol' : 'Rol izinlerini düzenle',
+                        existing == null
+                            ? 'Yeni rol'
+                            : 'Rol izinlerini düzenle',
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 18,
@@ -1155,8 +1174,9 @@ class _RolesTab extends StatelessWidget {
                       const SizedBox(height: 8),
                       TextField(
                         controller: descCtrl,
-                        decoration:
-                            const InputDecoration(labelText: 'Açıklama'),
+                        decoration: const InputDecoration(
+                          labelText: 'Açıklama',
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -1184,8 +1204,10 @@ class _RolesTab extends StatelessWidget {
                             for (final entry
                                 in AdminPermission.byGroup.entries) ...[
                               Padding(
-                                padding:
-                                    const EdgeInsets.only(top: 8, bottom: 4),
+                                padding: const EdgeInsets.only(
+                                  top: 8,
+                                  bottom: 4,
+                                ),
                                 child: Row(
                                   children: [
                                     Expanded(
@@ -1292,11 +1314,7 @@ class _RolesTab extends StatelessWidget {
 // ─── Adminler ───
 
 class _StaffTab extends StatefulWidget {
-  const _StaffTab({
-    required this.auth,
-    required this.admin,
-    required this.me,
-  });
+  const _StaffTab({required this.auth, required this.admin, required this.me});
   final AuthProvider auth;
   final AdminProvider admin;
   final AppUser me;
@@ -1329,18 +1347,16 @@ class _StaffTabState extends State<_StaffTab> {
   @override
   Widget build(BuildContext context) {
     final staff = widget.admin.staffMembers(widget.auth);
-    final assignable =
-        widget.admin.roles.where((r) => !r.isSuper).toList();
+    final assignable = widget.admin.roles.where((r) => !r.isSuper).toList();
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         Text(
           'Yeni admin ekle',
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 8),
         TextField(
@@ -1401,10 +1417,9 @@ class _StaffTabState extends State<_StaffTab> {
         const Divider(height: 36),
         Text(
           'Mevcut adminler (${staff.length})',
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 8),
         ...staff.map((u) {
@@ -1412,8 +1427,10 @@ class _StaffTabState extends State<_StaffTab> {
           return Card(
             margin: const EdgeInsets.only(bottom: 8),
             child: ListTile(
-              title: Text(u.fullName,
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              title: Text(
+                u.fullName,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
               subtitle: Text(
                 '${u.email}\n${role?.name ?? 'rol yok'}'
                 '${u.isSuperAdmin ? ' · süper' : ''}',
@@ -1441,9 +1458,13 @@ class _StaffTabState extends State<_StaffTab> {
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem(
-                            value: 'role', child: Text('Rol değiştir')),
+                          value: 'role',
+                          child: Text('Rol değiştir'),
+                        ),
                         PopupMenuItem(
-                            value: 'revoke', child: Text('Adminliği kaldır')),
+                          value: 'revoke',
+                          child: Text('Adminliği kaldır'),
+                        ),
                       ],
                     ),
             ),
@@ -1489,10 +1510,12 @@ class _BroadcastTabState extends State<_BroadcastTab> {
       ..sort((a, b) => a.fullName.compareTo(b.fullName));
     if (q.isNotEmpty) {
       users = users
-          .where((u) =>
-              u.fullName.toLowerCase().contains(q) ||
-              u.email.toLowerCase().contains(q) ||
-              u.handle.toLowerCase().contains(q))
+          .where(
+            (u) =>
+                u.fullName.toLowerCase().contains(q) ||
+                u.email.toLowerCase().contains(q) ||
+                u.handle.toLowerCase().contains(q),
+          )
           .toList();
     }
 
@@ -1501,10 +1524,9 @@ class _BroadcastTabState extends State<_BroadcastTab> {
       children: [
         Text(
           'Push bildirimi gönder',
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Text(
@@ -1525,7 +1547,9 @@ class _BroadcastTabState extends State<_BroadcastTab> {
         const SizedBox(height: 8),
         SwitchListTile(
           title: const Text('Tüm kullanıcılara gönder'),
-          subtitle: Text('Firestore’daki tüm üyeler (${widget.auth.directory.length})'),
+          subtitle: Text(
+            'Firestore’daki tüm üyeler (${widget.auth.directory.length})',
+          ),
           value: _toAll,
           onChanged: (v) => setState(() => _toAll = v),
         ),
@@ -1650,9 +1674,9 @@ class _AdminGateLoginState extends State<_AdminGateLogin> {
     );
     if (!mounted) return;
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(auth.error ?? 'Giriş başarısız')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(auth.error ?? 'Giriş başarısız')));
       return;
     }
     final user = auth.user;
@@ -1660,9 +1684,7 @@ class _AdminGateLoginState extends State<_AdminGateLogin> {
       await auth.signOut();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Bu hesap admin yetkisine sahip değil.'),
-        ),
+        const SnackBar(content: Text('Bu hesap admin yetkisine sahip değil.')),
       );
       return;
     }
@@ -1720,8 +1742,8 @@ class _AdminGateLoginState extends State<_AdminGateLogin> {
                         : 'Admin paneline giriş',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(

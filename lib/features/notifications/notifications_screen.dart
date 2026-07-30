@@ -30,6 +30,7 @@ class NotificationsScreen extends StatelessWidget {
       case 'comment':
       case 'repost':
       case 'activity':
+      case 'promo':
         if (targetId != null && targetId.isNotEmpty) {
           context.push('/post/${Uri.encodeComponent(targetId)}');
         }
@@ -69,10 +70,7 @@ class NotificationsScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _acceptRequest(
-    BuildContext context,
-    AppNotification n,
-  ) async {
+  Future<void> _acceptRequest(BuildContext context, AppNotification n) async {
     final requesterId = n.actorId ?? n.targetId;
     if (requesterId == null || requesterId.isEmpty) return;
     final auth = context.read<AuthProvider>();
@@ -80,32 +78,29 @@ class NotificationsScreen extends StatelessWidget {
     final ok = await auth.acceptFollowRequest(requesterId);
     if (!context.mounted || !ok || me == null) return;
     context.read<NotificationProvider>().pushSocial(
-          toUserId: requesterId,
-          title: 'İstek kabul edildi',
-          body: '${me.fullName} takip isteğini kabul etti',
-          emoji: '✨',
-          type: 'follow_accepted',
-          actorId: me.id,
-          targetId: me.id,
-        );
-    hubMarkRead(context, n.id);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Takip isteği kabul edildi')),
+      toUserId: requesterId,
+      title: 'İstek kabul edildi',
+      body: '${me.fullName} takip isteğini kabul etti',
+      emoji: '✨',
+      type: 'follow_accepted',
+      actorId: me.id,
+      targetId: me.id,
     );
+    hubMarkRead(context, n.id);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Takip isteği kabul edildi')));
   }
 
-  Future<void> _rejectRequest(
-    BuildContext context,
-    AppNotification n,
-  ) async {
+  Future<void> _rejectRequest(BuildContext context, AppNotification n) async {
     final requesterId = n.actorId ?? n.targetId;
     if (requesterId == null || requesterId.isEmpty) return;
     await context.read<AuthProvider>().rejectFollowRequest(requesterId);
     if (!context.mounted) return;
     hubMarkRead(context, n.id);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Takip isteği reddedildi')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Takip isteği reddedildi')));
   }
 
   void hubMarkRead(BuildContext context, String id) {
@@ -137,7 +132,8 @@ class NotificationsScreen extends StatelessWidget {
                 final n = hub.items[i];
                 final isRequest = n.type == 'follow_request';
                 final requesterId = n.actorId ?? n.targetId;
-                final stillPending = isRequest &&
+                final stillPending =
+                    isRequest &&
                     requesterId != null &&
                     pendingIds.any(
                       (id) => auth.idsFor(requesterId).contains(id),
@@ -179,8 +175,11 @@ class NotificationsScreen extends StatelessWidget {
                   isThreeLine: stillPending,
                   trailing: n.read
                       ? null
-                      : const Icon(Icons.circle,
-                          size: 10, color: AppColors.crimson),
+                      : const Icon(
+                          Icons.circle,
+                          size: 10,
+                          color: AppColors.crimson,
+                        ),
                   onTap: () => _open(
                     context,
                     type: n.type,

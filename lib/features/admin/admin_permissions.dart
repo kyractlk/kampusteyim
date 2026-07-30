@@ -5,16 +5,8 @@ enum AdminPermission {
     'Kullanıcıları görüntüle / düzenle',
     'Kullanıcılar',
   ),
-  manageBadges(
-    'manage_badges',
-    'Gold / mavi badge ver-al',
-    'Kullanıcılar',
-  ),
-  restrictUsers(
-    'restrict_users',
-    'Ban / paylaşım yasağı uygula',
-    'Moderasyon',
-  ),
+  manageBadges('manage_badges', 'Gold / mavi badge ver-al', 'Kullanıcılar'),
+  restrictUsers('restrict_users', 'Ban / paylaşım yasağı uygula', 'Moderasyon'),
   resetPassword(
     'reset_password',
     'Şifre sıfırlama bağlantısı gönder',
@@ -25,31 +17,11 @@ enum AdminPermission {
     'Şikayetleri incele ve sonuçlandır',
     'Moderasyon',
   ),
-  viewPosts(
-    'view_posts',
-    'Tüm paylaşımları görüntüle',
-    'İçerik',
-  ),
-  createCompany(
-    'create_company',
-    'Firma hesabı aç',
-    'Hesaplar',
-  ),
-  createCommunity(
-    'create_community',
-    'Topluluk hesabı aç',
-    'Hesaplar',
-  ),
-  manageRoles(
-    'manage_roles',
-    'Yeni rol oluştur / yetki seç',
-    'Yönetim',
-  ),
-  manageAdmins(
-    'manage_admins',
-    'Admin ekle ve rol ata',
-    'Yönetim',
-  ),
+  viewPosts('view_posts', 'Tüm paylaşımları görüntüle', 'İçerik'),
+  createCompany('create_company', 'Firma hesabı aç', 'Hesaplar'),
+  createCommunity('create_community', 'Topluluk hesabı aç', 'Hesaplar'),
+  manageRoles('manage_roles', 'Yeni rol oluştur / yetki seç', 'Yönetim'),
+  manageAdmins('manage_admins', 'Admin ekle ve rol ata', 'Yönetim'),
   sendBroadcast(
     'send_broadcast',
     'Seçili / tüm kullanıcılara push gönder',
@@ -90,11 +62,7 @@ enum AdminPermission {
     'Tanıtım: mağaza linkleri, QR, istatistik',
     'Tanıtım',
   ),
-  manageLanding(
-    'manage_landing',
-    'Landing sayfası metinleri / CMS',
-    'Tanıtım',
-  ),
+  manageLanding('manage_landing', 'Landing sayfası metinleri / CMS', 'Tanıtım'),
   manageAmbassadors(
     'manage_ambassadors',
     'Kampüs elçilikleri, elçiler ve başvuru formları',
@@ -105,14 +73,11 @@ enum AdminPermission {
     'KVKK ve pazarlama metinlerini düzenle',
     'Sistem',
   ),
-  managePlus(
-    'manage_plus',
-    'KampüsteyimPlus ayarları / atama',
-    'Sistem',
-  ),
-  manageAds(
-    'manage_ads',
-    'Reklam / sponsor teklif / push-mail bot',
+  managePlus('manage_plus', 'KampüsteyimPlus ayarları / atama', 'Sistem'),
+  manageAds('manage_ads', 'Reklam / sponsor teklif / push-mail bot', 'Ticaret'),
+  reviewPayments(
+    'review_payments',
+    'Reklam, etkinlik ve ticari ödeme onayları',
     'Ticaret',
   );
 
@@ -161,7 +126,10 @@ enum AdminPermission {
     final items = <String>[];
     if (raw is String) {
       items.addAll(
-        raw.split(RegExp(r'[,|;]')).map((e) => e.trim()).where((e) => e.isNotEmpty),
+        raw
+            .split(RegExp(r'[,|;]'))
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty),
       );
     } else if (raw is Iterable) {
       for (final e in raw) {
@@ -209,13 +177,13 @@ class StaffRole {
   bool has(AdminPermission p) => isSuper || permissions.contains(p);
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'description': description,
-        'permissions': AdminPermission.keysOf(permissions),
-        'isSystem': isSystem,
-        'isSuper': isSuper,
-      };
+    'id': id,
+    'name': name,
+    'description': description,
+    'permissions': AdminPermission.keysOf(permissions),
+    'isSystem': isSystem,
+    'isSuper': isSuper,
+  };
 
   factory StaffRole.fromJson(Map<String, dynamic> json) {
     return StaffRole(
@@ -244,140 +212,150 @@ class StaffRole {
   }
 
   static List<StaffRole> defaults() => [
-        StaffRole(
-          id: 'role_super',
-          name: 'Süper Admin',
-          description: 'Tüm platform yetkileri. Silinemez.',
-          permissions: {...AdminPermission.values},
-          isSystem: true,
-          isSuper: true,
-        ),
-        StaffRole(
-          id: 'role_moderator',
-          name: 'Moderatör',
-          description: 'Şikayet, paylaşım, kısıtlama ve içerik denetimi.',
-          permissions: {
-            AdminPermission.reviewReports,
-            AdminPermission.viewPosts,
-            AdminPermission.restrictUsers,
-            AdminPermission.moderateFeed,
-            AdminPermission.manageUsers,
-            AdminPermission.sendBroadcast,
-            AdminPermission.reviewStudyRooms,
-            AdminPermission.accessDuringMaintenance,
-          },
-          isSystem: true,
-        ),
-        StaffRole(
-          id: 'role_community_mgr',
-          name: 'Topluluk Yöneticisi',
-          description: 'Topluluk hesapları, rozet ve kampüs elçiliği.',
-          permissions: {
-            AdminPermission.manageUsers,
-            AdminPermission.manageBadges,
-            AdminPermission.createCommunity,
-            AdminPermission.viewPosts,
-            AdminPermission.reviewReports,
-            AdminPermission.moderateFeed,
-            AdminPermission.sendBroadcast,
-            AdminPermission.reviewStudyRooms,
-            AdminPermission.manageAmbassadors,
-            AdminPermission.reviewLeads,
-            AdminPermission.accessDuringMaintenance,
-          },
-          isSystem: true,
-        ),
-        StaffRole(
-          id: 'role_ops',
-          name: 'Hesap Operasyon',
-          description: 'Firma/topluluk hesabı, şifre ve landing başvuruları.',
-          permissions: {
-            AdminPermission.createCompany,
-            AdminPermission.createCommunity,
-            AdminPermission.resetPassword,
-            AdminPermission.manageUsers,
-            AdminPermission.reviewLeads,
-            AdminPermission.accessDuringMaintenance,
-          },
-          isSystem: true,
-        ),
-        StaffRole(
-          id: 'role_sysops',
-          name: 'Sistem & Yayın',
-          description: 'Bakım, push, Plus, KVKK, tanıtım ve landing CMS.',
-          permissions: {
-            AdminPermission.manageMaintenance,
-            AdminPermission.accessDuringMaintenance,
-            AdminPermission.sendBroadcast,
-            AdminPermission.manageUsers,
-            AdminPermission.viewPosts,
-            AdminPermission.manageLegalTexts,
-            AdminPermission.managePromo,
-            AdminPermission.manageLanding,
-            AdminPermission.managePlus,
-            AdminPermission.manageAds,
-          },
-          isSystem: true,
-        ),
-        StaffRole(
-          id: 'role_growth',
-          name: 'Büyüme & Tanıtım',
-          description: 'Landing CMS, mağaza linkleri, QR, başvurular ve reklam.',
-          permissions: {
-            AdminPermission.managePromo,
-            AdminPermission.manageLanding,
-            AdminPermission.reviewLeads,
-            AdminPermission.manageAmbassadors,
-            AdminPermission.manageUsers,
-            AdminPermission.manageAds,
-            AdminPermission.accessDuringMaintenance,
-          },
-          isSystem: true,
-        ),
-        StaffRole(
-          id: 'role_ads_commerce',
-          name: 'Reklam & Ticaret',
-          description: 'Reklam onay, sponsor teklif, Plus ve firma ticaret.',
-          permissions: {
-            AdminPermission.manageAds,
-            AdminPermission.managePlus,
-            AdminPermission.createCompany,
-            AdminPermission.reviewLeads,
-            AdminPermission.manageBadges,
-            AdminPermission.accessDuringMaintenance,
-          },
-          isSystem: true,
-        ),
-        StaffRole(
-          id: 'role_ambassador_ops',
-          name: 'Elçilik Operasyon',
-          description: 'Kampüs elçilikleri, formlar, elçi onayları ve rozet.',
-          permissions: {
-            AdminPermission.manageAmbassadors,
-            AdminPermission.manageBadges,
-            AdminPermission.manageUsers,
-            AdminPermission.reviewLeads,
-            AdminPermission.accessDuringMaintenance,
-          },
-          isSystem: true,
-        ),
-        StaffRole(
-          id: 'role_hr_desk',
-          name: 'Destek Masası',
-          description: 'Kullanıcı desteği, şifre, şikayet ve geri bildirim.',
-          permissions: {
-            AdminPermission.manageUsers,
-            AdminPermission.resetPassword,
-            AdminPermission.reviewReports,
-            AdminPermission.viewPosts,
-            AdminPermission.reviewFeedback,
-            AdminPermission.reviewLeads,
-            AdminPermission.reviewStudyRooms,
-            AdminPermission.accessDuringMaintenance,
-          },
-          isSystem: true,
-        ),
-      ];
+    StaffRole(
+      id: 'role_super',
+      name: 'Süper Admin',
+      description: 'Tüm platform yetkileri. Silinemez.',
+      permissions: {...AdminPermission.values},
+      isSystem: true,
+      isSuper: true,
+    ),
+    StaffRole(
+      id: 'role_moderator',
+      name: 'Moderatör',
+      description: 'Şikayet, paylaşım, kısıtlama ve içerik denetimi.',
+      permissions: {
+        AdminPermission.reviewReports,
+        AdminPermission.viewPosts,
+        AdminPermission.restrictUsers,
+        AdminPermission.moderateFeed,
+        AdminPermission.manageUsers,
+        AdminPermission.sendBroadcast,
+        AdminPermission.reviewStudyRooms,
+        AdminPermission.accessDuringMaintenance,
+      },
+      isSystem: true,
+    ),
+    StaffRole(
+      id: 'role_community_mgr',
+      name: 'Topluluk Yöneticisi',
+      description: 'Topluluk hesapları, rozet ve kampüs elçiliği.',
+      permissions: {
+        AdminPermission.manageUsers,
+        AdminPermission.manageBadges,
+        AdminPermission.createCommunity,
+        AdminPermission.viewPosts,
+        AdminPermission.reviewReports,
+        AdminPermission.moderateFeed,
+        AdminPermission.sendBroadcast,
+        AdminPermission.reviewStudyRooms,
+        AdminPermission.manageAmbassadors,
+        AdminPermission.reviewLeads,
+        AdminPermission.accessDuringMaintenance,
+      },
+      isSystem: true,
+    ),
+    StaffRole(
+      id: 'role_ops',
+      name: 'Hesap Operasyon',
+      description: 'Firma/topluluk hesabı, şifre ve landing başvuruları.',
+      permissions: {
+        AdminPermission.createCompany,
+        AdminPermission.createCommunity,
+        AdminPermission.resetPassword,
+        AdminPermission.manageUsers,
+        AdminPermission.reviewLeads,
+        AdminPermission.accessDuringMaintenance,
+      },
+      isSystem: true,
+    ),
+    StaffRole(
+      id: 'role_sysops',
+      name: 'Sistem & Yayın',
+      description: 'Bakım, push, Plus, KVKK, tanıtım ve landing CMS.',
+      permissions: {
+        AdminPermission.manageMaintenance,
+        AdminPermission.accessDuringMaintenance,
+        AdminPermission.sendBroadcast,
+        AdminPermission.manageUsers,
+        AdminPermission.viewPosts,
+        AdminPermission.manageLegalTexts,
+        AdminPermission.managePromo,
+        AdminPermission.manageLanding,
+        AdminPermission.managePlus,
+        AdminPermission.manageAds,
+      },
+      isSystem: true,
+    ),
+    StaffRole(
+      id: 'role_growth',
+      name: 'Büyüme & Tanıtım',
+      description: 'Landing CMS, mağaza linkleri, QR, başvurular ve reklam.',
+      permissions: {
+        AdminPermission.managePromo,
+        AdminPermission.manageLanding,
+        AdminPermission.reviewLeads,
+        AdminPermission.manageAmbassadors,
+        AdminPermission.manageUsers,
+        AdminPermission.manageAds,
+        AdminPermission.accessDuringMaintenance,
+      },
+      isSystem: true,
+    ),
+    StaffRole(
+      id: 'role_ads_commerce',
+      name: 'Reklam & Ticaret',
+      description: 'Reklam onayı, sponsor teklifi ve firma ticareti.',
+      permissions: {
+        AdminPermission.manageAds,
+        AdminPermission.createCompany,
+        AdminPermission.reviewLeads,
+        AdminPermission.manageBadges,
+        AdminPermission.accessDuringMaintenance,
+      },
+      isSystem: true,
+    ),
+    StaffRole(
+      id: 'role_payment_ops',
+      name: 'Ödeme Operasyon',
+      description:
+          'Reklam, etkinlik ve diğer ticari ödeme bildirimlerini inceler.',
+      permissions: {
+        AdminPermission.reviewPayments,
+        AdminPermission.accessDuringMaintenance,
+      },
+      isSystem: true,
+    ),
+    StaffRole(
+      id: 'role_ambassador_ops',
+      name: 'Elçilik Operasyon',
+      description: 'Kampüs elçilikleri, formlar, elçi onayları ve rozet.',
+      permissions: {
+        AdminPermission.manageAmbassadors,
+        AdminPermission.manageBadges,
+        AdminPermission.manageUsers,
+        AdminPermission.reviewLeads,
+        AdminPermission.accessDuringMaintenance,
+      },
+      isSystem: true,
+    ),
+    StaffRole(
+      id: 'role_hr_desk',
+      name: 'Destek Masası',
+      description: 'Kullanıcı desteği, şifre, şikayet ve geri bildirim.',
+      permissions: {
+        AdminPermission.manageUsers,
+        AdminPermission.resetPassword,
+        AdminPermission.reviewReports,
+        AdminPermission.viewPosts,
+        AdminPermission.reviewFeedback,
+        AdminPermission.reviewLeads,
+        AdminPermission.reviewStudyRooms,
+        AdminPermission.accessDuringMaintenance,
+      },
+      isSystem: true,
+    ),
+  ];
 
   /// Sistem rollerini güncel izin kataloğuna göre yeniden kurar.
   /// Özel (non-system) roller korunur; eksik yeni izinler süper role eklenir.

@@ -20,6 +20,7 @@ function paymentsModule({
   onRequest,
   HttpsError,
   assertPlatformAdmin,
+  assertAdminPermission,
   sanitizePlainText,
   fulfillEventOrder,
   fulfillAdOrder,
@@ -622,7 +623,12 @@ ${fields}
       );
       return {
         ok: true,
-        message: 'Bildirim alındı. Kod eşleşince hesabın aktif edilir.',
+        message:
+          order.product === 'ad'
+            ? 'Ödeme bildirimin alındı. Kontrol edilince reklamın yayın onayına geçer.'
+            : order.product === 'event'
+              ? 'Ödeme bildirimin alındı. Kontrol edilince etkinlik siparişin onaylanır.'
+              : 'Bildirim alındı. Kod eşleşince Plus hesabın aktif edilir.',
       };
     },
   );
@@ -631,7 +637,6 @@ ${fields}
     { region: 'europe-west1' },
     async (request) => {
       if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
-      await assertPlatformAdmin(request.auth.uid);
       const orderId = String(request.data?.orderId || '').trim();
       const approve = request.data?.approve !== false;
       if (!orderId) throw new HttpsError('invalid-argument', 'orderId gerekli');
@@ -639,6 +644,7 @@ ${fields}
       const snap = await ref.get();
       if (!snap.exists) throw new HttpsError('not-found', 'Sipariş yok');
       const order = snap.data() || {};
+      await assertAdminPermission(request.auth.uid, 'review_payments');
       const cfg = await readPublicPayments();
       if (approve) {
         await ref.set(

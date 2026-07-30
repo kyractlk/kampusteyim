@@ -4,11 +4,7 @@ import '../features/notifications/notification_prefs.dart';
 enum MediaType { image, video, file }
 
 class MediaItem {
-  const MediaItem({
-    required this.url,
-    required this.type,
-    this.fileName,
-  });
+  const MediaItem({required this.url, required this.type, this.fileName});
 
   final String url;
   final MediaType type;
@@ -107,6 +103,7 @@ class AppUser {
   final String? communityLogoUrl;
   final String? affiliatedCommunityId;
   final String? affiliatedCommunityName;
+
   /// İlişkili kurum logosu (Twitter tarzı minik rozet).
   final String? affiliatedOrgLogoUrl;
   final String? affiliatedCompanyId;
@@ -117,14 +114,18 @@ class AppUser {
   final bool panelAccess;
   final bool hasGoldBadge;
   final bool hasBlueBadge;
+
   /// Örn. "Kampüs Elçisi" — gold tick yanında görünen unvan.
   final String badgeTitle;
   final bool isCampusAmbassador;
   final String? embassyId;
+
   /// Firma hesabı: kampüs dışı etkinlik oluşturabilir (admin onayı gerekir).
   final bool isEventOrganizer;
+
   /// KampüsteyimPlus (sunucu + istemci doğrulaması).
   final bool plusActive;
+
   /// trial | admin | store | iban
   final String plusSource;
   final DateTime? plusStartsAt;
@@ -136,40 +137,57 @@ class AppUser {
   final String? staffRoleId;
   final bool isSuperAdmin;
   final NotificationPrefs notificationPrefs;
+
   /// @ olmadan saklanan kullanıcı adı (benzersiz).
   final String? username;
+
   /// ok | temp | pending
   final String usernameStatus;
+
   /// Platform AI / resmi bot hesabı.
   final bool isBot;
+
   /// Diğer kullanıcılar gönderide @ ile etiketleyebilir mi?
   final bool allowMentions;
+
   /// KVKK metni kabul zamanı.
   final DateTime? kvkkAcceptedAt;
+
   /// Pazarlama / ticari iletişim izni.
   final bool marketingConsent;
   final DateTime? marketingAcceptedAt;
+
   /// pending | approved | rejected — öğrenci belgesi onayı.
   final String accountStatus;
+
   /// Öğrenci kimlik / belge Storage URL (PDF veya eski tek dosya).
   final String? studentIdDocUrl;
+
   /// card | document
   final String? studentVerificationType;
+
   /// Öğrenci kartı ön yüz.
   final String? studentIdFrontUrl;
+
   /// Öğrenci kartı arka yüz.
   final String? studentIdBackUrl;
+
   /// Red sebebi (varsa).
   final String registrationRejectReason;
+
   /// Aramada görünmez.
   final bool hideFromSearch;
+
   /// Instagram tarzı gizli hesap (takip isteği).
   final bool isPrivateAccount;
+
   /// Görünmezlik / izleyici modu — etkileşim yok.
   final bool isSpectatorMode;
   final List<String> blockedUserIds;
+
   /// Bana gelen takip istekleri.
   final List<String> incomingFollowRequests;
+
   /// Benim gönderdiğim takip istekleri.
   final List<String> outgoingFollowRequests;
 
@@ -188,6 +206,7 @@ class AppUser {
     if (isCampusAmbassador) return 'Kampüs Elçisi';
     return '';
   }
+
   /// Mavi tick yalnızca açıkça verilmişse (ilişki ayrı gösterilir).
   bool get showBlueBadge => !showGoldBadge && hasBlueBadge;
 
@@ -200,8 +219,7 @@ class AppUser {
   }
 
   /// Plus yeşil tick — gold/mavi rozet varken gösterilmez.
-  bool get showGreenBadge =>
-      isPlusActive && !showGoldBadge && !showBlueBadge;
+  bool get showGreenBadge => isPlusActive && !showGoldBadge && !showBlueBadge;
 
   /// Profilde üniversite rozeti gösterilsin mi?
   /// Firma / reklam hesaplarında üniversite rozeti yok.
@@ -235,6 +253,7 @@ class AppUser {
     final d = exp.difference(DateTime.now()).inDays;
     return d < 0 ? 0 : d;
   }
+
   bool get hasAffiliation {
     final id = affiliatedCommunityId?.trim() ?? '';
     final name = affiliatedCommunityName?.trim() ?? '';
@@ -252,11 +271,9 @@ class AppUser {
   bool get isAccountApproved =>
       accountStatus == 'approved' || accountStatus.isEmpty;
 
-  bool get canInteract =>
-      isAccountApproved && !isSpectatorMode && canPost;
+  bool get canInteract => isAccountApproved && !isSpectatorMode && canPost;
 
-  bool get canUseStories =>
-      isAccountApproved && !isSpectatorMode;
+  bool get canUseStories => isAccountApproved && !isSpectatorMode;
 
   bool blocks(String userId) => blockedUserIds.contains(userId);
 
@@ -274,15 +291,14 @@ class AppUser {
       (!restrictionActive ||
           (restrictionType != 'mute' && restrictionType != 'fullBan'));
 
-  bool get isFullyBanned =>
-      restrictionActive && restrictionType == 'fullBan';
+  bool get isFullyBanned => restrictionActive && restrictionType == 'fullBan';
 
-  bool get isWarned =>
-      restrictionActive && restrictionType == 'warn';
+  bool get isWarned => restrictionActive && restrictionType == 'warn';
 
   /// Topluluk hesabı logo yüklemeden paylaşamaz.
   bool get communityCanPublish =>
-      !isCommunity || (communityLogoUrl != null && communityLogoUrl!.isNotEmpty);
+      !isCommunity ||
+      (communityLogoUrl != null && communityLogoUrl!.isNotEmpty);
 
   bool get needsUsernameChange => usernameStatus == 'temp';
 
@@ -395,7 +411,8 @@ class AppUser {
           ? null
           : (affiliatedOrgLogoUrl ?? this.affiliatedOrgLogoUrl),
       affiliatedCompanyId: affiliatedCompanyId ?? this.affiliatedCompanyId,
-      affiliatedCompanyName: affiliatedCompanyName ?? this.affiliatedCompanyName,
+      affiliatedCompanyName:
+          affiliatedCompanyName ?? this.affiliatedCompanyName,
       panelOrgId: panelOrgId ?? this.panelOrgId,
       panelOrgType: panelOrgType ?? this.panelOrgType,
       panelOrgName: panelOrgName ?? this.panelOrgName,
@@ -408,9 +425,7 @@ class AppUser {
       isEventOrganizer: isEventOrganizer ?? this.isEventOrganizer,
       plusActive: plusActive ?? this.plusActive,
       plusSource: plusSource ?? this.plusSource,
-      plusStartsAt: clearPlusDates
-          ? null
-          : (plusStartsAt ?? this.plusStartsAt),
+      plusStartsAt: clearPlusDates ? null : (plusStartsAt ?? this.plusStartsAt),
       plusExpiresAt: clearPlusDates
           ? null
           : (plusExpiresAt ?? this.plusExpiresAt),
@@ -431,8 +446,9 @@ class AppUser {
       marketingConsent: marketingConsent ?? this.marketingConsent,
       marketingAcceptedAt: marketingAcceptedAt ?? this.marketingAcceptedAt,
       accountStatus: accountStatus ?? this.accountStatus,
-      studentIdDocUrl:
-          clearStudentIdDoc ? null : (studentIdDocUrl ?? this.studentIdDocUrl),
+      studentIdDocUrl: clearStudentIdDoc
+          ? null
+          : (studentIdDocUrl ?? this.studentIdDocUrl),
       studentVerificationType: clearStudentIdDoc
           ? null
           : (studentVerificationType ?? this.studentVerificationType),
@@ -523,19 +539,19 @@ class Comment {
   }
 
   Map<String, dynamic> toMap() => {
-        'postId': postId,
-        'parentId': parentId,
-        'authorId': authorId,
-        'authorName': authorName,
-        'authorHandle': authorHandle,
-        'content': content,
-        'createdAt': createdAt.toIso8601String(),
-        'likeCount': likeCount,
-        'isPinned': isPinned,
-        'replies': replies.map((r) => r.toMap()..['id'] = r.id).toList(),
-        if (deletedAt != null) 'deletedAt': deletedAt!.toIso8601String(),
-        if (deletedBy != null) 'deletedBy': deletedBy,
-      };
+    'postId': postId,
+    'parentId': parentId,
+    'authorId': authorId,
+    'authorName': authorName,
+    'authorHandle': authorHandle,
+    'content': content,
+    'createdAt': createdAt.toIso8601String(),
+    'likeCount': likeCount,
+    'isPinned': isPinned,
+    'replies': replies.map((r) => r.toMap()..['id'] = r.id).toList(),
+    if (deletedAt != null) 'deletedAt': deletedAt!.toIso8601String(),
+    if (deletedBy != null) 'deletedBy': deletedBy,
+  };
 
   static Comment fromMap(String id, Map<String, dynamic> m) {
     final repliesRaw = m['replies'];
@@ -603,6 +619,11 @@ class Post {
     this.studyRoomCode,
     this.studyMinutes,
     this.studyTitle,
+    this.isSponsored = false,
+    this.adCampaignId,
+    this.ctaUrl,
+    this.ctaLabel,
+    this.hiddenFromFeed = false,
   });
 
   final String id;
@@ -623,11 +644,17 @@ class Post {
   final String? repostedFromName;
   final DateTime? deletedAt;
   final String? deletedBy;
+
   /// Ortak çalışma odası bağlantısı.
   final String? studyRoomId;
   final String? studyRoomCode;
   final int? studyMinutes;
   final String? studyTitle;
+  final bool isSponsored;
+  final String? adCampaignId;
+  final String? ctaUrl;
+  final String? ctaLabel;
+  final bool hiddenFromFeed;
 
   bool get isStudyRoomInvite {
     if (studyRoomId != null && studyRoomId!.trim().isNotEmpty) return true;
@@ -653,6 +680,11 @@ class Post {
     String? studyRoomCode,
     int? studyMinutes,
     String? studyTitle,
+    bool? isSponsored,
+    String? adCampaignId,
+    String? ctaUrl,
+    String? ctaLabel,
+    bool? hiddenFromFeed,
     bool clearDeleted = false,
   }) {
     return Post(
@@ -678,39 +710,49 @@ class Post {
       studyRoomCode: studyRoomCode ?? this.studyRoomCode,
       studyMinutes: studyMinutes ?? this.studyMinutes,
       studyTitle: studyTitle ?? this.studyTitle,
+      isSponsored: isSponsored ?? this.isSponsored,
+      adCampaignId: adCampaignId ?? this.adCampaignId,
+      ctaUrl: ctaUrl ?? this.ctaUrl,
+      ctaLabel: ctaLabel ?? this.ctaLabel,
+      hiddenFromFeed: hiddenFromFeed ?? this.hiddenFromFeed,
     );
   }
 
   Map<String, dynamic> toMap() => {
-        'authorId': authorId,
-        'authorName': authorName,
-        'authorHandle': authorHandle,
-        'content': content,
-        'createdAt': createdAt.toIso8601String(),
-        'likeCount': likeCount,
-        'replyCount': replyCount,
-        'repostCount': repostCount,
-        'isCommunity': isCommunity,
-        'hashtags': hashtags,
-        'repostedFromId': repostedFromId,
-        'repostedFromName': repostedFromName,
-        'deletedAt': deletedAt?.toIso8601String(),
-        'deletedBy': deletedBy,
-        'studyRoomId': studyRoomId,
-        'studyRoomCode': studyRoomCode,
-        'studyMinutes': studyMinutes,
-        'studyTitle': studyTitle,
-        'media': media
-            .map(
-              (m) => {
-                'url': m.url,
-                'type': m.type.name,
-                if (m.fileName != null && m.fileName!.isNotEmpty)
-                  'fileName': m.fileName,
-              },
-            )
-            .toList(),
-      };
+    'authorId': authorId,
+    'authorName': authorName,
+    'authorHandle': authorHandle,
+    'content': content,
+    'createdAt': createdAt.toIso8601String(),
+    'likeCount': likeCount,
+    'replyCount': replyCount,
+    'repostCount': repostCount,
+    'isCommunity': isCommunity,
+    'hashtags': hashtags,
+    'repostedFromId': repostedFromId,
+    'repostedFromName': repostedFromName,
+    'deletedAt': deletedAt?.toIso8601String(),
+    'deletedBy': deletedBy,
+    'studyRoomId': studyRoomId,
+    'studyRoomCode': studyRoomCode,
+    'studyMinutes': studyMinutes,
+    'studyTitle': studyTitle,
+    'isSponsored': isSponsored,
+    'adCampaignId': adCampaignId,
+    'ctaUrl': ctaUrl,
+    'ctaLabel': ctaLabel,
+    'hiddenFromFeed': hiddenFromFeed,
+    'media': media
+        .map(
+          (m) => {
+            'url': m.url,
+            'type': m.type.name,
+            if (m.fileName != null && m.fileName!.isNotEmpty)
+              'fileName': m.fileName,
+          },
+        )
+        .toList(),
+  };
 
   static Post fromMap(String id, Map<String, dynamic> m) {
     final mediaRaw = m['media'];
@@ -724,15 +766,11 @@ class Post {
         final type = t == 'video'
             ? MediaType.video
             : t == 'file'
-                ? MediaType.file
-                : MediaType.image;
+            ? MediaType.file
+            : MediaType.image;
         final fn = '${item['fileName'] ?? ''}'.trim();
         media.add(
-          MediaItem(
-            url: url,
-            type: type,
-            fileName: fn.isEmpty ? null : fn,
-          ),
+          MediaItem(url: url, type: type, fileName: fn.isEmpty ? null : fn),
         );
       }
     }
@@ -754,10 +792,11 @@ class Post {
     final titleRaw = '${m['studyTitle'] ?? ''}'.trim();
     // Eski duyurulardan kod / süre çıkar
     final content = '${m['content'] ?? ''}';
-    final codeMatch = RegExp(r'Kod:\s*([A-Z0-9]{4,12})', caseSensitive: false)
-        .firstMatch(content);
-    final minsMatch =
-        RegExp(r'·\s*(\d+)\s*dk').firstMatch(content);
+    final codeMatch = RegExp(
+      r'Kod:\s*([A-Z0-9]{4,12})',
+      caseSensitive: false,
+    ).firstMatch(content);
+    final minsMatch = RegExp(r'·\s*(\d+)\s*dk').firstMatch(content);
     return Post(
       id: id,
       authorId: '${m['authorId'] ?? ''}',
@@ -783,8 +822,17 @@ class Post {
           : codeMatch?.group(1)?.toUpperCase(),
       studyMinutes:
           (m['studyMinutes'] as num?)?.toInt() ??
-              int.tryParse(minsMatch?.group(1) ?? ''),
+          int.tryParse(minsMatch?.group(1) ?? ''),
       studyTitle: titleRaw.isEmpty ? null : titleRaw,
+      isSponsored: m['isSponsored'] == true,
+      adCampaignId: '${m['adCampaignId'] ?? ''}'.trim().isEmpty
+          ? null
+          : '${m['adCampaignId']}',
+      ctaUrl: '${m['ctaUrl'] ?? ''}'.trim().isEmpty ? null : '${m['ctaUrl']}',
+      ctaLabel: '${m['ctaLabel'] ?? ''}'.trim().isEmpty
+          ? null
+          : '${m['ctaLabel']}',
+      hiddenFromFeed: m['hiddenFromFeed'] == true,
     );
   }
 }
@@ -826,16 +874,16 @@ class Announcement {
   }
 
   Map<String, dynamic> toMap() => {
-        'title': title,
-        'body': body,
-        'createdAt': createdAt.toIso8601String(),
-        'audience': audience,
-        'isPinned': isPinned,
-        'imageUrl': imageUrl,
-        'communityId': communityId,
-        'communityName': communityName,
-        'communityLogoUrl': communityLogoUrl,
-      };
+    'title': title,
+    'body': body,
+    'createdAt': createdAt.toIso8601String(),
+    'audience': audience,
+    'isPinned': isPinned,
+    'imageUrl': imageUrl,
+    'communityId': communityId,
+    'communityName': communityName,
+    'communityLogoUrl': communityLogoUrl,
+  };
 
   factory Announcement.fromMap(String id, Map<String, dynamic> m) {
     return Announcement(
@@ -885,12 +933,12 @@ class EventApplication {
   }
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'userId': userId,
-        'userName': userName,
-        'createdAt': createdAt.toIso8601String(),
-        'status': status.name,
-      };
+    'id': id,
+    'userId': userId,
+    'userName': userName,
+    'createdAt': createdAt.toIso8601String(),
+    'status': status.name,
+  };
 
   factory EventApplication.fromMap(Map<String, dynamic> m) {
     final statusName = '${m['status'] ?? 'pending'}';
@@ -953,15 +1001,19 @@ class CampusEvent {
   final String? communityName;
   final String? communityLogoUrl;
   final List<EventApplication> applications;
+
   /// campus = tüm kampüs, members = topluluk üyeleri, students = öğrenciler
   final String audience;
   final DateTime? applicationDeadline;
+
   /// Son başvuru geçince false olur; tarih uzatılınca tekrar true.
   final bool applicationsOpen;
+
   /// campus | offcampus
   final String scope;
   final String university;
   final String city;
+
   /// pending | approved | rejected
   final String status;
   final String? organizerCompanyId;
@@ -1048,11 +1100,11 @@ class CampusEvent {
   }
 
   bool hasActiveApplication(String userId) => applications.any(
-        (a) =>
-            a.userId == userId &&
-            (a.status == EventApplicationStatus.pending ||
-                a.status == EventApplicationStatus.approved),
-      );
+    (a) =>
+        a.userId == userId &&
+        (a.status == EventApplicationStatus.pending ||
+            a.status == EventApplicationStatus.approved),
+  );
 
   String applyBlockedReason({
     AppUser? user,
@@ -1109,8 +1161,9 @@ class CampusEvent {
       communityLogoUrl: communityLogoUrl,
       applications: applications ?? this.applications,
       audience: audience ?? this.audience,
-      applicationDeadline:
-          clearDeadline ? null : (applicationDeadline ?? this.applicationDeadline),
+      applicationDeadline: clearDeadline
+          ? null
+          : (applicationDeadline ?? this.applicationDeadline),
       applicationsOpen: applicationsOpen ?? this.applicationsOpen,
       scope: scope ?? this.scope,
       university: university ?? this.university,
@@ -1126,31 +1179,31 @@ class CampusEvent {
   }
 
   Map<String, dynamic> toMap() => {
-        'title': title,
-        'description': description,
-        'location': location,
-        'startsAt': startsAt.toIso8601String(),
-        'capacity': capacity,
-        'applicantCount': applicantCount,
-        'imageUrl': imageUrl,
-        'communityId': communityId,
-        'communityName': communityName,
-        'communityLogoUrl': communityLogoUrl,
-        'applications': applications.map((a) => a.toMap()).toList(),
-        'audience': audience,
-        'applicationDeadline': applicationDeadline?.toIso8601String(),
-        'applicationsOpen': applicationsOpen,
-        'scope': scope,
-        'university': university,
-        'city': city,
-        'status': status,
-        'organizerCompanyId': organizerCompanyId,
-        'organizerCompanyName': organizerCompanyName,
-        'mapUrl': mapUrl,
-        'rules': rules,
-        'priceTiers': priceTiers.map((e) => e.toMap()).toList(),
-        'paymentRequired': paymentRequired,
-      };
+    'title': title,
+    'description': description,
+    'location': location,
+    'startsAt': startsAt.toIso8601String(),
+    'capacity': capacity,
+    'applicantCount': applicantCount,
+    'imageUrl': imageUrl,
+    'communityId': communityId,
+    'communityName': communityName,
+    'communityLogoUrl': communityLogoUrl,
+    'applications': applications.map((a) => a.toMap()).toList(),
+    'audience': audience,
+    'applicationDeadline': applicationDeadline?.toIso8601String(),
+    'applicationsOpen': applicationsOpen,
+    'scope': scope,
+    'university': university,
+    'city': city,
+    'status': status,
+    'organizerCompanyId': organizerCompanyId,
+    'organizerCompanyName': organizerCompanyName,
+    'mapUrl': mapUrl,
+    'rules': rules,
+    'priceTiers': priceTiers.map((e) => e.toMap()).toList(),
+    'paymentRequired': paymentRequired,
+  };
 
   factory CampusEvent.fromMap(String id, Map<String, dynamic> m) {
     final appsRaw = m['applications'];
@@ -1216,15 +1269,14 @@ class EventPriceTier {
   final String currency;
 
   Map<String, dynamic> toMap() => {
-        'label': label,
-        'amount': amount,
-        'currency': currency,
-      };
+    'label': label,
+    'amount': amount,
+    'currency': currency,
+  };
 
   factory EventPriceTier.fromMap(Map<String, dynamic> m) => EventPriceTier(
-        label: '${m['label'] ?? ''}',
-        amount: (m['amount'] as num?)?.toDouble() ?? 0,
-        currency: '${m['currency'] ?? 'TRY'}',
-      );
+    label: '${m['label'] ?? ''}',
+    amount: (m['amount'] as num?)?.toDouble() ?? 0,
+    currency: '${m['currency'] ?? 'TRY'}',
+  );
 }
-

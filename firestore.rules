@@ -35,7 +35,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if true;
-      allow create: if isOwner(userId);
+      allow create: if isOwner(userId) || isAdmin();
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin();
 
@@ -172,6 +172,12 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    /// NFC beta teknik kart logları — yalnız CF yazar, yalnız admin okur.
+    match /nfc_probe_logs/{logId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
     match /event_tickets/{id} {
       allow read: if isAdmin() ||
         (signedIn() && (
@@ -195,9 +201,27 @@ service cloud.firestore {
 
     match /ad_campaigns/{id} {
       allow read: if isAdmin() ||
-        (signedIn() && resource.data.companyId == request.auth.uid) ||
-        (resource.data.status == 'approved');
+        (signedIn() && (
+          resource.data.companyId == request.auth.uid ||
+          resource.data.ownerId == request.auth.uid ||
+          resource.data.communityId == request.auth.uid ||
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid))
+              .data.panelAccess == true &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid))
+              .data.panelOrgId == resource.data.ownerId
+          )
+        ));
       allow write: if false;
+    }
+
+    // Reklam ölçüm detayları yalnızca sunucu tarafından yazılır/okunur.
+    match /ad_reach/{id} {
+      allow read, write: if false;
+    }
+
+    match /ad_email_events/{id} {
+      allow read, write: if false;
     }
 
     match /org_invites/{id} {

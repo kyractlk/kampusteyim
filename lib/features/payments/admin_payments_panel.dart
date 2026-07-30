@@ -112,9 +112,7 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
     _amount.text = cfg.plusAmount > 0 ? cfg.plusAmount.toStringAsFixed(2) : '';
     _days.text = '${cfg.plusDays}';
     final d = cfg.defaults;
-    _okUrl.text = cfg.okUrl.isNotEmpty
-        ? cfg.okUrl
-        : '${d['okUrl'] ?? ''}';
+    _okUrl.text = cfg.okUrl.isNotEmpty ? cfg.okUrl : '${d['okUrl'] ?? ''}';
     _failUrl.text = cfg.failUrl.isNotEmpty
         ? cfg.failUrl
         : '${d['failUrl'] ?? ''}';
@@ -147,10 +145,8 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
         'paytrTestMode': _paytrTest,
         'shopierWebsiteIndex': int.tryParse(_shopierIndex.text.trim()) ?? 1,
         'plusProductName': _productName.text.trim(),
-        'plusAmount': double.tryParse(
-              _amount.text.trim().replaceAll(',', '.'),
-            ) ??
-            0,
+        'plusAmount':
+            double.tryParse(_amount.text.trim().replaceAll(',', '.')) ?? 0,
         'plusDays': int.tryParse(_days.text.trim()) ?? 30,
         'okUrl': _okUrl.text.trim(),
         'failUrl': _failUrl.text.trim(),
@@ -179,9 +175,9 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Kaydedilemedi: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Kaydedilemedi: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -191,9 +187,9 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
   Future<void> _copy(String label, String value) async {
     await Clipboard.setData(ClipboardData(text: value));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label kopyalandı')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$label kopyalandı')));
   }
 
   @override
@@ -209,9 +205,9 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
       children: [
         Text(
           'Ödeme entegrasyonu',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 4),
         const Text(
@@ -221,7 +217,10 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
           style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
         ),
         const SizedBox(height: 16),
-        const Text('Aktif yöntem', style: TextStyle(fontWeight: FontWeight.w800)),
+        const Text(
+          'Aktif yöntem',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
         const SizedBox(height: 6),
         Wrap(
           spacing: 8,
@@ -235,7 +234,10 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
           ],
         ),
         const SizedBox(height: 8),
-        const Text('Açık yöntemler', style: TextStyle(fontWeight: FontWeight.w800)),
+        const Text(
+          'Açık yöntemler',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
         Wrap(
           spacing: 4,
           children: [
@@ -268,7 +270,9 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
             Expanded(
               child: TextField(
                 controller: _amount,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Tutar (TL)',
                   border: OutlineInputBorder(),
@@ -438,22 +442,14 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
                 )
               : const Text('Ödeme ayarlarını kaydet'),
         ),
-        const Divider(height: 36),
-        _section('Bekleyen IBAN ödemeleri'),
-        const Text(
-          'Kullanıcı “havale yaptım” deyince burada onayla.',
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 8),
-        _PendingIbanOrders(),
       ],
     );
   }
 
   Widget _section(String title) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-      );
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+  );
 
   Widget _urlField(
     String label,
@@ -483,7 +479,27 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
   }
 }
 
+class AdminPaymentReviewsPanel extends StatelessWidget {
+  const AdminPaymentReviewsPanel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _PendingIbanOrders(
+      includeProducts: {'plus', 'ad', 'event'},
+      scrollable: true,
+    );
+  }
+}
+
 class _PendingIbanOrders extends StatelessWidget {
+  const _PendingIbanOrders({
+    required this.includeProducts,
+    this.scrollable = false,
+  });
+
+  final Set<String> includeProducts;
+  final bool scrollable;
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -491,7 +507,7 @@ class _PendingIbanOrders extends StatelessWidget {
           .collection('payment_orders')
           .where('status', isEqualTo: 'awaiting_review')
           .orderBy('createdAt', descending: true)
-          .limit(40)
+          .limit(200)
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
@@ -506,19 +522,36 @@ class _PendingIbanOrders extends StatelessWidget {
             child: Center(child: CircularProgressIndicator()),
           );
         }
-        final docs = snap.data!.docs;
+        final docs = snap.data!.docs
+            .where(
+              (d) => includeProducts.contains(
+                '${d.data()['product'] ?? 'plus'}'.toLowerCase(),
+              ),
+            )
+            .toList();
         if (docs.isEmpty) {
-          return const Text(
-            'Bekleyen IBAN yok.',
-            style: TextStyle(color: AppColors.textSecondary),
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                includeProducts.length == 1 && includeProducts.contains('plus')
+                    ? 'Bekleyen Plus ödemesi yok.'
+                    : 'Bekleyen ticari ödeme yok.',
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
+            ),
           );
         }
-        return Column(
-          children: [
-            for (final d in docs)
-              _OrderTile(id: d.id, data: d.data()),
-          ],
-        );
+        final children = [
+          for (final d in docs) _OrderTile(id: d.id, data: d.data()),
+        ];
+        if (scrollable) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            children: children,
+          );
+        }
+        return Column(children: children);
       },
     );
   }
@@ -541,17 +574,27 @@ class _OrderTileState extends State<_OrderTile> {
     try {
       await PaymentsService.reviewOrder(orderId: widget.id, approve: approve);
       if (mounted) {
+        final product = '${widget.data['product'] ?? 'plus'}';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(approve ? 'Onaylandı · Plus açıldı' : 'Reddedildi'),
+            content: Text(
+              approve
+                  ? switch (product) {
+                      'plus' => 'Onaylandı · Plus açıldı',
+                      'ad' => 'Onaylandı · reklam ödemesi doğrulandı',
+                      'event' => 'Onaylandı · etkinlik ödemesi doğrulandı',
+                      _ => 'Ödeme onaylandı',
+                    }
+                  : 'Ödeme reddedildi',
+            ),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Hata: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Hata: $e')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -564,6 +607,13 @@ class _OrderTileState extends State<_OrderTile> {
     final email = '${widget.data['email'] ?? ''}';
     final code = '${widget.data['ibanReference'] ?? ''}';
     final uid = '${widget.data['uid'] ?? ''}';
+    final product = '${widget.data['product'] ?? 'plus'}';
+    final productLabel = switch (product) {
+      'ad' => 'Reklam',
+      'event' => 'Etkinlik',
+      'plus' => 'KampüsteyimPlus',
+      _ => product,
+    };
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -572,7 +622,7 @@ class _OrderTileState extends State<_OrderTile> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '$amount TL · $email',
+              '$productLabel · $amount TL${email.isNotEmpty ? ' · $email' : ''}',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),

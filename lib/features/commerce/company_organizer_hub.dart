@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -7,10 +8,9 @@ import '../../models/models.dart';
 import '../ads/ad_campaign_form.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
-import '../jobs/jobs_provider.dart';
 import 'commerce_service.dart';
 
-/// Firma: bakiye, satışlar, IBAN, çekim, indirim, reklam
+/// Firma organizatörü: bakiye, satışlar, IBAN, çekim, indirim
 class CompanyOrganizerHubScreen extends StatefulWidget {
   const CompanyOrganizerHubScreen({super.key});
 
@@ -133,6 +133,44 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
     if (me == null || !me.isCompany) {
       return const Scaffold(body: Center(child: Text('Firma hesabı gerekli')));
     }
+    if (!me.isEventOrganizer) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Organizatör')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline, size: 42, color: AppColors.navy),
+                const SizedBox(height: 12),
+                const Text(
+                  'Bu bölüm yalnızca etkinlik organizatörü firmalar içindir.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Bilet, bakiye ve etkinlik yönetimi burada yer alır. '
+                  'Reklam ve iş ilanları için firma paneline dönün.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSecondary, height: 1.35),
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () => context.go('/firma/ads'),
+                  child: const Text('Reklam paneline git'),
+                ),
+                TextButton(
+                  onPressed: () => context.go('/firma/dashboard'),
+                  child: const Text('Firma paneline dön'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -151,7 +189,6 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
     final hasIban = s['hasPayoutIban'] == true;
     final sales = (_data?['salesByEvent'] as List? ?? const []);
     final withdrawals = (_data?['withdrawals'] as List? ?? const []);
-    final ads = (_data?['ads'] as List? ?? const []);
     final discounts = (_data?['discounts'] as List? ?? const []);
     final events = context
         .watch<FeedProvider>()
@@ -308,6 +345,15 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
             );
           }),
           const Divider(height: 32),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.campaign_outlined),
+            title: const Text('Reklamlar'),
+            subtitle: const Text('Görsel yükleme ve yayın talepleri'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/firma/ads'),
+          ),
+          const Divider(height: 32),
           const Text('İndirim kodları', style: TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           FilledButton.tonal(
@@ -326,49 +372,6 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
               subtitle: Text(
                 'Kullanım: ${d['usedCount']}/${d['maxUses'] ?? '∞'} · ${d['eventId']}',
               ),
-            );
-          }),
-          const Divider(height: 32),
-          const Text('Reklam talepleri', style: TextStyle(fontWeight: FontWeight.w800)),
-          const Text(
-            'Akış / Reels / Hikâye / Push / Mail — hedef il & üniversite seçimi zorunlu.',
-            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.tonal(
-            onPressed: () async {
-              final events = context
-                  .read<FeedProvider>()
-                  .events
-                  .where((e) => e.organizerCompanyId == me.id)
-                  .map((e) => (id: e.id, title: e.title))
-                  .toList();
-              final jobs = context
-                  .read<JobsProvider>()
-                  .companyJobs
-                  .map((j) => (id: j.id, title: j.title))
-                  .toList();
-              final ok = await AdCampaignFormSheet.open(
-                context,
-                ownerType: 'company',
-                events: events,
-                jobs: jobs,
-              );
-              if (ok == true) await _load();
-            },
-            child: const Text('Reklam talebi gönder'),
-          ),
-          ...ads.map((raw) {
-            final a = Map<String, dynamic>.from(raw as Map);
-            return ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text('${a['title']}'),
-              subtitle: Text(
-                '${a['status']} · ${(a['placements'] as List? ?? []).join(', ')}\n'
-                'Bitiş: ${a['scheduleEnd'] ?? '—'}',
-              ),
-              isThreeLine: true,
             );
           }),
           const Divider(height: 32),

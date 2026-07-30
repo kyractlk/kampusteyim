@@ -3342,6 +3342,28 @@ async function assertPlatformAdmin(uid) {
 }
 
 /**
+ * Cloud Functions için sunucu tarafı RBAC kontrolü.
+ * Süper admin ve staffRoleId taşımayan eski admin hesapları geriye uyumlu
+ * olarak tam yetkilidir; personel hesapları staff_roles kataloğundan doğrulanır.
+ */
+async function assertAdminPermission(uid, permission) {
+  const admin = await assertPlatformAdmin(uid);
+  if (admin.isSuperAdmin === true) return admin;
+  const roleId = String(admin.staffRoleId || '').trim();
+  if (!roleId && admin.role === 'admin') return admin;
+  if (!roleId) {
+    throw new HttpsError('permission-denied', 'Bu işlem için yetkin yok');
+  }
+  const roleSnap = await db.collection('staff_roles').doc(roleId).get();
+  const role = roleSnap.data() || {};
+  const permissions = Array.isArray(role.permissions) ? role.permissions : [];
+  if (role.isSuper === true || permissions.includes(String(permission))) {
+    return admin;
+  }
+  throw new HttpsError('permission-denied', 'Bu işlem için yetkin yok');
+}
+
+/**
  * E-posta ile Auth veya Firestore’da herhangi bir hesap var mı?
  * (öğrenci / firma / topluluk — tür fark etmez)
  */
@@ -5309,6 +5331,79 @@ exports.adminSetUserBadges = onCall(
 );
 
 /**
+ * Admin: rol / yetki bayrakları — doğru Firestore dokümanına yazar.
+ * action: organizer | staff_role | revoke_staff | panel_access
+ */
+exports.adminSetUserRoleFlags = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+
+    const userId = String(request.data?.userId || '').trim();
+    const action = String(request.data?.action || '').trim();
+    if (!userId) throw new HttpsError('invalid-argument', 'userId zorunlu');
+    if (!action) throw new HttpsError('invalid-argument', 'action zorunlu');
+
+    const staffActions = new Set(['staff_role', 'revoke_staff']);
+    await assertAdminPermission(
+      request.auth.uid,
+      staffActions.has(action) ? 'manage_admins' : 'manage_users',
+    );
+
+    const userDoc = await findUserDocByAnyId(userId);
+    if (!userDoc) throw new HttpsError('not-found', 'Kullanıcı yok');
+    const userRef = userDoc.ref;
+    const u = userDoc.data() || {};
+
+    const now = new Date().toISOString();
+    const patch = { updatedAt: now, roleUpdatedAt: now, roleUpdatedBy: request.auth.uid };
+
+    if (action === 'organizer') {
+      patch.isEventOrganizer = request.data?.value === true;
+    } else if (action === 'panel_access') {
+      patch.panelAccess = request.data?.value === true;
+    } else if (action === 'staff_role') {
+      const roleId = String(request.data?.roleId || '').trim();
+      if (!roleId) throw new HttpsError('invalid-argument', 'roleId zorunlu');
+      const roleSnap = await db.collection('staff_roles').doc(roleId).get();
+      if (!roleSnap.exists) throw new HttpsError('not-found', 'Rol yok');
+      const role = roleSnap.data() || {};
+      if (u.isSuperAdmin === true && role.isSuper !== true) {
+        throw new HttpsError('failed-precondition', 'Süper admin rolü düşürülemez');
+      }
+      patch.role = 'admin';
+      patch.staffRoleId = roleId;
+      patch.isSuperAdmin = role.isSuper === true;
+    } else if (action === 'revoke_staff') {
+      if (u.isSuperAdmin === true) {
+        throw new HttpsError('failed-precondition', 'Süper admin kaldırılamaz');
+      }
+      patch.role = u.isCommunity === true ? 'community' : 'student';
+      patch.staffRoleId = FieldValue.delete();
+      patch.isSuperAdmin = false;
+    } else {
+      throw new HttpsError(
+        'invalid-argument',
+        'action: organizer|panel_access|staff_role|revoke_staff',
+      );
+    }
+
+    await userRef.set(patch, { merge: true });
+    const after = (await userRef.get()).data() || {};
+    return {
+      ok: true,
+      action,
+      userId: userDoc.id,
+      role: after.role || '',
+      staffRoleId: after.staffRoleId || null,
+      isSuperAdmin: after.isSuperAdmin === true,
+      isEventOrganizer: after.isEventOrganizer === true,
+      panelAccess: after.panelAccess === true,
+    };
+  },
+);
+
+/**
  * Admin: kullanıcı kısıtlaması — doğru Firestore dokümanına yazar.
  * type: none | warn | mute | postBan | fullBan
  */
@@ -6428,6 +6523,38 @@ exports.updateSmtpConfig = onCall(
   },
 );
 
+/**
+ * NFC beta probu: yalnız platform admini ham teknik kart raporu kaydedebilir.
+ * İstemci Firestore'a doğrudan yazamaz; payload 32 KB ile sınırlıdır.
+ */
+exports.logNfcProbe = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    const probe = request.data?.probe;
+    if (!probe || typeof probe !== 'object' || Array.isArray(probe)) {
+      throw new HttpsError('invalid-argument', 'Geçerli NFC probe verisi gerekli');
+    }
+    const serialized = JSON.stringify(probe);
+    if (Buffer.byteLength(serialized, 'utf8') > 32 * 1024) {
+      throw new HttpsError('invalid-argument', 'NFC probe verisi çok büyük');
+    }
+    const parsed = JSON.parse(serialized);
+    const ref = db.collection('nfc_probe_logs').doc();
+    await ref.set({
+      schemaVersion: 1,
+      adminUid: request.auth.uid,
+      adminEmail: sanitizePlainText(request.auth.token?.email || '', 160),
+      probe: parsed,
+      createdAt: FieldValue.serverTimestamp(),
+      createdAtIso: new Date().toISOString(),
+      source: 'kampusteyim_nfc_beta_android',
+    });
+    return { ok: true, logId: ref.id };
+  },
+);
+
 const { commerceModule } = require('./commerce');
 const _commerce = commerceModule({
   db,
@@ -6445,6 +6572,13 @@ exports.adminReviewWithdrawal = _commerce.adminReviewWithdrawal;
 exports.createEventDiscount = _commerce.createEventDiscount;
 exports.submitAdCampaign = _commerce.submitAdCampaign;
 exports.quoteAdCampaign = _commerce.quoteAdCampaign;
+exports.acceptAdQuote = _commerce.acceptAdQuote;
+exports.declineAdQuote = _commerce.declineAdQuote;
+exports.getMyAdCampaigns = _commerce.getMyAdCampaigns;
+exports.updateAdCampaign = _commerce.updateAdCampaign;
+exports.deleteAdCampaign = _commerce.deleteAdCampaign;
+exports.adminDeleteAdCampaign = _commerce.adminDeleteAdCampaign;
+exports.trackAdEvent = _commerce.trackAdEvent;
 exports.adminReviewAdCampaign = _commerce.adminReviewAdCampaign;
 exports.getActiveAds = _commerce.getActiveAds;
 exports.getMyTickets = _commerce.getMyTickets;
@@ -6453,9 +6587,12 @@ const { orgGrowthModule } = require('./org_growth');
 const _orgGrowth = orgGrowthModule({
   db,
   onCall,
+  onRequest,
+  onSchedule,
   HttpsError,
   assertPlatformAdmin,
   sanitizePlainText,
+  escapeHtml,
   FieldValue,
   sendMail,
   sendFcmToUser,
@@ -6467,6 +6604,9 @@ exports.respondOrgInvite = _orgGrowth.respondOrgInvite;
 exports.revokeOrgMember = _orgGrowth.revokeOrgMember;
 exports.getOrgInvite = _orgGrowth.getOrgInvite;
 exports.dispatchAdCampaignReach = _orgGrowth.dispatchAdCampaignReach;
+exports.dispatchScheduledAdReach = _orgGrowth.dispatchScheduledAdReach;
+exports.trackAdEmailOpen = _orgGrowth.trackAdEmailOpen;
+exports.trackAdEmailClick = _orgGrowth.trackAdEmailClick;
 
 const { paymentsModule } = require('./payments');
 const _payments = paymentsModule({
@@ -6475,6 +6615,7 @@ const _payments = paymentsModule({
   onRequest,
   HttpsError,
   assertPlatformAdmin,
+  assertAdminPermission,
   sanitizePlainText,
   fulfillEventOrder: _commerce.fulfillEventOrder,
   fulfillAdOrder: _commerce.fulfillAdOrder,

@@ -58,7 +58,7 @@ class StoryRingBar extends StatelessWidget {
                   showDragHandle: true,
                   builder: (_) => Padding(
                     padding: const EdgeInsets.all(16),
-                    child: AdCard(ad: storyAd),
+                    child: AdCard(ad: storyAd, placement: 'stories'),
                   ),
                 );
               },
@@ -210,6 +210,10 @@ class _AdStoryRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final name =
+        '${ad['ownerName'] ?? ad['companyName'] ?? 'Sponsor'}'.trim();
+    final photo = '${ad['ownerPhotoUrl'] ?? ''}'.trim();
+    final short = name.split(' ').first;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(40),
@@ -218,26 +222,21 @@ class _AdStoryRing extends StatelessWidget {
         child: Column(
           children: [
             Container(
-              width: 64,
-              height: 64,
+              padding: const EdgeInsets.all(2.5),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(color: AppColors.navy, width: 2.5),
-                color: AppColors.navy.withValues(alpha: 0.08),
               ),
-              alignment: Alignment.center,
-              child: const Text(
-                'REKLAM',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.navy,
-                ),
+              child: UserAvatar(
+                name: name,
+                photoUrl: photo.startsWith('http') ? photo : null,
+                radius: 28,
+                isCommunity: ad['isCommunity'] == true,
               ),
             ),
             const SizedBox(height: 6),
             Text(
-              '${ad['companyName'] ?? 'Reklam'}'.split(' ').first,
+              short.isEmpty ? 'Sponsor' : short,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),

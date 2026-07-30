@@ -346,12 +346,47 @@ class AdminProvider extends ChangeNotifier {
     }
   }
 
+  /// Rol bayrakları yalnızca Cloud Functions üzerinden yazılır; istemci
+  /// başka kullanıcının ayrıcalıklı alanlarına Firestore kuralları gereği
+  /// doğrudan yazamaz.
+  Future<Map<String, dynamic>> _callRoleFlags(Map<String, dynamic> data) async {
+    final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+        .httpsCallable('adminSetUserRoleFlags');
+    final res = await callable.call(data);
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  /// Firma hesabına etkinlik organizatörlüğü ver / kaldır.
+  Future<void> setEventOrganizer({
+    required AuthProvider auth,
+    required String userId,
+    required bool value,
+  }) async {
+    final u = auth.findUser(userId) ?? await auth.ensureUserLoaded(userId);
+    if (u == null) {
+      status = 'Kullanıcı bulunamadı: $userId';
+      notifyListeners();
+      throw StateError('Kullanıcı bulunamadı');
+    }
+    await _callRoleFlags({
+      'userId': userId,
+      'action': 'organizer',
+      'value': value,
+    });
+    auth.upsertUser(
+      u.copyWith(isEventOrganizer: value),
+      syncRemote: false,
+    );
+    status = value ? 'Etkinlik organizatörü yapıldı' : 'Organizatörlük kaldırıldı';
+    notifyListeners();
+  }
+
   Future<void> assignStaffRole({
     required AuthProvider auth,
     required String userId,
     required String roleId,
   }) async {
-    final u = auth.findUser(userId);
+    final u = auth.findUser(userId) ?? await auth.ensureUserLoaded(userId);
     final role = roleById(roleId);
     if (u == null || role == null) return;
     if (u.isSuperAdmin && !role.isSuper) {
@@ -359,14 +394,24 @@ class AdminProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    auth.upsertUser(
-      u.copyWith(
-        role: UserRole.admin,
-        staffRoleId: roleId,
-        isSuperAdmin: role.isSuper,
-      ),
-    );
-    status = '${u.fullName} → ${role.name}';
+    try {
+      await _callRoleFlags({
+        'userId': userId,
+        'action': 'staff_role',
+        'roleId': roleId,
+      });
+      auth.upsertUser(
+        u.copyWith(
+          role: UserRole.admin,
+          staffRoleId: roleId,
+          isSuperAdmin: role.isSuper,
+        ),
+        syncRemote: false,
+      );
+      status = '${u.fullName} → ${role.name}';
+    } catch (e) {
+      status = 'Rol atanamadı: $e';
+    }
     notifyListeners();
   }
 
@@ -374,21 +419,27 @@ class AdminProvider extends ChangeNotifier {
     required AuthProvider auth,
     required String userId,
   }) async {
-    final u = auth.findUser(userId);
+    final u = auth.findUser(userId) ?? await auth.ensureUserLoaded(userId);
     if (u == null) return;
     if (u.isSuperAdmin) {
       status = 'Süper admin kaldırılamaz';
       notifyListeners();
       return;
     }
-    auth.upsertUser(
-      u.copyWith(
-        role: UserRole.student,
-        clearStaffRole: true,
-        isSuperAdmin: false,
-      ),
-    );
-    status = 'Admin erişimi kaldırıldı';
+    try {
+      await _callRoleFlags({'userId': userId, 'action': 'revoke_staff'});
+      auth.upsertUser(
+        u.copyWith(
+          role: u.isCommunity ? UserRole.community : UserRole.student,
+          clearStaffRole: true,
+          isSuperAdmin: false,
+        ),
+        syncRemote: false,
+      );
+      status = 'Admin erişimi kaldırıldı';
+    } catch (e) {
+      status = 'Admin erişimi kaldırılamadı: $e';
+    }
     notifyListeners();
   }
 

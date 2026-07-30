@@ -207,6 +207,8 @@ class CompanyDashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final jobs = context.watch<JobsProvider>();
+    final me = context.watch<AuthProvider>().user;
+    final isOrganizer = me?.isEventOrganizer == true;
     if (jobs.company == null) {
       return const CompanyLoginScreen();
     }
@@ -237,9 +239,11 @@ class CompanyDashboardScreen extends StatelessWidget {
                             color: AppColors.textPrimary,
                           ),
                         ),
-                        const Text(
-                          'Firma Online · işveren paneli',
-                          style: TextStyle(
+                        Text(
+                          isOrganizer
+                              ? 'Firma Online · organizatör paneli'
+                              : 'Firma Online · işveren paneli',
+                          style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textSecondary,
                             fontWeight: FontWeight.w500,
@@ -264,6 +268,51 @@ class CompanyDashboardScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+                PopupMenuButton<String>(
+                  tooltip: 'Menü',
+                  onSelected: (v) {
+                    switch (v) {
+                      case 'ads':
+                        context.push('/firma/ads');
+                      case 'events':
+                        context.push('/firma/events');
+                      case 'organizer':
+                        context.push('/firma/organizer');
+                      case 'students':
+                        context.push('/firma/students');
+                      case 'ai':
+                        final open = jobs.companyJobs
+                            .where((j) => j.status == JobStatus.open);
+                        if (open.isEmpty) return;
+                        jobs.rankApplicantsWithAi(open.first);
+                        context.push('/firma/ai');
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'ads',
+                      child: Text('Reklamlar'),
+                    ),
+                    if (isOrganizer) ...[
+                      const PopupMenuItem(
+                        value: 'events',
+                        child: Text('Etkinlikler'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'organizer',
+                        child: Text('Organizatör'),
+                      ),
+                    ],
+                    const PopupMenuItem(
+                      value: 'students',
+                      child: Text('Öğrenci tara'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'ai',
+                      child: Text('Firma AI'),
+                    ),
+                  ],
+                ),
                 IconButton(
                   tooltip: 'Kampüs akışı',
                   onPressed: () => context.go('/home'),
@@ -287,6 +336,36 @@ class CompanyDashboardScreen extends StatelessWidget {
             ),
             body: Column(
               children: [
+                if (!wide)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ActionChip(
+                          avatar: const Icon(Icons.campaign_outlined, size: 18),
+                          label: const Text('Reklamlar'),
+                          onPressed: () => context.push('/firma/ads'),
+                        ),
+                        if (isOrganizer) ...[
+                          ActionChip(
+                            avatar: const Icon(Icons.event_outlined, size: 18),
+                            label: const Text('Etkinlikler'),
+                            onPressed: () => context.push('/firma/events'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(
+                              Icons.account_balance_wallet_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('Organizatör'),
+                            onPressed: () => context.push('/firma/organizer'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 if (wide)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -321,7 +400,10 @@ class CompanyDashboardScreen extends StatelessWidget {
                           children: [
                             SizedBox(
                               width: 280,
-                              child: _SideNav(jobs: jobs),
+                              child: _SideNav(
+                                jobs: jobs,
+                                isOrganizer: isOrganizer,
+                              ),
                             ),
                             const VerticalDivider(width: 1),
                             Expanded(child: _JobsPane(jobs: jobs)),
@@ -378,8 +460,9 @@ class _FirmaStat extends StatelessWidget {
 }
 
 class _SideNav extends StatelessWidget {
-  const _SideNav({required this.jobs});
+  const _SideNav({required this.jobs, required this.isOrganizer});
   final JobsProvider jobs;
+  final bool isOrganizer;
 
   @override
   Widget build(BuildContext context) {
@@ -393,16 +476,24 @@ class _SideNav extends StatelessWidget {
           onTap: () {},
         ),
         ListTile(
-          leading: const Icon(Icons.event_outlined),
-          title: const Text('Etkinlikler'),
-          onTap: () => context.push('/firma/events'),
+          leading: const Icon(Icons.campaign_outlined),
+          title: const Text('Reklamlar'),
+          subtitle: const Text('Görsel yükle · yayın talebi'),
+          onTap: () => context.push('/firma/ads'),
         ),
-        ListTile(
-          leading: const Icon(Icons.account_balance_wallet_outlined),
-          title: const Text('Organizatör · bakiye'),
-          subtitle: const Text('Satış, çekim, reklam'),
-          onTap: () => context.push('/firma/organizer'),
-        ),
+        if (isOrganizer) ...[
+          ListTile(
+            leading: const Icon(Icons.event_outlined),
+            title: const Text('Etkinlikler'),
+            onTap: () => context.push('/firma/events'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.account_balance_wallet_outlined),
+            title: const Text('Organizatör'),
+            subtitle: const Text('Bilet · bakiye · çekim'),
+            onTap: () => context.push('/firma/organizer'),
+          ),
+        ],
         ListTile(
           leading: const Icon(Icons.people_outline),
           title: const Text('Öğrenci tara'),
@@ -413,7 +504,8 @@ class _SideNav extends StatelessWidget {
           title: const Text('Firma AI'),
           subtitle: Text(jobs.status ?? 'Başvuranları sırala'),
           onTap: () {
-            final open = jobs.companyJobs.where((j) => j.status == JobStatus.open);
+            final open =
+                jobs.companyJobs.where((j) => j.status == JobStatus.open);
             if (open.isEmpty) return;
             jobs.rankApplicantsWithAi(open.first);
             context.push('/firma/ai');

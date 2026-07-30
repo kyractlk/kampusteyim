@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/icons/mt_icons.dart';
 import '../../core/storage/media_upload.dart';
@@ -24,6 +25,7 @@ import '../admin/admin_permissions.dart';
 import '../admin/admin_provider.dart';
 import '../ads/ads_provider.dart';
 import '../auth/data/auth_provider.dart';
+import '../commerce/commerce_service.dart';
 import '../home/home_shell.dart';
 import '../moderation/moderation_models.dart';
 import '../moderation/report_sheet.dart';
@@ -47,21 +49,19 @@ class FeedScreen extends StatelessWidget {
     final posts = user == null
         ? allPosts
         : () {
-            final filtered = allPosts
-                .where((p) {
-                  if (user.blocks(p.authorId)) return false;
-                  final author = auth.findUser(p.authorId);
-                  if (author?.blocks(user.id) ?? false) return false;
-                  // Gizli hesap: yalnızca kendi / takipçiler görür (Reels ile aynı).
-                  if (author != null &&
-                      author.isPrivateAccount &&
-                      !auth.idsFor(p.authorId).contains(user.id) &&
-                      !auth.follows(p.authorId)) {
-                    return false;
-                  }
-                  return true;
-                })
-                .toList();
+            final filtered = allPosts.where((p) {
+              if (user.blocks(p.authorId)) return false;
+              final author = auth.findUser(p.authorId);
+              if (author?.blocks(user.id) ?? false) return false;
+              // Gizli hesap: yalnızca kendi / takipçiler görür (Reels ile aynı).
+              if (author != null &&
+                  author.isPrivateAccount &&
+                  !auth.idsFor(p.authorId).contains(user.id) &&
+                  !auth.follows(p.authorId)) {
+                return false;
+              }
+              return true;
+            }).toList();
             filtered.sort((a, b) {
               final authorA = auth.findUser(a.authorId);
               final authorB = auth.findUser(b.authorId);
@@ -73,7 +73,8 @@ class FeedScreen extends StatelessWidget {
                 replyCount: a.replyCount,
                 repostCount: a.repostCount,
                 followingAuthor: auth.follows(a.authorId),
-                friendOfFriend: authorA != null &&
+                friendOfFriend:
+                    authorA != null &&
                     CampusAffinity.isFriendOfFriend(
                       viewer: user,
                       candidate: authorA,
@@ -88,7 +89,8 @@ class FeedScreen extends StatelessWidget {
                 replyCount: b.replyCount,
                 repostCount: b.repostCount,
                 followingAuthor: auth.follows(b.authorId),
-                friendOfFriend: authorB != null &&
+                friendOfFriend:
+                    authorB != null &&
                     CampusAffinity.isFriendOfFriend(
                       viewer: user,
                       candidate: authorB,
@@ -123,140 +125,142 @@ class FeedScreen extends StatelessWidget {
         onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
         behavior: HitTestBehavior.deferToChild,
         child: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            pinned: true,
-            backgroundColor: AppColors.surface.withValues(alpha: 0.94),
-            // PC'de marka solda; merkezde sadece "Akış"
-            title: wide
-                ? const Text(
-                    'Akış',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  )
-                : const MtTitle(),
-            actions: const [FeedAppBarActions()],
-          ),
-          if (user != null && user.restrictionActive)
-            SliverToBoxAdapter(
-              child: Container(
-                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.crimson.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: AppColors.crimson.withValues(alpha: 0.35),
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              backgroundColor: AppColors.surface.withValues(alpha: 0.94),
+              // PC'de marka solda; merkezde sadece "Akış"
+              title: wide
+                  ? const Text(
+                      'Akış',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    )
+                  : const MtTitle(),
+              actions: const [FeedAppBarActions()],
+            ),
+            if (user != null && user.restrictionActive)
+              SliverToBoxAdapter(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.crimson.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: AppColors.crimson.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const MtIcon(
+                        MtIcons.ban,
+                        size: 22,
+                        color: AppColors.crimson,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          user.isFullyBanned
+                              ? 'Hesabın askıda: ${user.restrictionReason}'
+                              : 'Paylaşım yasağın var: ${user.restrictionReason}'
+                                    '${user.restrictionUntil != null ? '\nBitiş: ${user.restrictionUntil!.toLocal()}' : ''}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: Row(
-                  children: [
-                    const MtIcon(MtIcons.ban,
-                        size: 22, color: AppColors.crimson),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        user.isFullyBanned
-                            ? 'Hesabın askıda: ${user.restrictionReason}'
-                            : 'Paylaşım yasağın var: ${user.restrictionReason}'
-                                '${user.restrictionUntil != null ? '\nBitiş: ${user.restrictionUntil!.toLocal()}' : ''}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            if (user != null) const SliverToBoxAdapter(child: StoryRingBar()),
+            if (user != null)
+              const SliverToBoxAdapter(child: SuggestedPeopleRail()),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: _ComposerCard(
+                  enabled: auth.isAuthenticated && !restricted && !needsLogo,
+                  lockMessage: needsLogo
+                      ? 'Topluluk logosu yüklemeden paylaşım yapamazsın.'
+                      : spectator
+                      ? 'İzleyici modunda paylaşım yapılamaz. Gizlilik ayarlarından kapatabilirsin.'
+                      : restricted
+                      ? 'Paylaşım yasağın nedeniyle gönderi atamazsın.'
+                      : 'Paylaşım yapmak için giriş yapmalısın.',
+                  onTapLocked: () {
+                    if (!auth.isAuthenticated) {
+                      AuthGate.requireAuth(
+                        context,
+                        message: 'Paylaşım yapmak için giriş yapmalısın.',
+                      );
+                      return;
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          needsLogo
+                              ? 'Önce topluluk logosunu yükle (Topluluk paneli).'
+                              : spectator
+                              ? 'İzleyici modu açık: yalnızca içerik okuyabilirsin.'
+                              : 'Paylaşım yasağın aktif.',
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    );
+                  },
+                  onSubmit: (text, media) async {
+                    final u = auth.user!;
+                    if (!u.canPost || !u.communityCanPublish) {
+                      return 'Paylaşım yapılamıyor';
+                    }
+                    final result = await context.read<FeedProvider>().addPost(
+                      authorId: u.id,
+                      authorName: u.fullName,
+                      authorHandle: u.handle,
+                      content: text,
+                      media: media,
+                      isCommunity: u.isCommunity,
+                      directory: auth.directory,
+                    );
+                    if (!context.mounted) return result;
+                    if (result != null) {
+                      final msg = result.startsWith('WARN:')
+                          ? result.substring(5)
+                          : result;
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(msg)));
+                    }
+                    return result;
+                  },
+                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.06),
               ),
             ),
-          if (user != null)
-            const SliverToBoxAdapter(child: StoryRingBar()),
-          if (user != null)
-            const SliverToBoxAdapter(child: SuggestedPeopleRail()),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: _ComposerCard(
-                enabled: auth.isAuthenticated && !restricted && !needsLogo,
-                lockMessage: needsLogo
-                    ? 'Topluluk logosu yüklemeden paylaşım yapamazsın.'
-                    : spectator
-                        ? 'İzleyici modunda paylaşım yapılamaz. Gizlilik ayarlarından kapatabilirsin.'
-                        : restricted
-                            ? 'Paylaşım yasağın nedeniyle gönderi atamazsın.'
-                            : 'Paylaşım yapmak için giriş yapmalısın.',
-                onTapLocked: () {
-                  if (!auth.isAuthenticated) {
-                    AuthGate.requireAuth(
-                      context,
-                      message: 'Paylaşım yapmak için giriş yapmalısın.',
-                    );
-                    return;
-                  }
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        needsLogo
-                            ? 'Önce topluluk logosunu yükle (Topluluk paneli).'
-                            : spectator
-                                ? 'İzleyici modu açık: yalnızca içerik okuyabilirsin.'
-                                : 'Paylaşım yasağın aktif.',
-                      ),
-                    ),
-                  );
-                },
-                onSubmit: (text, media) async {
-                  final u = auth.user!;
-                  if (!u.canPost || !u.communityCanPublish) {
-                    return 'Paylaşım yapılamıyor';
-                  }
-                  final result = await context.read<FeedProvider>().addPost(
-                        authorId: u.id,
-                        authorName: u.fullName,
-                        authorHandle: u.handle,
-                        content: text,
-                        media: media,
-                        isCommunity: u.isCommunity,
-                        directory: auth.directory,
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+              sliver: SliverList.separated(
+                itemCount: posts.length,
+                separatorBuilder: (context, index) {
+                  final ads = context.read<AdsProvider>();
+                  if ((index + 1) % 4 == 0) {
+                    final ad = ads.pick(ads.feed);
+                    if (ad != null) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: AdCard(ad: ad, compact: true, placement: 'feed'),
                       );
-                  if (!context.mounted) return result;
-                  if (result != null) {
-                    final msg = result.startsWith('WARN:')
-                        ? result.substring(5)
-                        : result;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(msg)),
-                    );
+                    }
                   }
-                  return result;
+                  return const SizedBox(height: 12);
                 },
-              ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.06),
+                itemBuilder: (context, index) {
+                  return PostCard(post: posts[index])
+                      .animate()
+                      .fadeIn(delay: (40 * index).ms)
+                      .slideY(begin: 0.04);
+                },
+              ),
             ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-            sliver: SliverList.separated(
-              itemCount: posts.length,
-              separatorBuilder: (context, index) {
-                final ads = context.read<AdsProvider>();
-                if ((index + 1) % 4 == 0) {
-                  final ad = ads.pick(ads.feed);
-                  if (ad != null) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: AdCard(ad: ad, compact: true),
-                    );
-                  }
-                }
-                return const SizedBox(height: 12);
-              },
-              itemBuilder: (context, index) {
-                return PostCard(post: posts[index])
-                    .animate()
-                    .fadeIn(delay: (40 * index).ms)
-                    .slideY(begin: 0.04);
-              },
-            ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -469,11 +473,7 @@ class _ComposerCardState extends State<_ComposerCard> {
           isFile: true,
         );
         media.add(
-          MediaItem(
-            url: url,
-            type: MediaType.file,
-            fileName: _docFile!.name,
-          ),
+          MediaItem(url: url, type: MediaType.file, fileName: _docFile!.name),
         );
       }
       final result = await widget.onSubmit(text, media);
@@ -491,7 +491,9 @@ class _ComposerCardState extends State<_ComposerCard> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -591,7 +593,9 @@ class _ComposerCardState extends State<_ComposerCard> {
                             ),
                             title: Text(
                               u.fullName,
-                              style: const TextStyle(fontWeight: FontWeight.w700),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                             subtitle: Text(u.handle),
                           ),
@@ -630,9 +634,9 @@ class _ComposerCardState extends State<_ComposerCard> {
                   child: Text(
                     '$uniqueTags benzersiz hashtag',
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: AppColors.cyan,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      color: AppColors.cyan,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               Row(
@@ -699,13 +703,10 @@ class _ComposerCardState extends State<_ComposerCard> {
 }
 
 class PostCard extends StatelessWidget {
-  const PostCard({
-    super.key,
-    required this.post,
-    this.openPostOnTap = true,
-  });
+  const PostCard({super.key, required this.post, this.openPostOnTap = true});
 
   final Post post;
+
   /// Detay sayfasında false — tekrar push spam’ini önler.
   final bool openPostOnTap;
 
@@ -726,8 +727,8 @@ class PostCard extends StatelessWidget {
           color: post.isStudyRoomInvite
               ? AppColors.cyan.withValues(alpha: 0.65)
               : post.isCommunity
-                  ? AppColors.cyan.withValues(alpha: 0.45)
-                  : AppColors.border,
+              ? AppColors.cyan.withValues(alpha: 0.45)
+              : AppColors.border,
           width: post.isStudyRoomInvite ? 1.4 : 1,
         ),
       ),
@@ -744,14 +745,17 @@ class PostCard extends StatelessWidget {
               if (post.repostedFromName != null) ...[
                 Row(
                   children: [
-                    const MtIcon(MtIcons.repost,
-                        size: 14, color: AppColors.textSecondary),
+                    const MtIcon(
+                      MtIcons.repost,
+                      size: 14,
+                      color: AppColors.textSecondary,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       '${post.authorName} yeniden paylaştı',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -790,7 +794,8 @@ class PostCard extends StatelessWidget {
                                 child: Text(
                                   post.authorName,
                                   style: const TextStyle(
-                                      fontWeight: FontWeight.w800),
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -817,22 +822,25 @@ class PostCard extends StatelessWidget {
                           Text(
                             '${post.authorHandle} · $time'
                             '${author != null && author.affiliatedCommunityName != null && !author.hasAffiliation ? ' · ${author.affiliatedCommunityName}' : ''}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
+                            style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: AppColors.textSecondary),
                           ),
                           if (author != null &&
                               author.hasAffiliation &&
-                              (author.affiliatedCommunityName?.trim().isNotEmpty ??
+                              (author.affiliatedCommunityName
+                                      ?.trim()
+                                      .isNotEmpty ??
                                   false))
                             AffiliationBadge(
                               orgName: author.affiliatedCommunityName!.trim(),
-                              logoUrl: author.affiliatedOrgLogoUrl ??
+                              logoUrl:
+                                  author.affiliatedOrgLogoUrl ??
                                   (author.affiliatedCommunityId != null
                                       ? auth
-                                          .findUser(author.affiliatedCommunityId!)
-                                          ?.communityLogoUrl
+                                            .findUser(
+                                              author.affiliatedCommunityId!,
+                                            )
+                                            ?.communityLogoUrl
                                       : null),
                               orgId: author.affiliatedCommunityId,
                               compact: true,
@@ -843,8 +851,11 @@ class PostCard extends StatelessWidget {
                   ),
                   PopupMenuButton<String>(
                     tooltip: 'Diğer',
-                    icon: const Icon(Icons.more_horiz_rounded,
-                        size: 20, color: AppColors.textSecondary),
+                    icon: const Icon(
+                      Icons.more_horiz_rounded,
+                      size: 20,
+                      color: AppColors.textSecondary,
+                    ),
                     onSelected: (v) async {
                       final me = auth.user;
                       if (v == 'share') {
@@ -879,6 +890,15 @@ class PostCard extends StatelessWidget {
                                 onPressed: () => Navigator.pop(ctx, false),
                                 child: const Text('Vazgeç'),
                               ),
+                              if (post.isSponsored)
+                                const Text(
+                                  'Sponsorlu',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               FilledButton(
                                 onPressed: () => Navigator.pop(ctx, true),
                                 child: const Text('Sil'),
@@ -922,11 +942,13 @@ class PostCard extends StatelessWidget {
                     itemBuilder: (ctx) {
                       final me = auth.user;
                       final admin = ctx.read<AdminProvider>();
-                      final isOwn = me != null &&
+                      final isOwn =
+                          me != null &&
                           (post.authorId == me.id ||
                               auth.idsFor(me.id).contains(post.authorId) ||
                               auth.idsFor(post.authorId).contains(me.id));
-                      final canMod = admin.can(me, AdminPermission.moderateFeed) ||
+                      final canMod =
+                          admin.can(me, AdminPermission.moderateFeed) ||
                           admin.can(me, AdminPermission.restrictUsers);
                       return [
                         const PopupMenuItem(
@@ -979,7 +1001,9 @@ class PostCard extends StatelessWidget {
                           .map((m) => m.type == MediaType.video)
                           .toList(),
                     ),
-                  ...post.media.where((m) => m.type == MediaType.file).map(
+                  ...post.media
+                      .where((m) => m.type == MediaType.file)
+                      .map(
                         (m) => Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: ListTile(
@@ -996,8 +1020,9 @@ class PostCard extends StatelessWidget {
                               m.fileName ?? 'Dosya',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                             subtitle: const Text('İndir · ders notu / ek'),
                             trailing: IconButton(
@@ -1011,7 +1036,9 @@ class PostCard extends StatelessWidget {
                                   if (!context.mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Dosya hazır · kaydet / paylaş'),
+                                      content: Text(
+                                        'Dosya hazır · kaydet / paylaş',
+                                      ),
                                     ),
                                   );
                                 } catch (e) {
@@ -1026,6 +1053,33 @@ class PostCard extends StatelessWidget {
                           ),
                         ),
                       ),
+                ],
+                if (post.isSponsored &&
+                    (post.ctaUrl?.trim().isNotEmpty ?? false)) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () async {
+                        if (post.adCampaignId != null) {
+                          await CommerceService.trackAd(
+                            adId: post.adCampaignId!,
+                            event: 'click',
+                            placement: 'push',
+                          );
+                        }
+                        final uri = Uri.tryParse(post.ctaUrl!);
+                        if (uri != null) {
+                          await launchUrl(
+                            uri,
+                            mode: LaunchMode.externalApplication,
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      label: Text(post.ctaLabel ?? 'Detayları Gör'),
+                    ),
+                  ),
                 ],
               ],
               const SizedBox(height: 10),
@@ -1047,14 +1101,14 @@ class PostCard extends StatelessWidget {
                       feed.toggleLike(post.id);
                       if (!wasLiked && post.authorId != auth.user!.id) {
                         context.read<NotificationProvider>().pushSocial(
-                              toUserId: post.authorId,
-                              title: 'Yeni beğeni',
-                              body: '${auth.user!.fullName} gönderini beğendi',
-                              emoji: 'LIKE',
-                              type: 'like',
-                              actorId: auth.user!.id,
-                              targetId: post.id,
-                            );
+                          toUserId: post.authorId,
+                          title: 'Yeni beğeni',
+                          body: '${auth.user!.fullName} gönderini beğendi',
+                          emoji: 'LIKE',
+                          type: 'like',
+                          actorId: auth.user!.id,
+                          targetId: post.id,
+                        );
                       }
                     },
                   ),
@@ -1079,15 +1133,14 @@ class PostCard extends StatelessWidget {
                       feed.toggleRepost(postId: post.id, user: auth.user!);
                       if (!was && post.authorId != auth.user!.id) {
                         context.read<NotificationProvider>().pushSocial(
-                              toUserId: post.authorId,
-                              title: 'Yeniden paylaşım',
-                              body:
-                                  '${auth.user!.fullName} gönderini repostladı',
-                              emoji: 'RP',
-                              type: 'repost',
-                              actorId: auth.user!.id,
-                              targetId: post.id,
-                            );
+                          toUserId: post.authorId,
+                          title: 'Yeniden paylaşım',
+                          body: '${auth.user!.fullName} gönderini repostladı',
+                          emoji: 'RP',
+                          type: 'repost',
+                          actorId: auth.user!.id,
+                          targetId: post.id,
+                        );
                       }
                     },
                   ),
@@ -1137,9 +1190,7 @@ class _StudyRoomInvitePanelState extends State<_StudyRoomInvitePanel> {
       context.push('/study/$roomId');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     } finally {
       if (mounted) setState(() => _joining = false);
     }
@@ -1196,8 +1247,10 @@ class _StudyRoomInvitePanelState extends State<_StudyRoomInvitePanel> {
               ),
               if (code != null)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999),

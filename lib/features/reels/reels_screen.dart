@@ -146,7 +146,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
                           child: Center(
                             child: Padding(
                               padding: const EdgeInsets.all(20),
-                              child: AdCard(ad: ad),
+                              child: AdCard(ad: ad, placement: 'reels'),
                             ),
                           ),
                         );
