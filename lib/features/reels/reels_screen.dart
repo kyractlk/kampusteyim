@@ -11,6 +11,7 @@ import '../../core/utils/mention_utils.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
+import '../ads/ads_provider.dart';
 import '../auth/data/auth_provider.dart';
 import '../home/home_shell.dart'
     show kReelsBottomNavHeight, shellBottomNavInset;
@@ -133,11 +134,30 @@ class _ReelsScreenState extends State<ReelsScreen> {
                       context.read<ReelsProvider>().prefetchAround(feed, i),
                     );
                   },
-                  itemBuilder: (context, i) => _ReelPage(
-                    key: ValueKey(feed[i].id),
-                    reel: feed[i],
-                    isActive: tabOn && i == _index,
-                  ),
+                  itemBuilder: (context, i) {
+                    // Her 6. reel öncesi rastgele reklam (varsa)
+                    if (i > 0 && i % 6 == 0) {
+                      final ad = context.read<AdsProvider>().pick(
+                            context.read<AdsProvider>().reels,
+                          );
+                      if (ad != null && i == _index) {
+                        return ColoredBox(
+                          color: Colors.black,
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: AdCard(ad: ad),
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                    return _ReelPage(
+                      key: ValueKey(feed[i].id),
+                      reel: feed[i],
+                      isActive: tabOn && i == _index,
+                    );
+                  },
                 ),
               ),
             ),

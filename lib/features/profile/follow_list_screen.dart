@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/icons/mt_icons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/utils/mention_utils.dart';
@@ -191,13 +192,11 @@ class _FollowListScreenState extends State<FollowListScreen>
                           ),
                           if (verified) ...[
                             const SizedBox(width: 4),
-                            Icon(
-                              Icons.verified,
-                              size: 15,
-                              color: u.showGoldBadge
-                                  ? AppColors.gold
-                                  : const Color(0xFF1DA1F2),
-                            ),
+                            VerifiedBadge(gold: u.showGoldBadge, size: 15),
+                          ],
+                          if (u.isCampusAmbassador) ...[
+                            const SizedBox(width: 4),
+                            const CampusAmbassadorBadge(size: 15),
                           ],
                         ],
                       ),

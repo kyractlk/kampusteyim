@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -19,9 +20,11 @@ import 'admin_permissions.dart';
 import 'admin_provider.dart';
 import 'admin_registrations_tab.dart';
 import 'admin_study_rooms_tab.dart';
-import 'admin_leads_tab.dart';
 import 'admin_promo_hub_tab.dart';
+import 'admin_ambassador_hub.dart';
 import 'admin_cv_ai_limits_tab.dart';
+import 'admin_events_tab.dart';
+import 'admin_commerce_tab.dart';
 import '../plus/admin_plus_tab.dart';
 
 class _AdminTab {
@@ -135,6 +138,21 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           required: const [AdminPermission.managePlus],
           builder: () => const AdminPlusTab(),
         ),
+      if (admin.can(me, AdminPermission.managePlus) ||
+          admin.can(me, AdminPermission.createCompany) ||
+          admin.can(me, AdminPermission.reviewLeads) ||
+          admin.can(me, AdminPermission.manageAds))
+        _AdminTab(
+          label: 'Ticaret',
+          icon: const Icon(Icons.storefront_outlined),
+          required: const [
+            AdminPermission.managePlus,
+            AdminPermission.createCompany,
+            AdminPermission.reviewLeads,
+            AdminPermission.manageAds,
+          ],
+          builder: () => const AdminCommerceTab(),
+        ),
       if (admin.can(me, AdminPermission.reviewReports))
         _AdminTab(
           label: 'Şikayetler',
@@ -204,18 +222,49 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           required: const [AdminPermission.reviewStudyRooms],
           builder: () => const AdminStudyRoomsTab(),
         ),
-      if (admin.can(me, AdminPermission.reviewLeads))
+      if (admin.can(me, AdminPermission.reviewLeads) ||
+          admin.can(me, AdminPermission.manageAmbassadors) ||
+          admin.can(me, AdminPermission.manageUsers))
+        _AdminTab(
+          label: 'Etkinlik onay',
+          icon: const Icon(Icons.event_available_outlined, size: 22),
+          required: const [
+            AdminPermission.manageUsers,
+            AdminPermission.reviewLeads,
+          ],
+          builder: () => const AdminEventsTab(),
+        ),
+      if (admin.canAny(me, [
+        AdminPermission.reviewLeads,
+        AdminPermission.manageAmbassadors,
+      ]))
         _AdminTab(
           label: 'Başvurular',
           icon: const Icon(Icons.handshake_outlined, size: 22),
-          required: const [AdminPermission.reviewLeads],
-          builder: () => const AdminLeadsTab(),
+          required: const [
+            AdminPermission.reviewLeads,
+            AdminPermission.manageAmbassadors,
+          ],
+          builder: () => const AdminApplicationsHubTab(),
         ),
-      if (admin.can(me, AdminPermission.managePromo))
+      if (admin.can(me, AdminPermission.manageAmbassadors))
+        _AdminTab(
+          label: 'Elçilik',
+          icon: const Icon(Icons.school_outlined, size: 22),
+          required: const [AdminPermission.manageAmbassadors],
+          builder: () => const AdminAmbassadorHubTab(),
+        ),
+      if (admin.canAny(me, [
+        AdminPermission.managePromo,
+        AdminPermission.manageLanding,
+      ]))
         _AdminTab(
           label: 'Tanıtım',
           icon: const Icon(Icons.campaign_outlined, size: 22),
-          required: const [AdminPermission.managePromo],
+          required: const [
+            AdminPermission.managePromo,
+            AdminPermission.manageLanding,
+          ],
           builder: () => const AdminPromoHubTab(),
         ),
       if (admin.can(me, AdminPermission.manageLegalTexts))
@@ -325,30 +374,49 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
       body: wide
           ? Row(
               children: [
-                NavigationRail(
-                  backgroundColor: AppColors.surface,
-                  selectedIndex: tabIndex,
-                  onDestinationSelected: (i) => setState(() => _tab = i),
-                  labelType: NavigationRailLabelType.all,
-                  indicatorColor: AppColors.cyan.withValues(alpha: 0.18),
-                  selectedIconTheme:
-                      const IconThemeData(color: AppColors.navy),
-                  unselectedIconTheme:
-                      const IconThemeData(color: AppColors.textSecondary),
-                  selectedLabelTextStyle: const TextStyle(
-                    color: AppColors.navy,
-                    fontWeight: FontWeight.w700,
+                ColoredBox(
+                  color: AppColors.surface,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
+                          ),
+                          child: IntrinsicHeight(
+                            child: NavigationRail(
+                              backgroundColor: AppColors.surface,
+                              selectedIndex: tabIndex,
+                              onDestinationSelected: (i) =>
+                                  setState(() => _tab = i),
+                              labelType: NavigationRailLabelType.all,
+                              indicatorColor:
+                                  AppColors.cyan.withValues(alpha: 0.18),
+                              selectedIconTheme:
+                                  const IconThemeData(color: AppColors.navy),
+                              unselectedIconTheme: const IconThemeData(
+                                color: AppColors.textSecondary,
+                              ),
+                              selectedLabelTextStyle: const TextStyle(
+                                color: AppColors.navy,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              unselectedLabelTextStyle: const TextStyle(
+                                color: AppColors.textSecondary,
+                              ),
+                              destinations: [
+                                for (final t in tabs)
+                                  NavigationRailDestination(
+                                    icon: t.icon,
+                                    label: Text(t.label),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                  unselectedLabelTextStyle: const TextStyle(
-                    color: AppColors.textSecondary,
-                  ),
-                  destinations: [
-                    for (final t in tabs)
-                      NavigationRailDestination(
-                        icon: t.icon,
-                        label: Text(t.label),
-                      ),
-                  ],
                 ),
                 const VerticalDivider(width: 1),
                 Expanded(child: tabs[tabIndex].builder()),
@@ -440,6 +508,91 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
         }
       case 'unblue':
         await admin.unlinkCommunity(auth: auth, userId: u.id);
+      case 'ambassador':
+      case 'unambassador':
+        try {
+          final embassies = await FirebaseFirestore.instance
+              .collection('embassies')
+              .where('active', isEqualTo: true)
+              .get();
+          String? embassyId = u.embassyId;
+          if (v == 'ambassador' && embassies.docs.isNotEmpty) {
+            embassyId = await showDialog<String>(
+              context: context,
+              builder: (ctx) => SimpleDialog(
+                title: const Text('Elçilik seç'),
+                children: [
+                  for (final d in embassies.docs)
+                    SimpleDialogOption(
+                      onPressed: () => Navigator.pop(ctx, d.id),
+                      child: Text(
+                        '${d.data()['name'] ?? d.id}'
+                        '${d.data()['university'] != null ? ' · ${d.data()['university']}' : ''}',
+                      ),
+                    ),
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.pop(ctx, ''),
+                    child: const Text('Elçilik seçmeden devam'),
+                  ),
+                ],
+              ),
+            );
+            if (embassyId == null) return;
+            if (embassyId.isEmpty) embassyId = null;
+          }
+          final callable =
+              FirebaseFunctions.instanceFor(region: 'europe-west1')
+                  .httpsCallable('adminSetCampusAmbassador');
+          await callable.call({
+            'userKey': u.id,
+            'active': v == 'ambassador',
+            if (embassyId != null && embassyId.isNotEmpty)
+              'embassyId': embassyId,
+            'badgeTitle': 'Kampüs Elçisi',
+          });
+          auth.upsertUser(
+            u.copyWith(
+              isCampusAmbassador: v == 'ambassador',
+              badgeTitle: v == 'ambassador' ? 'Kampüs Elçisi' : '',
+              embassyId: v == 'ambassador' ? embassyId : null,
+              clearEmbassy: v != 'ambassador',
+            ),
+          );
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Elçilik güncellenemedi: $e')),
+            );
+          }
+        }
+      case 'organizer':
+      case 'unorganizer':
+        try {
+          await FirebaseFirestore.instance.collection('users').doc(u.id).set({
+            'isEventOrganizer': v == 'organizer',
+            'updatedAt': DateTime.now().toIso8601String(),
+          }, SetOptions(merge: true));
+          auth.upsertUser(
+            u.copyWith(isEventOrganizer: v == 'organizer'),
+          );
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  v == 'organizer'
+                      ? 'Firma etkinlik organizatörü yapıldı'
+                      : 'Organizatörlük kaldırıldı',
+                ),
+              ),
+            );
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Güncellenemedi: $e')),
+            );
+          }
+        }
       case 'warn':
         await admin.applyRestriction(
           auth: auth,

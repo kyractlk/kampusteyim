@@ -29,9 +29,9 @@ async function main() {
   const payload = {
     openai_api_key: process.env.OPENAI_API_KEY || '',
     openai_cv_model: process.env.OPENAI_CV_MODEL || 'gpt-4o-mini',
-    smtp_host: process.env.SMTP_HOST || 'smtp.gaunengineering.com.tr',
+    smtp_host: process.env.SMTP_HOST || 'smtp.kampusteyim.app',
     smtp_port: process.env.SMTP_PORT || '465',
-    smtp_user: process.env.SMTP_USER || 'info@gaunengineering.com.tr',
+    smtp_user: process.env.SMTP_USER || 'info@kampusteyim.app',
     smtp_pass: process.env.SMTP_PASS || '',
     updated_at: new Date().toISOString(),
   };

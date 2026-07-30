@@ -21,6 +21,10 @@ import '../features/feedback/feedback_screen.dart';
 import '../features/reels/reels_screen.dart';
 import '../features/home/home_shell.dart';
 import '../features/jobs/company_portal.dart';
+import '../features/jobs/company_events_screen.dart';
+import '../features/commerce/company_organizer_hub.dart';
+import '../features/commerce/my_tickets_screen.dart';
+import '../features/commerce/org_invite_screen.dart';
 import '../features/jobs/staj_ai_screen.dart';
 import '../features/legal/account_delete_screen.dart';
 import '../features/notifications/notification_settings_screen.dart';
@@ -328,6 +332,27 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/firma/students',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (_, _) => const CompanyStudentsScreen(),
+      ),
+      GoRoute(
+        path: '/firma/events',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (_, _) => const CompanyEventsScreen(),
+      ),
+      GoRoute(
+        path: '/firma/organizer',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (_, _) => const CompanyOrganizerHubScreen(),
+      ),
+      GoRoute(
+        path: '/tickets',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (_, _) => const MyTicketsScreen(),
+      ),
+      GoRoute(
+        path: '/invites/:id',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (context, state) =>
+            OrgInviteScreen(inviteId: state.pathParameters['id'] ?? ''),
       ),
       GoRoute(
         path: '/firma/ai',

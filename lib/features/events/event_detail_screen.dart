@@ -12,18 +12,33 @@ import '../../core/widgets/media_viewer.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
+import '../payments/payment_checkout_sheet.dart';
 
-class EventDetailScreen extends StatelessWidget {
+class EventDetailScreen extends StatefulWidget {
   const EventDetailScreen({super.key, required this.eventId});
 
   final String eventId;
+
+  @override
+  State<EventDetailScreen> createState() => _EventDetailScreenState();
+}
+
+class _EventDetailScreenState extends State<EventDetailScreen> {
+  final _discount = TextEditingController();
+  String? _tierLabel;
+
+  @override
+  void dispose() {
+    _discount.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final feed = context.watch<FeedProvider>();
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
-    final event = feed.eventById(eventId);
+    final event = feed.eventById(widget.eventId);
     if (event == null) {
       return Scaffold(
         appBar: AppBar(
@@ -48,6 +63,9 @@ class EventDetailScreen extends StatelessWidget {
         ? null
         : DateFormat('d MMMM yyyy · HH:mm', 'tr')
             .format(event.applicationDeadline!);
+    final tiers = event.priceTiers;
+    final isFree = tiers.isEmpty || tiers.every((t) => t.amount <= 0);
+    _tierLabel ??= tiers.isNotEmpty ? tiers.first.label : null;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -107,6 +125,13 @@ class EventDetailScreen extends StatelessWidget {
               verifiedGold: true,
             ),
           ],
+          if (event.organizerCompanyName != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Organizatör: ${event.organizerCompanyName}',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
           const SizedBox(height: 8),
           Text(
             date,
@@ -125,6 +150,10 @@ class EventDetailScreen extends StatelessWidget {
                   ?.copyWith(color: AppColors.textSecondary),
             ),
           ],
+          if (event.city.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('Şehir: ${event.city}'),
+          ],
           const SizedBox(height: 8),
           Text(
             'Kimler: ${event.audienceLabel}',
@@ -139,6 +168,11 @@ class EventDetailScreen extends StatelessWidget {
           ],
           const SizedBox(height: 16),
           Text(event.description, style: Theme.of(context).textTheme.bodyLarge),
+          if (event.rules.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('Kurallar', style: Theme.of(context).textTheme.titleSmall),
+            Text(event.rules),
+          ],
           const SizedBox(height: 12),
           Text(
             'Kadro: ${event.approvedCount}/${event.capacity}'
@@ -146,6 +180,49 @@ class EventDetailScreen extends StatelessWidget {
             '${event.isRosterFull ? ' · Kadro doldu' : ''}',
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
+          if (tiers.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Bilet seçenekleri',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            ...tiers.map(
+              (t) => RadioListTile<String>(
+                value: t.label,
+                groupValue: _tierLabel,
+                onChanged:
+                    applied ? null : (v) => setState(() => _tierLabel = v),
+                title: Text(
+                  t.amount <= 0
+                      ? '${t.label} · Ücretsiz'
+                      : '${t.label} · ${t.amount.toStringAsFixed(2)} TL',
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Ücretsiz etkinlik — yalnızca başvuru',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ],
+          if (!isFree && !applied) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: _discount,
+              decoration: const InputDecoration(
+                labelText: 'İndirim kodu (opsiyonel)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Ödeme yapan hesap = katılımcı hesap. Bilet devredilemez. '
+              'İade / iptal talebi yoktur.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ],
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: !canApply
@@ -153,26 +230,65 @@ class EventDetailScreen extends StatelessWidget {
                 : () async {
                     if (!AuthGate.requireAuth(
                       context,
-                      message: 'Başvuru için giriş yapmalısın.',
+                      message: 'Başvuru / bilet için giriş yapmalısın.',
                     )) {
                       return;
                     }
                     final a = context.read<AuthProvider>();
-                    final err = await feed.applyToEvent(
-                      event.id,
-                      applicant: a.user,
-                      follows: (cid) => a.follows(cid),
-                    );
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(err ?? 'Başvurun alındı.'),
-                      ),
+                    if (isFree) {
+                      final err = await feed.applyToEvent(
+                        event.id,
+                        applicant: a.user,
+                        follows: (cid) => a.follows(cid),
+                      );
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(err ?? 'Başvurun alındı.')),
+                      );
+                      return;
+                    }
+                    final tier = tiers.isEmpty
+                        ? null
+                        : tiers.firstWhere(
+                            (t) => t.label == _tierLabel,
+                            orElse: () => tiers.first,
+                          );
+                    final amount = tier?.amount ?? 0;
+                    if (amount <= 0) {
+                      final err = await feed.applyToEvent(
+                        event.id,
+                        applicant: a.user,
+                        follows: (cid) => a.follows(cid),
+                      );
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(err ?? 'Başvurun alındı.')),
+                      );
+                      return;
+                    }
+                    await openPaymentCheckout(
+                      context,
+                      product: 'event',
+                      amount: amount,
+                      eventId: event.id,
+                      tierLabel: tier?.label,
+                      discountCode: _discount.text.trim().isEmpty
+                          ? null
+                          : _discount.text.trim(),
                     );
                   },
             child: Text(
-              applied ? 'Başvuruldu' : (blocked.isEmpty ? 'Başvur' : blocked),
+              applied
+                  ? 'Başvuruldu / biletin var'
+                  : (blocked.isEmpty
+                      ? (isFree ? 'Başvur' : 'Bilet al / öde')
+                      : blocked),
             ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: () => context.push('/tickets'),
+            child: const Text('Biletlerim'),
           ),
           const SizedBox(height: 8),
           OutlinedButton(

@@ -78,6 +78,18 @@ class MtIcons {
   <path d="M8.2 12.2 10.6 14.6 15.8 9.4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>''';
 
+  /// Kampüs elçisi — KampüsteyimAPP ikonunun mini rozet hali.
+  static const badgeAmbassador = '''
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="12" r="9" fill="#241789"/>
+  <path d="M12 5.9 19.1 8.8 12 11.7 4.9 8.8 12 5.9Z" fill="#fff"/>
+  <path d="M17.6 9.4v3.3" stroke="#fff" stroke-width="1.05" stroke-linecap="round"/>
+  <circle cx="12" cy="15.1" r="3.05" fill="#00D4C8"/>
+  <circle cx="10.5" cy="15.1" r="0.62" fill="#241789"/>
+  <circle cx="12" cy="15.1" r="0.62" fill="#241789"/>
+  <circle cx="13.5" cy="15.1" r="0.62" fill="#241789"/>
+</svg>''';
+
   static const admin = '''
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M12 3.5 19 7v5.2c0 4.4-3 7.6-7 8.8-4-1.2-7-4.4-7-8.8V7l7-3.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
@@ -155,6 +167,25 @@ class VerifiedBadge extends StatelessWidget {
             ? MtIcons.badgeGold
             : MtIcons.badgeBlue;
     return MtIcon(svg, size: size);
+  }
+}
+
+/// Kampüs elçisi rozeti — gold/mavi tick’in yanında gösterilir.
+class CampusAmbassadorBadge extends StatelessWidget {
+  const CampusAmbassadorBadge({
+    super.key,
+    this.size = 15,
+    this.tooltip = 'Kampüs Elçisi',
+  });
+
+  final double size;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final badge = MtIcon(MtIcons.badgeAmbassador, size: size);
+    if (tooltip.isEmpty) return badge;
+    return Tooltip(message: tooltip, child: badge);
   }
 }
 

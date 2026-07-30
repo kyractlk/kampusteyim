@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="KampüsteyimAPP Kampüs Elçiliği — üniversitende resmi temsilci ol, topluluğu büyüt. Başvuru formu burada." />
+  <meta name="theme-color" content="#0B1F3A" />
+  <meta name="robots" content="index,follow" />
+  <meta property="og:title" content="Kampüs Elçiliği — KampüsteyimAPP" />
+  <meta property="og:description" content="Üniversitende KampüsteyimAPP’i temsil et. Gold tick, görünürlük ve büyüme desteği." />
+  <meta property="og:image" content="./kampusteyim_icon.png" />
+  <meta property="og:type" content="website" />
+  <title>Kampüs Elçiliği · KampüsteyimAPP</title>
+  <link rel="icon" href="./kampusteyim_icon.png" type="image/png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy: #0B1F3A;
+      --navy2: #061426;
+      --cyan: #00D4C8;
+      --lime: #89C741;
+      --soft: #F4F7FB;
+      --muted: #5B6B7C;
+      --line: #D7E0EB;
+      --ok: #0a8f6c;
+      --err: #C8102E;
+      --pad: max(1rem, env(safe-area-inset-left));
+      --pad-r: max(1rem, env(safe-area-inset-right));
+      --font-d: "Syne", system-ui, sans-serif;
+      --font-b: "Instrument Sans", system-ui, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--font-b);
+      color: var(--navy);
+      background: var(--soft);
+      line-height: 1.55;
+      overflow-x: hidden;
+    }
+    img { max-width: 100%; height: auto; display: block; }
+    a { color: inherit; }
+    button, input, select, textarea { font: inherit; font-size: 16px; }
+    [hidden] { display: none !important; }
+
+    .wrap {
+      width: 100%;
+      max-width: 960px;
+      margin: 0 auto;
+      padding-left: var(--pad);
+      padding-right: var(--pad-r);
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    /* —— Top bar —— */
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: rgba(6, 20, 38, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding-top: env(safe-area-inset-top);
+    }
+    .top-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem 0.75rem;
+      min-height: 56px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      text-decoration: none;
+      color: #fff;
+      font-family: var(--font-d);
+      font-weight: 700;
+      font-size: 0.95rem;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .brand img { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; }
+    .brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .top-links { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+    .tlink {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      min-height: 40px;
+      padding: 0 0.7rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.22);
+      color: rgba(255,255,255,0.9);
+      text-decoration: none;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .tlink svg { width: 16px; height: 16px; }
+    .tlink.ig { border-color: rgba(0,212,200,0.45); color: var(--cyan); }
+    .tlink .lbl { display: none; }
+    @media (min-width: 480px) { .tlink .lbl { display: inline; } }
+
+    /* —— Hero —— */
+    .hero {
+      position: relative;
+      color: #fff;
+      background:
+        radial-gradient(ellipse 90% 55% at 18% 0%, rgba(0,212,200,0.30), transparent 58%),
+        radial-gradient(ellipse 70% 45% at 100% 18%, rgba(137,199,65,0.16), transparent 52%),
+        linear-gradient(165deg, #061426, #0B1F3A 55%, #123456);
+      padding: 2.5rem 0 2.75rem;
+      overflow: hidden;
+    }
+    @media (min-width: 768px) { .hero { padding: 4rem 0 4.25rem; } }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -20% -55% auto;
+      width: 320px; height: 320px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0,212,200,0.22), transparent 65%);
+      pointer-events: none;
+    }
+    .hero .wrap { position: relative; z-index: 1; }
+    .hero-logo {
+      width: 58px; height: 58px;
+      border-radius: 15px;
+      margin-bottom: 1rem;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.38);
+    }
+    @media (min-width: 768px) { .hero-logo { width: 72px; height: 72px; border-radius: 18px; } }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 0.8rem;
+      border-radius: 999px;
+      background: rgba(0,212,200,0.12);
+      border: 1px solid rgba(0,212,200,0.4);
+      color: var(--cyan);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 0.9rem;
+    }
+    .badge .pulse {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 0 0 rgba(0,212,200,0.7);
+      animation: pulse 2.2s infinite;
+    }
+    @keyframes pulse {
+      70% { box-shadow: 0 0 0 8px rgba(0,212,200,0); }
+      100% { box-shadow: 0 0 0 0 rgba(0,212,200,0); }
+    }
+    @media (prefers-reduced-motion: reduce) { .badge .pulse { animation: none; } }
+    .hero h1 {
+      font-family: var(--font-d);
+      font-weight: 800;
+      font-size: clamp(1.75rem, 8.4vw, 3.4rem);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin: 0 0 0.85rem;
+      overflow-wrap: anywhere;
+    }
+    .hero h1 em { font-style: normal; color: var(--cyan); }
+    .hero .lead {
+      margin: 0 0 1.4rem;
+      font-size: clamp(0.98rem, 3.5vw, 1.15rem);
+      font-weight: 500;
+      color: rgba(255,255,255,0.9);
+      max-width: 40rem;
+    }
+    .cta { display: flex; flex-direction: column; gap: 0.65rem; }
+    @media (min-width: 560px) { .cta { flex-direction: row; flex-wrap: wrap; } }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0.75rem 1.35rem;
+      border-radius: 999px;
+      font-weight: 700;
+      text-decoration: none;
+      border: 1px solid transparent;
+      cursor: pointer;
+      width: 100%;
+      text-align: center;
+    }
+    @media (min-width: 560px) { .btn { width: auto; min-width: 10rem; } }
+    .btn-cyan { background: var(--cyan); color: var(--navy); }
+    .btn-ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,0.35); }
+    .btn-solid {
+      background: var(--cyan);
+      color: var(--navy);
+      width: 100%;
+      border-radius: 14px;
+      border: 0;
+      min-height: 52px;
+      font-size: 1rem;
+      box-shadow: 0 10px 24px rgba(0,212,200,0.28);
+    }
+    .btn-solid:disabled { opacity: 0.6; box-shadow: none; cursor: default; }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.5rem;
+      margin-top: 1.9rem;
+      padding-top: 1.4rem;
+      border-top: 1px solid rgba(255,255,255,0.12);
+    }
+    .hero-stats div strong {
+      display: block;
+      font-family: var(--font-d);
+      font-size: clamp(1rem, 4.2vw, 1.3rem);
+      color: var(--cyan);
+      letter-spacing: -0.02em;
+    }
+    .hero-stats div span {
+      font-size: 0.74rem;
+      color: rgba(255,255,255,0.6);
+      line-height: 1.3;
+      display: block;
+    }
+
+    /* —— Sections —— */
+    section { padding: 2.4rem 0; }
+    @media (min-width: 768px) { section { padding: 3.5rem 0; } }
+    .sec-dark { background: var(--navy); color: #fff; }
+    .sec-soft { background: var(--soft); }
+    .sec-white { background: #fff; }
+    .eyebrow {
+      margin: 0 0 0.4rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--cyan);
+    }
+    .sec-dark .eyebrow { color: var(--lime); }
+    h2 {
+      font-family: var(--font-d);
+      font-size: clamp(1.45rem, 5.4vw, 2rem);
+      letter-spacing: -0.03em;
+      margin: 0 0 0.55rem;
+      line-height: 1.15;
+    }
+    .sec-lead { margin: 0 0 1.5rem; color: var(--muted); font-size: 0.98rem; }
+    .sec-dark .sec-lead { color: rgba(255,255,255,0.65); }
+
+    /* About */
+    .about-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 1.25rem;
+      box-shadow: 0 14px 34px rgba(11,31,58,0.06);
+    }
+    @media (min-width: 768px) { .about-card { padding: 1.75rem; } }
+    .about-card p { margin: 0 0 0.85rem; color: var(--navy); font-size: 0.97rem; }
+    .about-card p:last-child { margin-bottom: 0; }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 1.1rem; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.7rem;
+      border-radius: 999px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .chip::before {
+      content: "";
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--cyan);
+    }
+
+    /* —— Rozet önizleme —— */
+    .preview {
+      margin-top: 1.75rem;
+      padding: 1rem 1.05rem 1.1rem;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.14);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      max-width: 26rem;
+    }
+    .preview-cap {
+      margin: 0 0 0.7rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.55);
+    }
+    .pv-row { display: flex; align-items: center; gap: 0.7rem; }
+    .pv-av {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      font-family: var(--font-d);
+      font-weight: 800;
+      font-size: 0.95rem;
+      color: var(--navy);
+      background: linear-gradient(140deg, var(--cyan), #7de3dc);
+    }
+    .pv-meta { min-width: 0; }
+    .pv-name {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-weight: 700;
+      font-size: 0.97rem;
+      color: #fff;
+    }
+    .pv-name svg { width: 17px; height: 17px; flex-shrink: 0; }
+    .pv-sub {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-top: 0.15rem;
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.6);
+    }
+    .pv-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.28rem;
+      padding: 0.14rem 0.5rem;
+      border-radius: 999px;
+      background: rgba(0,212,200,0.14);
+      border: 1px solid rgba(0,212,200,0.42);
+      color: var(--cyan);
+      font-weight: 700;
+      font-size: 0.72rem;
+    }
+    .pv-tag svg { width: 12px; height: 12px; }
+
+    /* —— Avantaj kartları —— */
+    .perks { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.8rem; }
+    @media (min-width: 640px) { .perks { grid-template-columns: 1fr 1fr; gap: 0.9rem; } }
+    @media (min-width: 940px) { .perks { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .perks li {
+      position: relative;
+      padding: 1.1rem 1.05rem 1.15rem;
+      border-radius: 16px;
+      background: linear-gradient(160deg, rgba(255,255,255,0.075), rgba(255,255,255,0.03));
+      border: 1px solid rgba(255,255,255,0.12);
+      overflow: hidden;
+    }
+    .perks li::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--cyan), rgba(137,199,65,0.7));
+      opacity: 0.85;
+    }
+    .perk-ic {
+      width: 38px; height: 38px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: rgba(0,212,200,0.14);
+      border: 1px solid rgba(0,212,200,0.36);
+      margin-bottom: 0.75rem;
+    }
+    .perk-ic svg {
+      width: 19px; height: 19px;
+      stroke: var(--cyan);
+      fill: none;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .perk-t {
+      margin: 0 0 0.3rem;
+      font-family: var(--font-d);
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: -0.015em;
+      color: #fff;
+    }
+    .perk-d {
+      margin: 0;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: rgba(255,255,255,0.68);
+    }
+    .perk-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.65rem;
+      padding: 0.22rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.16);
+      font-size: 0.73rem;
+      font-weight: 700;
+      color: rgba(255,255,255,0.85);
+    }
+    .perk-badge svg { width: 14px; height: 14px; }
+
+    /* Steps */
+    .steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+    .steps li {
+      counter-increment: s;
+      position: relative;
+      margin-bottom: 0.7rem;
+      padding: 0.95rem 1.05rem 0.95rem 3.6rem;
+      border-radius: 15px;
+      background: #fff;
+      border: 1px solid var(--line);
+      box-shadow: 0 8px 22px rgba(11,31,58,0.05);
+      font-size: 0.96rem;
+      font-weight: 600;
+      color: var(--navy);
+    }
+    .steps li::before {
+      content: counter(s);
+      position: absolute;
+      left: 0.9rem; top: 0.85rem;
+      width: 1.9rem; height: 1.9rem;
+      border-radius: 50%;
+      background: var(--navy);
+      color: var(--cyan);
+      font-family: var(--font-d);
+      font-weight: 700;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .steps li:last-child { margin-bottom: 0; }
+    @media (min-width: 720px) {
+      .steps { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+      .steps li { margin-bottom: 0; }
+    }
+    .who {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 1.35rem;
+    }
+    .who span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.42rem 0.75rem;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid var(--line);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--navy);
+    }
+    .who span::before {
+      content: "";
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--lime);
+    }
+
+    /* Form */
+    .form-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 1.15rem;
+      box-shadow: 0 18px 44px rgba(11,31,58,0.09);
+    }
+    @media (min-width: 768px) { .form-card { padding: 1.85rem; } }
+    .form-title {
+      font-family: var(--font-d);
+      font-size: 1.15rem;
+      margin: 0 0 0.3rem;
+      letter-spacing: -0.02em;
+    }
+    .form-note { margin: 0 0 1.25rem; font-size: 0.88rem; color: var(--muted); }
+    .fields { display: grid; gap: 0.85rem; }
+    @media (min-width: 620px) {
+      .fields { grid-template-columns: 1fr 1fr; }
+      .fields .full { grid-column: 1 / -1; }
+    }
+    .field { display: grid; gap: 0.32rem; }
+    .field > .lab { font-size: 0.82rem; font-weight: 600; color: var(--navy); }
+    .req { color: var(--err); margin-left: 0.15rem; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.75rem 0.85rem;
+      background: var(--soft);
+      color: var(--navy);
+      min-height: 48px;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235B6B7C' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.7rem center;
+      background-size: 18px;
+      padding-right: 2.4rem;
+    }
+    textarea { min-height: 108px; resize: vertical; }
+    input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 1px;
+      border-color: var(--cyan);
+    }
+    .hp {
+      position: absolute !important;
+      left: -9999px !important;
+      width: 1px !important;
+      height: 1px !important;
+      opacity: 0 !important;
+    }
+
+    .consents { margin-top: 1.35rem; display: grid; gap: 0.75rem; }
+    .consent {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--soft);
+      overflow: hidden;
+    }
+    .consent-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.7rem;
+      padding: 0.9rem 1rem;
+      cursor: pointer;
+    }
+    .consent-head input[type="checkbox"] {
+      width: 22px;
+      height: 22px;
+      min-height: 22px;
+      margin: 0.1rem 0 0;
+      flex-shrink: 0;
+      accent-color: var(--cyan);
+      appearance: auto;
+      -webkit-appearance: checkbox;
+      border: 0;
+      border-radius: 6px;
+      padding: 0;
+      background: #fff;
+    }
+    .consent-head .txt { font-size: 0.88rem; font-weight: 600; line-height: 1.45; }
+    .consent details { border-top: 1px solid var(--line); background: #fff; }
+    .consent details summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 0.7rem 1rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      min-height: 44px;
+    }
+    .consent details summary::-webkit-details-marker { display: none; }
+    .consent details summary::after { content: "+"; color: var(--cyan); font-size: 1.2rem; line-height: 1; }
+    .consent details[open] summary::after { content: "−"; }
+    .consent details .body {
+      padding: 0 1rem 1rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      white-space: pre-line;
+    }
+
+    .form-msg { margin: 0.9rem 0 0; font-size: 0.88rem; min-height: 1.2em; color: var(--muted); }
+    .form-msg.ok { color: var(--ok); font-weight: 600; }
+    .form-msg.err { color: var(--err); font-weight: 600; }
+
+    .skeleton { display: grid; gap: 0.85rem; }
+    .sk-bar {
+      height: 48px;
+      border-radius: 12px;
+      background: linear-gradient(90deg, #EEF3F9 25%, #E2EAF3 50%, #EEF3F9 75%);
+      background-size: 240% 100%;
+      animation: shimmer 1.3s linear infinite;
+    }
+    .sk-bar.sm { height: 14px; width: 40%; border-radius: 7px; }
+    @keyframes shimmer { to { background-position: -240% 0; } }
+    @media (prefers-reduced-motion: reduce) { .sk-bar { animation: none; } }
+
+    .notice {
+      border-radius: 14px;
+      padding: 1rem 1.1rem;
+      font-size: 0.9rem;
+      border: 1px solid var(--line);
+      background: var(--soft);
+      color: var(--muted);
+    }
+    .notice.warn { border-color: rgba(200,16,46,0.25); background: rgba(200,16,46,0.05); color: var(--err); font-weight: 600; }
+
+    /* Success */
+    .success { text-align: center; padding: 1.5rem 0.5rem; }
+    .success .mark {
+      width: 72px; height: 72px;
+      margin: 0 auto 1.1rem;
+      border-radius: 50%;
+      background: rgba(0,212,200,0.12);
+      border: 1px solid rgba(0,212,200,0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .success .mark svg { width: 32px; height: 32px; stroke: var(--cyan); }
+    .success h3 { font-family: var(--font-d); font-size: 1.35rem; margin: 0 0 0.5rem; letter-spacing: -0.02em; }
+    .success p { margin: 0 auto 1.4rem; color: var(--muted); font-size: 0.94rem; max-width: 28rem; }
+    .success .cta { justify-content: center; }
+    @media (min-width: 560px) { .success .cta { display: inline-flex; } }
+
+    footer {
+      background: var(--navy2);
+      color: rgba(255,255,255,0.7);
+      padding: 1.85rem 0 calc(1.85rem + env(safe-area-inset-bottom));
+      font-size: 0.85rem;
+    }
+    .foot { display: flex; flex-direction: column; gap: 1rem; }
+    @media (min-width: 720px) {
+      .foot { flex-direction: row; justify-content: space-between; align-items: flex-start; }
+    }
+    .foot p { margin: 0; }
+    .foot nav { display: flex; flex-wrap: wrap; gap: 0.65rem 1rem; }
+    .foot a { color: rgba(255,255,255,0.75); text-decoration: none; }
+    .foot a:hover { color: var(--cyan); }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="ic-gold" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" fill="#D9B31E" />
+        <path d="M8.2 12.2 10.6 14.6 15.8 9.4" stroke="#0B1F3A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+      </symbol>
+      <symbol id="ic-amb" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" fill="#241789" />
+        <path d="M12 5.9 19.1 8.8 12 11.7 4.9 8.8 12 5.9Z" fill="#fff" />
+        <path d="M17.6 9.4v3.3" stroke="#fff" stroke-width="1.05" stroke-linecap="round" />
+        <circle cx="12" cy="15.1" r="3.05" fill="#00D4C8" />
+        <circle cx="10.5" cy="15.1" r="0.62" fill="#241789" />
+        <circle cx="12" cy="15.1" r="0.62" fill="#241789" />
+        <circle cx="13.5" cy="15.1" r="0.62" fill="#241789" />
+      </symbol>
+    </defs>
+  </svg>
+
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="brand" href="./index.html">
+        <img src="./kampusteyim_icon.png" width="34" height="34" alt="" />
+        <span>KampüsteyimAPP</span>
+      </a>
+      <div class="top-links">
+        <a class="tlink" href="./index.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /></svg>
+          <span class="lbl">Ana sayfa</span>
+        </a>
+        <a class="tlink ig" id="ig-link" href="https://instagram.com/kampusteyimapp" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none" /></svg>
+          <span class="lbl">Instagram</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="ust">
+      <div class="wrap">
+        <img class="hero-logo" src="./kampusteyim_icon.png" width="72" height="72" alt="KampüsteyimAPP" />
+        <p class="badge"><span class="pulse"></span>Kampüs Elçiliği</p>
+        <h1 id="hero-title">Üniversitende <em>Kampüs Elçisi</em> ol</h1>
+        <p class="lead" id="hero-sub">KampüsteyimAPP’i kampüsünde sen temsil et. Gold tick, elçi rozeti, etkinlik önceliği ve büyüme desteği seninle.</p>
+        <div class="cta">
+          <a class="btn btn-cyan" href="#basvuru">Başvuruyu doldur</a>
+          <a class="btn btn-ghost" href="#program">Programı incele</a>
+        </div>
+        <div class="hero-stats">
+          <div><strong>Gold tick</strong><span>Resmi elçi rozeti</span></div>
+          <div><strong>Ücretsiz</strong><span>Gönüllü program</span></div>
+          <div><strong>2 dk</strong><span>Başvuru süresi</span></div>
+        </div>
+
+        <div class="preview">
+          <p class="preview-cap">Onaydan sonra profilin böyle görünür</p>
+          <div class="pv-row">
+            <span class="pv-av" aria-hidden="true">AY</span>
+            <div class="pv-meta">
+              <div class="pv-name">
+                <span>Ayşe Yılmaz</span>
+                <svg role="img" aria-label="Doğrulanmış hesap"><use href="#ic-gold" /></svg>
+                <svg role="img" aria-label="Kampüs Elçisi rozeti"><use href="#ic-amb" /></svg>
+              </div>
+              <div class="pv-sub">
+                <span>@ayseyilmaz</span>
+                <span class="pv-tag"><svg aria-hidden="true"><use href="#ic-amb" /></svg>Kampüs Elçisi</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec-white" id="program">
+      <div class="wrap">
+        <p class="eyebrow">Hakkında</p>
+        <h2>AYS Tech &amp; KampüsteyimAPP</h2>
+        <p class="sec-lead">Elçilik programının ne olduğunu ve nasıl işlediğini buradan oku.</p>
+        <div class="about-card">
+          <div id="about-body">
+            <p>KampüsteyimAPP; AYS Tech altyapısıyla üniversite öğrencilerini, firmaları ve resmi toplulukları tek doğrulanmış dijital çatı altında buluşturur.</p>
+            <p>Kampüs Elçiliği programı, üniversitende resmi temsilci olarak topluluğu büyütmeni ve kampüsündeki etkinlik, tanıtım ve iş birliği süreçlerinde birlikte çalışmamızı sağlar.</p>
+          </div>
+          <div class="chips">
+            <span class="chip">Doğrulanmış öğrenci ağı</span>
+            <span class="chip">Topluluk &amp; firma iş birlikleri</span>
+            <span class="chip">CV, staj ve AI asistan</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec-dark" id="avantajlar">
+      <div class="wrap">
+        <p class="eyebrow">Kazanımlar</p>
+        <h2>Elçi olunca ne kazanıyorsun?</h2>
+        <p class="sec-lead">Kampüs elçilerimize açtığımız ayrıcalıklar — hepsi ücretsiz.</p>
+        <ul class="perks" id="benefits-list">
+          <li>
+            <span class="perk-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6 20 7v5.4c0 4.6-3.4 8-8 9.1-4.6-1.1-8-4.5-8-9.1V7l8-3.4Z" /><path d="M9.3 12.1 11.3 14l3.7-4" /></svg></span>
+            <h3 class="perk-t">Kampüs Elçisi rozeti</h3>
+            <p class="perk-d">Adının yanına gold tick ve KampüsteyimAPP elçi rozeti gelir. Akış, arama, profil, yorum — uygulamanın her yerinde görünür.</p>
+            <span class="perk-badge"><svg aria-hidden="true"><use href="#ic-amb" /></svg>Kampüs Elçisi</span>
+          </li>
+          <li>
+            <span class="perk-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.4" r="3.1" /><path d="M3.6 19.4c.5-3 2.7-4.7 5.4-4.7s4.9 1.7 5.4 4.7" /><path d="M16.4 6.6a3.1 3.1 0 0 1 0 6.1" /><path d="M18 19.4c-.2-1.6-.7-2.9-1.6-3.8" /></svg></span>
+            <h3 class="perk-t">Görünürlük ve network</h3>
+            <p class="perk-d">Üniversitendeki topluluklar, kulüpler ve firmalarla doğrudan bağlantı. Profilin kampüsünde öne çıkar.</p>
+          </li>
+          <li>
+            <span class="perk-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.6" y="5.4" width="16.8" height="15" rx="2.6" /><path d="M8.2 3.4v4M15.8 3.4v4M3.6 10.4h16.8" /><path d="M9 14.4h6" /></svg></span>
+            <h3 class="perk-t">Etkinlik ve stand önceliği</h3>
+            <p class="perk-d">Kampüsündeki etkinlik, stand ve tanıtım süreçlerinde ilk sırada sen varsın; organizasyonu birlikte kurgularız.</p>
+          </li>
+          <li>
+            <span class="perk-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.6" y="3.6" width="7" height="7" rx="1.6" /><rect x="13.4" y="3.6" width="7" height="7" rx="1.6" /><rect x="3.6" y="13.4" width="7" height="7" rx="1.6" /><path d="M13.4 13.4h3v3h-3zM17.9 17.9h2.5v2.5h-2.5z" /></svg></span>
+            <h3 class="perk-t">Hazır büyüme kiti</h3>
+            <p class="perk-d">QR kodlu tanıtım materyalleri, sosyal medya şablonları ve hazır içerikler. Sıfırdan tasarım yapmana gerek yok.</p>
+          </li>
+          <li>
+            <span class="perk-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.6h10v9.8a5 5 0 0 1-10 0V3.6Z" /><path d="M9.6 18.4h4.8M8.6 20.8h6.8" /><path d="M7 6.4H4.6v2A3.4 3.4 0 0 0 7 11.6M17 6.4h2.4v2a3.4 3.4 0 0 1-2.4 3.2" /></svg></span>
+            <h3 class="perk-t">Katılım belgesi ve referans</h3>
+            <p class="perk-d">Program sonunda dijital katılım belgesi ve talep hâlinde referans yazısı. CV ve staj başvurularında kullanabilirsin.</p>
+          </li>
+          <li>
+            <span class="perk-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.4 14.6 9l6.1.6-4.6 4 1.3 6-5.4-3.1-5.4 3.1 1.3-6-4.6-4L9.4 9 12 3.4Z" /></svg></span>
+            <h3 class="perk-t">Erken erişim ve doğrudan hat</h3>
+            <p class="perk-d">Yeni özellikleri herkesten önce dene. Elçi grubuyla ekibe doğrudan ulaş, fikirlerin ürüne yansısın.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="sec-soft" id="adimlar">
+      <div class="wrap">
+        <p class="eyebrow">Süreç</p>
+        <h2>Ne yapman gerekiyor?</h2>
+        <p class="sec-lead">Başvurudan aktif elçiliğe kadar dört adım.</p>
+        <ol class="steps" id="steps-list">
+          <li>Aşağıdaki formu eksiksiz doldur</li>
+          <li>Ekibimiz başvurunu incelesin, e-posta ile dönsün</li>
+          <li>Onaydan sonra elçi profilin ve rozetin aktifleşsin</li>
+          <li>Stand, etkinlik ve QR ile kampüsünde büyüt</li>
+        </ol>
+        <div class="who">
+          <span>Aktif üniversite öğrencisi</span>
+          <span>Kampüste görünür ve iletişime açık</span>
+          <span>Haftada 1-2 saat</span>
+          <span>Kulüp / etkinlik deneyimi artı</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec-white" id="basvuru">
+      <div class="wrap">
+        <p class="eyebrow">Başvuru</p>
+        <h2 id="form-heading">Kampüs Elçiliği Başvurusu</h2>
+        <p class="sec-lead">Bilgilerini bırak, ekibimiz başvurunu değerlendirip sana dönsün.</p>
+
+        <div class="form-card">
+          <div id="loading" class="skeleton" aria-live="polite">
+            <div class="sk-bar sm"></div>
+            <div class="sk-bar"></div>
+            <div class="sk-bar"></div>
+            <div class="sk-bar"></div>
+            <span class="sr-only">Form yükleniyor…</span>
+          </div>
+
+          <div id="load-error" class="notice warn" hidden></div>
+
+          <form id="app-form" novalidate hidden>
+            <h3 class="form-title" id="form-title">Başvuru formu</h3>
+            <p class="form-note">Zorunlu alanlar <span class="req" aria-hidden="true">*</span> ile işaretlidir.</p>
+
+            <input class="hp" tabindex="-1" autocomplete="off" name="website_url" id="hp" aria-hidden="true" />
+
+            <div class="fields" id="fields"></div>
+
+            <div class="consents">
+              <div class="consent">
+                <label class="consent-head" for="kvkk">
+                  <input type="checkbox" id="kvkk" required />
+                  <span class="txt">KVKK aydınlatma metnini okudum, kişisel verilerimin başvuru değerlendirmesi amacıyla işlenmesini kabul ediyorum.<span class="req">*</span></span>
+                </label>
+                <details>
+                  <summary>KVKK aydınlatma metnini oku</summary>
+                  <div class="body" id="kvkk-text"></div>
+                </details>
+              </div>
+
+              <div class="consent">
+                <label class="consent-head" for="disclaimer">
+                  <input type="checkbox" id="disclaimer" required />
+                  <span class="txt">Program koşullarını (sorumluluk reddi beyanı) okudum ve kabul ediyorum.<span class="req">*</span></span>
+                </label>
+                <details>
+                  <summary>Program koşullarını oku</summary>
+                  <div class="body" id="disclaimer-text"></div>
+                </details>
+              </div>
+            </div>
+
+            <p class="form-msg" id="form-msg" role="status" aria-live="polite"></p>
+            <button class="btn btn-solid" type="submit" id="submit-btn" style="margin-top:0.85rem">Başvuruyu gönder</button>
+          </form>
+
+          <div id="success" class="success" hidden>
+            <div class="mark">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 9.5 18 20 6.5" /></svg>
+            </div>
+            <h3>Başvurun bize ulaştı</h3>
+            <p id="success-text">Ekibimiz başvurunu inceleyip e-posta üzerinden sana dönecek. Bu arada uygulamayı keşfetmeye başlayabilirsin.</p>
+            <div class="cta">
+              <a class="btn btn-cyan" href="https://app.kampusteyim.app" target="_blank" rel="noopener">Uygulamaya git</a>
+              <button class="btn btn-ghost" type="button" id="again-btn" style="color:var(--navy);border-color:var(--line)">Yeni başvuru</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap foot">
+      <p>© KampüsteyimAPP · AYS Tech · Kayra Çatalkaya</p>
+      <nav>
+        <a href="https://app.kampusteyim.app/privacy.html" rel="noopener">Gizlilik</a>
+        <a href="https://app.kampusteyim.app/terms.html" rel="noopener">Şartlar</a>
+        <a href="https://app.kampusteyim.app/child-safety.html" rel="noopener">Çocuk güvenliği</a>
+        <a href="./index.html">Ana sayfa</a>
+        <a href="https://app.kampusteyim.app" rel="noopener">Uygulama</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script>
+(function () {
+  'use strict';
+
+  var BASE = 'https://europe-west1-ayskampuss.cloudfunctions.net';
+  var GET_URL = BASE + '/getAmbassadorFormPublic';
+  var POST_URL = BASE + '/submitAmbassadorApplication';
+  var DEFAULT_SLUG = 'kampus-elcisi';
+
+  var params = new URLSearchParams(window.location.search);
+  var slug = (params.get('form') || params.get('slug') || '').trim() || DEFAULT_SLUG;
+
+  var els = {
+    heroTitle: document.getElementById('hero-title'),
+    heroSub: document.getElementById('hero-sub'),
+    ig: document.getElementById('ig-link'),
+    about: document.getElementById('about-body'),
+    benefits: document.getElementById('benefits-list'),
+    steps: document.getElementById('steps-list'),
+    formHeading: document.getElementById('form-heading'),
+    formTitle: document.getElementById('form-title'),
+    loading: document.getElementById('loading'),
+    loadError: document.getElementById('load-error'),
+    form: document.getElementById('app-form'),
+    fields: document.getElementById('fields'),
+    kvkkText: document.getElementById('kvkk-text'),
+    disclaimerText: document.getElementById('disclaimer-text'),
+    kvkk: document.getElementById('kvkk'),
+    disclaimer: document.getElementById('disclaimer'),
+    msg: document.getElementById('form-msg'),
+    submit: document.getElementById('submit-btn'),
+    success: document.getElementById('success'),
+    again: document.getElementById('again-btn'),
+    hp: document.getElementById('hp')
+  };
+
+  var FALLBACK_FIELDS = [
+    { id: 'fullName', label: 'Ad soyad', type: 'text', required: true },
+    { id: 'email', label: 'E-posta', type: 'email', required: true },
+    { id: 'phone', label: 'Telefon', type: 'tel', required: true },
+    { id: 'university', label: 'Üniversite', type: 'text', required: true },
+    { id: 'city', label: 'Şehir', type: 'text', required: true },
+    { id: 'department', label: 'Bölüm / sınıf', type: 'text', required: false },
+    { id: 'instagram', label: 'Instagram kullanıcı adı', type: 'text', required: false },
+    { id: 'motivation', label: 'Neden kampüs elçisi olmak istiyorsun?', type: 'textarea', required: true }
+  ];
+
+  var state = { formId: '', formSlug: slug, fields: [] };
+
+  function setText(el, value) {
+    if (el) el.textContent = value == null ? '' : String(value);
+  }
+
+  function cssEscape(value) {
+    var s = String(value);
+    if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(s);
+    return s.replace(/[^a-zA-Z0-9_-]/g, function (c) { return '\\' + c; });
+  }
+
+  function renderParagraphs(container, text) {
+    container.innerHTML = '';
+    var parts = String(text || '').split(/\n{1,}/).map(function (p) { return p.trim(); }).filter(Boolean);
+    if (!parts.length) return;
+    parts.forEach(function (p) {
+      var el = document.createElement('p');
+      el.textContent = p;
+      container.appendChild(el);
+    });
+  }
+
+  var PERK_ICONS = [
+    '<path d="M12 3.6 20 7v5.4c0 4.6-3.4 8-8 9.1-4.6-1.1-8-4.5-8-9.1V7l8-3.4Z" /><path d="M9.3 12.1 11.3 14l3.7-4" />',
+    '<circle cx="9" cy="8.4" r="3.1" /><path d="M3.6 19.4c.5-3 2.7-4.7 5.4-4.7s4.9 1.7 5.4 4.7" /><path d="M16.4 6.6a3.1 3.1 0 0 1 0 6.1" />',
+    '<rect x="3.6" y="5.4" width="16.8" height="15" rx="2.6" /><path d="M8.2 3.4v4M15.8 3.4v4M3.6 10.4h16.8" />',
+    '<rect x="3.6" y="3.6" width="7" height="7" rx="1.6" /><rect x="13.4" y="3.6" width="7" height="7" rx="1.6" /><rect x="3.6" y="13.4" width="7" height="7" rx="1.6" /><path d="M13.4 13.4h3v3h-3z" />',
+    '<path d="M7 3.6h10v9.8a5 5 0 0 1-10 0V3.6Z" /><path d="M9.6 18.4h4.8M8.6 20.8h6.8" />',
+    '<path d="M12 3.4 14.6 9l6.1.6-4.6 4 1.3 6-5.4-3.1-5.4 3.1 1.3-6-4.6-4L9.4 9 12 3.4Z" />'
+  ];
+
+  /// CMS metni "Başlık | Açıklama" ya da "Başlık — Açıklama" olarak da girilebilir.
+  function splitPerk(text) {
+    var raw = String(text || '').trim();
+    var m = raw.match(/^(.{2,60}?)\s*(?:\||—|–|::)\s*(.+)$/);
+    if (m) return { title: m[1].trim(), desc: m[2].trim() };
+    return { title: raw, desc: '' };
+  }
+
+  function renderBenefits(items) {
+    if (!items || !items.length) return;
+    els.benefits.innerHTML = '';
+    items.forEach(function (text, i) {
+      var parts = splitPerk(text);
+      if (!parts.title) return;
+      var li = document.createElement('li');
+
+      var ic = document.createElement('span');
+      ic.className = 'perk-ic';
+      ic.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+        PERK_ICONS[i % PERK_ICONS.length] +
+        '</svg>';
+      li.appendChild(ic);
+
+      var h = document.createElement('h3');
+      h.className = 'perk-t';
+      h.textContent = parts.title;
+      li.appendChild(h);
+
+      if (parts.desc) {
+        var p = document.createElement('p');
+        p.className = 'perk-d';
+        p.textContent = parts.desc;
+        li.appendChild(p);
+      }
+      els.benefits.appendChild(li);
+    });
+  }
+
+  function renderSteps(items) {
+    if (!items || !items.length) return;
+    els.steps.innerHTML = '';
+    items.forEach(function (text) {
+      var li = document.createElement('li');
+      li.textContent = text;
+      els.steps.appendChild(li);
+    });
+  }
+
+  function applyLanding(landing) {
+    landing = landing || {};
+    if (landing.heroTitle) setText(els.heroTitle, landing.heroTitle);
+    if (landing.heroSubtitle) setText(els.heroSub, landing.heroSubtitle);
+    if (landing.instagramUrl) els.ig.href = landing.instagramUrl;
+    if (landing.aboutText) renderParagraphs(els.about, landing.aboutText);
+    renderBenefits(landing.benefits);
+    renderSteps(landing.steps);
+    setText(els.kvkkText, landing.kvkkSummary || 'Paylaştığınız bilgiler yalnızca elçilik başvurusunun değerlendirilmesi ve sizinle iletişim kurulması amacıyla KVKK kapsamında işlenir.');
+    setText(els.disclaimerText, landing.disclaimer || 'Kampüs Elçiliği gönüllü bir temsil programıdır. Onay, AYS Tech / KampüsteyimAPP yönetiminin değerlendirmesine bağlıdır.');
+  }
+
+  function isWide(field) {
+    return field.type === 'textarea' || /motivasyon|neden|mesaj|aciklama|açıklama/i.test(field.label || '');
+  }
+
+  function autocompleteFor(field) {
+    var id = String(field.id || '').toLowerCase();
+    if (field.type === 'email' || id.indexOf('mail') > -1) return 'email';
+    if (field.type === 'tel' || id.indexOf('phone') > -1 || id.indexOf('tel') > -1) return 'tel';
+    if (id === 'fullname' || id === 'name' || id === 'adsoyad') return 'name';
+    if (id === 'city') return 'address-level2';
+    if (id === 'university' || id === 'school') return 'organization';
+    return 'on';
+  }
+
+  function buildField(field) {
+    var wrap = document.createElement('div');
+    wrap.className = 'field' + (isWide(field) ? ' full' : '');
+
+    var domId = 'f_' + String(field.id).replace(/[^a-zA-Z0-9_-]/g, '');
+    var lab = document.createElement('label');
+    lab.className = 'lab';
+    lab.setAttribute('for', domId);
+    lab.textContent = field.label || field.id;
+    if (field.required) {
+      var star = document.createElement('span');
+      star.className = 'req';
+      star.textContent = '*';
+      lab.appendChild(star);
+    }
+    wrap.appendChild(lab);
+
+    var control;
+    var type = String(field.type || 'text').toLowerCase();
+
+    if (type === 'textarea') {
+      control = document.createElement('textarea');
+      control.rows = 4;
+    } else if (type === 'select') {
+      control = document.createElement('select');
+      var ph = document.createElement('option');
+      ph.value = '';
+      ph.textContent = 'Seçiniz';
+      control.appendChild(ph);
+      (field.options || []).forEach(function (opt) {
+        var o = document.createElement('option');
+        o.value = opt;
+        o.textContent = opt;
+        control.appendChild(o);
+      });
+    } else {
+      control = document.createElement('input');
+      control.type = ['text', 'email', 'tel', 'url', 'number', 'date'].indexOf(type) > -1 ? type : 'text';
+      control.autocomplete = autocompleteFor(field);
+      if (control.type === 'tel') control.inputMode = 'tel';
+      if (control.type === 'email') control.inputMode = 'email';
+    }
+
+    control.id = domId;
+    control.name = field.id;
+    control.setAttribute('data-field-id', field.id);
+    if (field.required) control.required = true;
+    wrap.appendChild(control);
+    return wrap;
+  }
+
+  function renderFields(fields) {
+    els.fields.innerHTML = '';
+    fields.forEach(function (f) {
+      if (!f || !f.id) return;
+      els.fields.appendChild(buildField(f));
+    });
+  }
+
+  function showForm() {
+    els.loading.hidden = true;
+    els.form.hidden = false;
+  }
+
+  function showLoadError(message) {
+    els.loading.hidden = true;
+    els.loadError.hidden = false;
+    els.loadError.textContent = message;
+  }
+
+  function setMsg(text, kind) {
+    els.msg.className = 'form-msg' + (kind ? ' ' + kind : '');
+    els.msg.textContent = text || '';
+  }
+
+  function collectAnswers() {
+    var answers = {};
+    state.fields.forEach(function (f) {
+      var el = els.fields.querySelector('[data-field-id="' + cssEscape(f.id) + '"]');
+      if (!el) return;
+      answers[f.id] = String(el.value || '').trim();
+    });
+    return answers;
+  }
+
+  function firstMissing(answers) {
+    for (var i = 0; i < state.fields.length; i++) {
+      var f = state.fields[i];
+      if (f.required && !answers[f.id]) return f;
+    }
+    return null;
+  }
+
+  function findEmail(answers) {
+    var direct = answers.email || answers.eposta || answers.mail;
+    if (direct) return direct;
+    for (var i = 0; i < state.fields.length; i++) {
+      var f = state.fields[i];
+      if (String(f.type).toLowerCase() === 'email' && answers[f.id]) return answers[f.id];
+    }
+    return '';
+  }
+
+  function focusField(fieldId) {
+    var el = els.fields.querySelector('[data-field-id="' + cssEscape(fieldId) + '"]');
+    if (el) {
+      el.focus();
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }
+
+  function load() {
+    var opts = { headers: { Accept: 'application/json' } };
+    var timer = null;
+    if (typeof AbortController === 'function') {
+      var ctrl = new AbortController();
+      opts.signal = ctrl.signal;
+      timer = setTimeout(function () { ctrl.abort(); }, 12000);
+    }
+
+    fetch(GET_URL + '?form=' + encodeURIComponent(slug), opts)
+      .then(function (res) {
+        if (timer) clearTimeout(timer);
+        return res.text().then(function (raw) {
+          var data = null;
+          try { data = JSON.parse(raw); } catch (e) { data = null; }
+          return { status: res.status, data: data, isJson: data !== null && typeof data === 'object' };
+        });
+      })
+      .then(function (out) {
+        if (!out.isJson) throw new Error('Form yüklenemedi');
+        var data = out.data;
+        applyLanding(data.landing);
+
+        if (!data.ok) {
+          if (out.status === 403) {
+            showLoadError(data.error || 'Elçilik başvuruları şu anda kapalı. Daha sonra tekrar deneyin.');
+            return;
+          }
+          if (out.status === 404) {
+            showLoadError(data.error || 'Şu anda aktif bir başvuru formu bulunmuyor.');
+            return;
+          }
+          throw new Error(data.error || 'Form yüklenemedi');
+        }
+
+        var form = data.form || {};
+        state.formId = form.id || '';
+        state.formSlug = form.slug || slug;
+        var fields = Array.isArray(form.fields) ? form.fields.filter(function (f) { return f && f.id; }) : [];
+        state.fields = fields.length ? fields : FALLBACK_FIELDS;
+        if (form.title) {
+          setText(els.formHeading, form.title);
+          setText(els.formTitle, form.title);
+          document.title = form.title + ' · KampüsteyimAPP';
+        }
+        renderFields(state.fields);
+        showForm();
+      })
+      .catch(function () {
+        if (timer) clearTimeout(timer);
+        applyLanding(null);
+        state.fields = FALLBACK_FIELDS;
+        renderFields(state.fields);
+        showForm();
+        setMsg('Form ayarları yüklenemedi, standart başvuru formu gösteriliyor.');
+      });
+  }
+
+  els.form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    setMsg('');
+
+    if (els.hp.value.trim()) {
+      els.form.hidden = true;
+      els.success.hidden = false;
+      return;
+    }
+
+    var answers = collectAnswers();
+    var missing = firstMissing(answers);
+    if (missing) {
+      setMsg((missing.label || missing.id) + ' alanı zorunlu.', 'err');
+      focusField(missing.id);
+      return;
+    }
+
+    var email = findEmail(answers);
+    if (!email || email.indexOf('@') < 1) {
+      setMsg('Geçerli bir e-posta adresi girin.', 'err');
+      return;
+    }
+
+    if (!els.kvkk.checked) {
+      setMsg('Devam etmek için KVKK metnini onaylamanız gerekiyor.', 'err');
+      els.kvkk.focus();
+      return;
+    }
+    if (!els.disclaimer.checked) {
+      setMsg('Devam etmek için program koşullarını onaylamanız gerekiyor.', 'err');
+      els.disclaimer.focus();
+      return;
+    }
+
+    var payload = {
+      formId: state.formId,
+      formSlug: state.formSlug,
+      answers: answers,
+      kvkkAccepted: true,
+      disclaimerAccepted: true,
+      email: email,
+      name: answers.fullName || answers.name || '',
+      phone: answers.phone || '',
+      university: answers.university || '',
+      city: answers.city || ''
+    };
+
+    els.submit.disabled = true;
+    els.submit.textContent = 'Gönderiliyor…';
+    setMsg('Başvurun gönderiliyor…');
+
+    fetch(POST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          return { ok: res.ok, data: data || {} };
+        });
+      })
+      .then(function (out) {
+        if (!out.ok || !out.data.ok) {
+          throw new Error(out.data.error || 'Başvuru gönderilemedi.');
+        }
+        setMsg('');
+        els.form.hidden = true;
+        els.success.hidden = false;
+        els.success.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      })
+      .catch(function (err) {
+        setMsg(err.message || 'Bir hata oluştu, lütfen tekrar deneyin.', 'err');
+      })
+      .then(function () {
+        els.submit.disabled = false;
+        els.submit.textContent = 'Başvuruyu gönder';
+      });
+  });
+
+  els.again.addEventListener('click', function () {
+    els.form.reset();
+    els.success.hidden = true;
+    els.form.hidden = false;
+    setMsg('');
+    els.form.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
+
+  load();
+})();
+  </script>
+</body>
+</html>

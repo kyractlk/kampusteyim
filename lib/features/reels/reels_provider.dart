@@ -213,19 +213,35 @@ class ReelsProvider extends ChangeNotifier {
     if (viewerId == null || viewerId.isEmpty) return list;
     final viewer = _auth?.user;
     list.sort((a, b) {
+      final authorA = _auth?.findUser(a.authorId);
+      final authorB = _auth?.findUser(b.authorId);
       final sa = CampusAffinity.scoreReel(
         viewer: viewer,
-        author: _auth?.findUser(a.authorId),
+        author: authorA,
         createdAt: a.createdAt,
         followingAuthor: _auth?.follows(a.authorId) == true,
         unseen: !a.viewedByUser(viewerId),
+        friendOfFriend: viewer != null &&
+            authorA != null &&
+            CampusAffinity.isFriendOfFriend(
+              viewer: viewer,
+              candidate: authorA,
+              auth: _auth!,
+            ),
       );
       final sb = CampusAffinity.scoreReel(
         viewer: viewer,
-        author: _auth?.findUser(b.authorId),
+        author: authorB,
         createdAt: b.createdAt,
         followingAuthor: _auth?.follows(b.authorId) == true,
         unseen: !b.viewedByUser(viewerId),
+        friendOfFriend: viewer != null &&
+            authorB != null &&
+            CampusAffinity.isFriendOfFriend(
+              viewer: viewer,
+              candidate: authorB,
+              auth: _auth!,
+            ),
       );
       final cmp = sb.compareTo(sa);
       if (cmp != 0) return cmp;

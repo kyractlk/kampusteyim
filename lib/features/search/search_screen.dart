@@ -11,6 +11,7 @@ import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
 import '../feed/feed_screen.dart';
+import '../feed/suggested_people_rail.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key, this.initialQuery = ''});
@@ -78,6 +79,7 @@ class _SearchScreenState extends State<SearchScreen> {
         padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
         children: [
           if (q.isEmpty) ...[
+            const SuggestedPeopleRail(),
             const _SectionTitle(title: 'Popüler hashtag’ler'),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -254,6 +256,10 @@ class _PersonTile extends StatelessWidget {
           ] else if (user.showBlueBadge) ...[
             const SizedBox(width: 4),
             const VerifiedBadge(gold: false, size: 14),
+          ],
+          if (user.isCampusAmbassador) ...[
+            const SizedBox(width: 4),
+            const CampusAmbassadorBadge(size: 14),
           ],
           if (user.isBot) ...[
             const SizedBox(width: 4),

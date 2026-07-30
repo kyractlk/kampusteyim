@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/social_widgets.dart';
+import '../ads/ads_provider.dart';
 import '../auth/data/auth_provider.dart';
 import 'campus_camera_screen.dart';
 import 'stories_provider.dart';
@@ -26,19 +27,21 @@ class StoryRingBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final stories = context.watch<StoriesProvider>();
+    final ads = context.watch<AdsProvider>();
     final me = auth.user;
     if (me == null) return const SizedBox.shrink();
     if (me.isSpectatorMode) return const SizedBox.shrink();
 
     final rings = stories.storyRings();
+    final storyAd = ads.pick(ads.stories);
+    final extra = storyAd == null ? 0 : 1;
 
     return SizedBox(
       height: 108,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        // Instagram: solda ayrı + , sonra kendi hikâye, sonra diğerleri
-        itemCount: rings.length + 1,
+        itemCount: rings.length + 1 + extra,
         separatorBuilder: (_, _) => const SizedBox(width: 14),
         itemBuilder: (context, index) {
           if (index == 0) {
@@ -46,7 +49,22 @@ class StoryRingBar extends StatelessWidget {
               onTap: () => openCampusShareMenu(context),
             );
           }
-          final ring = rings[index - 1];
+          if (storyAd != null && index == 1) {
+            return _AdStoryRing(
+              ad: storyAd,
+              onTap: () {
+                showModalBottomSheet(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (_) => Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: AdCard(ad: storyAd),
+                  ),
+                );
+              },
+            );
+          }
+          final ring = rings[index - 1 - extra];
           final isSelf = ring.authorId == me.id;
           return _StoryRingTile(
             name: isSelf ? 'Hikâyen' : ring.authorName.split(' ').first,
@@ -174,6 +192,52 @@ class _StoryRingTile extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AdStoryRing extends StatelessWidget {
+  const _AdStoryRing({required this.ad, required this.onTap});
+  final Map<String, dynamic> ad;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(40),
+      child: SizedBox(
+        width: 76,
+        child: Column(
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.navy, width: 2.5),
+                color: AppColors.navy.withValues(alpha: 0.08),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                'REKLAM',
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.navy,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${ad['companyName'] ?? 'Reklam'}'.split(' ').first,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),

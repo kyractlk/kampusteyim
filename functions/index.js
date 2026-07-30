@@ -65,7 +65,7 @@ async function getOpenAI() {
 async function getMailer() {
   const secrets = await loadSecrets();
   const transporter = nodemailer.createTransport({
-    host: secrets.smtp_host || 'smtp.gaunengineering.com.tr',
+    host: secrets.smtp_host || 'smtp.kampusteyim.app',
     port: Number(secrets.smtp_port || 465),
     secure: true,
     auth: {
@@ -4858,6 +4858,35 @@ exports.submitLeadApplication = onRequest(
 const PROMO_DOC = 'app_config/promo';
 const PROMO_STATS = 'app_config/promo_stats';
 const DEFAULT_QR_LANDING = `${BRAND_MARKETING}/get.html`;
+const DEFAULT_APP_STORE_URL = 'https://apps.apple.com/tr/app/id6793663176';
+const DOWNLOAD_SECTION_URL = `${BRAND_MARKETING}/#indir`;
+
+function isAppStoreLink(url) {
+  return /^https?:\/\/(?:[a-z0-9-]+\.)*(?:apps\.apple\.com|itunes\.apple\.com)\//i.test(
+    String(url || '').trim(),
+  );
+}
+
+function isPlayStoreLink(url) {
+  const u = String(url || '').trim();
+  return /^https?:\/\/play\.google\.com\//i.test(u) || /^market:\/\//i.test(u);
+}
+
+/// QR/badge yönlendirmesi asla mağaza dışı bir siteye düşmesin diye
+/// admin linkleri mağaza formatına göre doğrulanır.
+function resolveStoreUrls(cfg) {
+  return {
+    ios: isAppStoreLink(cfg.appStoreUrl) ? cfg.appStoreUrl : DEFAULT_APP_STORE_URL,
+    android: isPlayStoreLink(cfg.playStoreUrl) ? cfg.playStoreUrl : '',
+  };
+}
+
+function resolveRedirectUrl(platform, cfg) {
+  const store = resolveStoreUrls(cfg);
+  if (platform === 'ios') return store.ios;
+  if (platform === 'android') return store.android || DOWNLOAD_SECTION_URL;
+  return DOWNLOAD_SECTION_URL;
+}
 
 async function readPromoConfig() {
   const snap = await db.doc(PROMO_DOC).get();
@@ -4882,9 +4911,15 @@ exports.getPromoPublic = onRequest(
       const cfg = await readPromoConfig();
       const statsSnap = await db.doc(PROMO_STATS).get();
       const s = statsSnap.exists ? statsSnap.data() || {} : {};
+      const store = resolveStoreUrls(cfg);
+      res.set('Cache-Control', 'public, max-age=60, s-maxage=300');
       res.status(200).json({
         ok: true,
         ...cfg,
+        iosUrl: store.ios,
+        androidUrl: store.android,
+        androidReady: Boolean(store.android),
+        downloadSectionUrl: DOWNLOAD_SECTION_URL,
         stats: {
           total: Number(s.total || 0),
           ios: Number(s.ios || 0),
@@ -4942,21 +4977,22 @@ exports.trackPromoScan = onRequest(
       };
       await db.doc(PROMO_STATS).set(inc, { merge: true });
 
-      const redirectUrl =
-        platform === 'ios'
-          ? cfg.appStoreUrl || cfg.playStoreUrl || BRAND_HOME
-          : platform === 'android'
-            ? cfg.playStoreUrl || cfg.appStoreUrl || BRAND_HOME
-            : cfg.playStoreUrl || cfg.appStoreUrl || BRAND_HOME;
+      const store = resolveStoreUrls(cfg);
+      const redirectUrl = resolveRedirectUrl(platform, cfg);
 
       if (req.method === 'GET' && String(body.redirect || '1') !== '0') {
-        res.redirect(302, redirectUrl || BRAND_HOME);
+        res.set('Cache-Control', 'no-store');
+        res.redirect(302, redirectUrl);
         return;
       }
       res.status(200).json({
         ok: true,
         platform,
         redirectUrl,
+        iosUrl: store.ios,
+        androidUrl: store.android,
+        androidReady: Boolean(store.android),
+        downloadSectionUrl: DOWNLOAD_SECTION_URL,
         playStoreUrl: cfg.playStoreUrl,
         appStoreUrl: cfg.appStoreUrl,
       });
@@ -5053,9 +5089,17 @@ exports.adminSetPlus = onCall(
     const userId = String(request.data?.userId || '').trim();
     const action = String(request.data?.action || '').trim();
     if (!userId) throw new HttpsError('invalid-argument', 'userId zorunlu');
-    const userRef = db.collection('users').doc(userId);
-    const snap = await userRef.get();
-    if (!snap.exists) throw new HttpsError('not-found', 'Kullanıcı yok');
+    let userDoc = await findUserDocByAnyId(userId);
+    if (!userDoc && userId.includes('@')) {
+      const q = await db
+        .collection('users')
+        .where('email', '==', userId.toLowerCase())
+        .limit(1)
+        .get();
+      if (!q.empty) userDoc = q.docs[0];
+    }
+    if (!userDoc || !userDoc.exists) throw new HttpsError('not-found', 'Kullanıcı yok');
+    const userRef = userDoc.ref;
 
     if (action === 'revoke') {
       await userRef.set(
@@ -5650,3 +5694,800 @@ exports.onReelCreatedPush = onDocumentCreated(
   },
 );
 
+
+/** ===================== Landing CMS + Kampüs Elçiliği ===================== */
+
+const LANDING_DOC = 'app_config/landing';
+
+function defaultLandingConfig() {
+  return {
+    heroTitle: 'KampüsteyimAPP',
+    heroSubtitle: 'Doğrulanmış kampüs sosyal ağı',
+    instagramUrl: 'https://instagram.com/kampusteyimapp',
+    aboutText:
+      'KampüsteyimAPP; AYS Tech altyapısıyla üniversite öğrencilerini, firmaları ve resmi toplulukları tek doğrulanmış dijital çatı altında buluşturur. Kampüs Elçiliği programı, üniversitenizde resmi temsilci olarak topluluğu büyütmenizi sağlar.',
+    benefits: [
+      'Gold tick + Kampüs Elçisi unvanı',
+      'Üniversitenizde görünürlük ve networking',
+      'Etkinlik / stand / tanıtım süreçlerinde öncelik',
+      'Resmi iletişim ve büyüme desteği',
+    ],
+    steps: [
+      'Formu eksiksiz doldur',
+      'Başvurun incelensin',
+      'Onay sonrası elçi profilin aktifleşsin',
+      'Stand ve tanıtımda QR ile büyüt',
+    ],
+    disclaimer:
+      'Kampüs Elçiliği gönüllü bir temsil programıdır. Onay, AYS Tech / KampüsteyimAPP yönetiminin değerlendirmesine bağlıdır. Yanıltıcı bilgi başvuru reddine yol açabilir.',
+    kvkkSummary:
+      'Başvuruda paylaştığınız ad, iletişim, üniversite ve form yanıtları; elçilik değerlendirme ve iletişim amacıyla KVKK kapsamında işlenir. Veriler yalnızca bu amaçla kullanılır; talebiniz halinde silinebilir.',
+    ambassadorPageEnabled: true,
+  };
+}
+
+async function readLandingConfig() {
+  const snap = await db.doc(LANDING_DOC).get();
+  const d = snap.exists ? snap.data() || {} : {};
+  const base = defaultLandingConfig();
+  return {
+    ...base,
+    heroTitle: String(d.heroTitle || base.heroTitle).trim(),
+    heroSubtitle: String(d.heroSubtitle || base.heroSubtitle).trim(),
+    instagramUrl: String(d.instagramUrl || base.instagramUrl).trim(),
+    aboutText: String(d.aboutText || base.aboutText).trim(),
+    benefits: Array.isArray(d.benefits) && d.benefits.length
+      ? d.benefits.map((x) => String(x)).filter(Boolean)
+      : base.benefits,
+    steps: Array.isArray(d.steps) && d.steps.length
+      ? d.steps.map((x) => String(x)).filter(Boolean)
+      : base.steps,
+    disclaimer: String(d.disclaimer || base.disclaimer).trim(),
+    kvkkSummary: String(d.kvkkSummary || base.kvkkSummary).trim(),
+    ambassadorPageEnabled: d.ambassadorPageEnabled !== false,
+    updatedAt: d.updatedAt || null,
+  };
+}
+
+exports.getLandingPublic = onRequest(
+  { region: 'europe-west1', cors: true },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    try {
+      const landing = await readLandingConfig();
+      const promo = await readPromoConfig();
+      res.status(200).json({ ok: true, landing, promo });
+    } catch (e) {
+      console.error('[getLandingPublic]', e);
+      res.status(500).json({ ok: false, error: 'Okunamadı' });
+    }
+  },
+);
+
+exports.updateLandingConfig = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    await assertPlatformAdmin(request.auth?.uid);
+    const data = request.data || {};
+    const payload = {
+      heroTitle: sanitizePlainText(data.heroTitle || '', 120),
+      heroSubtitle: sanitizePlainText(data.heroSubtitle || '', 240),
+      instagramUrl: sanitizePlainText(data.instagramUrl || '', 400),
+      aboutText: sanitizePlainText(data.aboutText || '', 4000),
+      benefits: Array.isArray(data.benefits)
+        ? data.benefits.map((x) => sanitizePlainText(x, 200)).filter(Boolean).slice(0, 20)
+        : [],
+      steps: Array.isArray(data.steps)
+        ? data.steps.map((x) => sanitizePlainText(x, 200)).filter(Boolean).slice(0, 20)
+        : [],
+      disclaimer: sanitizePlainText(data.disclaimer || '', 2000),
+      kvkkSummary: sanitizePlainText(data.kvkkSummary || '', 4000),
+      ambassadorPageEnabled: data.ambassadorPageEnabled !== false,
+      updatedAt: new Date().toISOString(),
+      updatedBy: request.auth.uid,
+    };
+    await db.doc(LANDING_DOC).set(payload, { merge: true });
+    return { ok: true, ...payload };
+  },
+);
+
+exports.adminUpsertEmbassy = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    await assertPlatformAdmin(request.auth?.uid);
+    const data = request.data || {};
+    const id = String(data.id || '').trim();
+    const ref = id
+      ? db.collection('embassies').doc(id)
+      : db.collection('embassies').doc();
+    const payload = {
+      name: sanitizePlainText(data.name || '', 120),
+      university: sanitizePlainText(data.university || '', 160),
+      city: sanitizePlainText(data.city || '', 80),
+      description: sanitizePlainText(data.description || '', 2000),
+      active: data.active !== false,
+      updatedAt: new Date().toISOString(),
+      updatedBy: request.auth.uid,
+    };
+    if (!payload.name || !payload.university) {
+      throw new HttpsError('invalid-argument', 'Ad ve üniversite gerekli');
+    }
+    const existing = await ref.get();
+    if (!existing.exists) payload.createdAt = new Date().toISOString();
+    await ref.set(payload, { merge: true });
+    return { ok: true, id: ref.id };
+  },
+);
+
+exports.adminUpsertAmbassadorForm = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    await assertPlatformAdmin(request.auth?.uid);
+    const data = request.data || {};
+    let slug = sanitizePlainText(data.slug || '', 80)
+      .toLowerCase()
+      .replace(/[^a-z0-9\-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    if (!slug) slug = 'kampus-elcisi';
+    const fields = Array.isArray(data.fields)
+      ? data.fields
+          .map((f) => ({
+            id: sanitizePlainText(f.id || '', 40),
+            label: sanitizePlainText(f.label || '', 120),
+            type: sanitizePlainText(f.type || 'text', 20) || 'text',
+            required: f.required !== false,
+            options: Array.isArray(f.options)
+              ? f.options.map((o) => sanitizePlainText(o, 80)).filter(Boolean).slice(0, 30)
+              : [],
+          }))
+          .filter((f) => f.id && f.label)
+          .slice(0, 40)
+      : [];
+    const q = await db.collection('ambassador_forms').where('slug', '==', slug).limit(1).get();
+    const ref = q.empty ? db.collection('ambassador_forms').doc() : q.docs[0].ref;
+    const payload = {
+      title: sanitizePlainText(data.title || 'Kampüs Elçiliği Başvurusu', 160),
+      slug,
+      fields,
+      active: data.active !== false,
+      embassyId: sanitizePlainText(data.embassyId || '', 80) || null,
+      updatedAt: new Date().toISOString(),
+      updatedBy: request.auth.uid,
+    };
+    if (q.empty) payload.createdAt = new Date().toISOString();
+    await ref.set(payload, { merge: true });
+    return { ok: true, id: ref.id, slug };
+  },
+);
+
+exports.getAmbassadorFormPublic = onRequest(
+  { region: 'europe-west1', cors: true },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    try {
+      const landing = await readLandingConfig();
+      if (!landing.ambassadorPageEnabled) {
+        res.status(403).json({ ok: false, error: 'Elçilik başvuruları kapalı' });
+        return;
+      }
+      const slug = String(req.query.slug || req.query.form || 'kampus-elcisi').trim();
+      let snap = await db.collection('ambassador_forms').where('slug', '==', slug).limit(1).get();
+      if (snap.empty) {
+        snap = await db.collection('ambassador_forms').where('active', '==', true).limit(1).get();
+      }
+      if (snap.empty) {
+        res.status(200).json({
+          ok: true,
+          landing,
+          form: {
+            id: '',
+            title: 'Kampüs Elçiliği Başvurusu',
+            slug: slug || 'kampus-elcisi',
+            fields: [
+              { id: 'fullName', label: 'Ad Soyad', type: 'text', required: true },
+              { id: 'email', label: 'E-posta', type: 'email', required: true },
+              { id: 'phone', label: 'Telefon', type: 'tel', required: true },
+              { id: 'university', label: 'Üniversite', type: 'text', required: true },
+              { id: 'city', label: 'Şehir', type: 'text', required: true },
+              { id: 'motivation', label: 'Neden kampüs elçisi olmak istiyorsun?', type: 'textarea', required: true },
+              { id: 'experience', label: 'Kulüp / etkinlik deneyimin', type: 'textarea', required: false },
+              { id: 'instagram', label: 'Instagram', type: 'text', required: false },
+            ],
+            embassyId: null,
+            isDefault: true,
+          },
+        });
+        return;
+      }
+      const doc = snap.docs[0];
+      const d = doc.data() || {};
+      if (d.active === false) {
+        res.status(403).json({ ok: false, error: 'Form pasif', landing });
+        return;
+      }
+      res.status(200).json({
+        ok: true,
+        landing,
+        form: {
+          id: doc.id,
+          title: d.title || '',
+          slug: d.slug || slug,
+          fields: Array.isArray(d.fields) ? d.fields : [],
+          embassyId: d.embassyId || null,
+        },
+      });
+    } catch (e) {
+      console.error('[getAmbassadorFormPublic]', e);
+      res.status(500).json({ ok: false, error: 'Okunamadı' });
+    }
+  },
+);
+
+exports.submitAmbassadorApplication = onRequest(
+  { region: 'europe-west1', cors: true },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json({ ok: false, error: 'POST' });
+      return;
+    }
+    try {
+      const landing = await readLandingConfig();
+      if (!landing.ambassadorPageEnabled) {
+        res.status(403).json({ ok: false, error: 'Başvurular kapalı' });
+        return;
+      }
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
+      const formId = sanitizePlainText(body.formId || '', 80);
+      const formSlug = sanitizePlainText(body.formSlug || '', 80) || 'kampus-elcisi';
+      const defaultFields = [
+        { id: 'fullName', label: 'Ad Soyad', type: 'text', required: true },
+        { id: 'email', label: 'E-posta', type: 'email', required: true },
+        { id: 'phone', label: 'Telefon', type: 'tel', required: true },
+        { id: 'university', label: 'Üniversite', type: 'text', required: true },
+        { id: 'city', label: 'Şehir', type: 'text', required: true },
+        { id: 'motivation', label: 'Neden kampüs elçisi olmak istiyorsun?', type: 'textarea', required: true },
+        { id: 'experience', label: 'Kulüp / etkinlik deneyimin', type: 'textarea', required: false },
+        { id: 'instagram', label: 'Instagram', type: 'text', required: false },
+      ];
+      let formSnap = null;
+      if (formId) formSnap = await db.collection('ambassador_forms').doc(formId).get();
+      if (!formSnap || !formSnap.exists) {
+        const q = await db
+          .collection('ambassador_forms')
+          .where('slug', '==', formSlug)
+          .limit(1)
+          .get();
+        if (!q.empty) formSnap = q.docs[0];
+      }
+      const form = formSnap && formSnap.exists
+        ? formSnap.data() || {}
+        : {
+            title: 'Kampüs Elçiliği Başvurusu',
+            slug: formSlug,
+            fields: defaultFields,
+            embassyId: null,
+            active: true,
+          };
+      if (form.active === false) {
+        res.status(403).json({ ok: false, error: 'Form pasif' });
+        return;
+      }
+      const fields = Array.isArray(form.fields) && form.fields.length ? form.fields : defaultFields;
+      const answersIn = body.answers && typeof body.answers === 'object' ? body.answers : {};
+      const answers = {};
+      for (const f of fields) {
+        const id = String(f.id || '');
+        const val = sanitizePlainText(answersIn[id] || body[id] || '', f.type === 'textarea' ? 4000 : 400);
+        if (f.required && !val) {
+          res.status(400).json({ ok: false, error: `${f.label || id} zorunlu` });
+          return;
+        }
+        answers[id] = val;
+      }
+      const email = sanitizePlainText(answers.email || body.email || '', 120).toLowerCase();
+      const name = sanitizePlainText(answers.fullName || answers.name || body.name || '', 120);
+      if (!email || !email.includes('@')) {
+        res.status(400).json({ ok: false, error: 'Geçerli e-posta gerekli' });
+        return;
+      }
+      const recent = await db
+        .collection('ambassador_applications')
+        .where('email', '==', email)
+        .orderBy('createdAt', 'descending')
+        .limit(2)
+        .get()
+        .catch(() => ({ empty: true, docs: [] }));
+      if (!recent.empty) {
+        const last = recent.docs[0].data() || {};
+        const t = Date.parse(last.createdAt || '') || 0;
+        if (Date.now() - t < 10 * 60 * 1000) {
+          res.status(429).json({ ok: false, error: 'Çok sık başvuru. Biraz sonra tekrar deneyin.' });
+          return;
+        }
+      }
+      const now = new Date().toISOString();
+      const ref = await db.collection('ambassador_applications').add({
+        formId: formSnap && formSnap.exists ? formSnap.id : 'default',
+        formSlug: form.slug || formSlug,
+        formTitle: form.title || 'Kampüs Elçiliği Başvurusu',
+        embassyId: form.embassyId || null,
+        name,
+        email,
+        phone: sanitizePlainText(answers.phone || body.phone || '', 40),
+        university: sanitizePlainText(answers.university || body.university || '', 160),
+        city: sanitizePlainText(answers.city || body.city || '', 80),
+        answers,
+        status: 'open',
+        source: 'landing_elcilik',
+        userAgent: String(req.get('user-agent') || '').slice(0, 240),
+        createdAt: now,
+        updatedAt: now,
+        kvkkAccepted: body.kvkkAccepted === true,
+        disclaimerAccepted: body.disclaimerAccepted === true,
+      });
+      res.status(200).json({ ok: true, id: ref.id });
+    } catch (e) {
+      console.error('[submitAmbassadorApplication]', e);
+      res.status(500).json({ ok: false, error: 'Başvuru kaydedilemedi' });
+    }
+  },
+);
+
+exports.adminUpdateAmbassadorApplication = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    await assertPlatformAdmin(request.auth?.uid);
+    const id = String(request.data?.applicationId || '').trim();
+    const status = String(request.data?.status || '').trim();
+    if (!id || !['open', 'approved', 'rejected', 'done'].includes(status)) {
+      throw new HttpsError('invalid-argument', 'Geçersiz durum');
+    }
+    await db.collection('ambassador_applications').doc(id).set(
+      {
+        status,
+        updatedAt: new Date().toISOString(),
+        reviewedBy: request.auth.uid,
+      },
+      { merge: true },
+    );
+    return { ok: true };
+  },
+);
+
+exports.adminSetCampusAmbassador = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    await assertPlatformAdmin(request.auth?.uid);
+    const userKey = String(request.data?.userKey || '').trim();
+    const active = request.data?.active !== false;
+    const embassyId = sanitizePlainText(request.data?.embassyId || '', 80) || null;
+    const badgeTitle =
+      sanitizePlainText(request.data?.badgeTitle || 'Kampüs Elçisi', 80) || 'Kampüs Elçisi';
+    if (!userKey) throw new HttpsError('invalid-argument', 'Kullanıcı gerekli');
+
+    let doc = await findUserDocByAnyId(userKey);
+    if (!doc && userKey.includes('@')) {
+      const q = await db.collection('users').where('email', '==', userKey.toLowerCase()).limit(1).get();
+      if (!q.empty) doc = q.docs[0];
+    }
+    if (!doc || !doc.exists) {
+      const qName = userKey.toLowerCase().replace(/^@/, '');
+      const scan = await db.collection('users').limit(500).get();
+      const hit = scan.docs.find((d) => {
+        const m = d.data() || {};
+        const name = `${m.firstName || ''} ${m.lastName || ''} ${m.displayName || ''}`
+          .trim()
+          .toLowerCase();
+        const email = String(m.email || '').toLowerCase();
+        const uname = String(m.username || '').toLowerCase();
+        return (
+          name.includes(qName) ||
+          email === qName ||
+          uname === qName ||
+          uname.includes(qName)
+        );
+      });
+      if (hit) doc = hit;
+    }
+    if (!doc || !doc.exists) throw new HttpsError('not-found', 'Kullanıcı bulunamadı');
+
+    const payload = active
+      ? {
+          isCampusAmbassador: true,
+          badgeTitle,
+          embassyId,
+          updatedAt: new Date().toISOString(),
+        }
+      : {
+          isCampusAmbassador: false,
+          badgeTitle: '',
+          embassyId: null,
+          updatedAt: new Date().toISOString(),
+        };
+    await doc.ref.set(payload, { merge: true });
+    return { ok: true, userId: doc.id, active };
+  },
+);
+
+const APP_VERSION_DOC = 'app_config/app_version';
+const IOS_APP_ID = '6793663176';
+const ANDROID_PACKAGE = 'com.aystech.kampusteyimapp';
+
+function normalizeVersion(v) {
+  return String(v || '')
+    .trim()
+    .replace(/^v/i, '')
+    .split(/[^0-9.]+/)[0]
+    .replace(/^\.+|\.+$/g, '');
+}
+
+function compareVersions(a, b) {
+  const pa = normalizeVersion(a).split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = normalizeVersion(b).split('.').map((n) => parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length, 3);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+async function fetchIosStoreVersion(appId) {
+  const id = String(appId || IOS_APP_ID).replace(/\D/g, '') || IOS_APP_ID;
+  const url = 'https://itunes.apple.com/lookup?id=' + id + '&country=tr';
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error('itunes ' + res.status);
+  const data = await res.json();
+  const row = Array.isArray(data.results) ? data.results[0] : null;
+  if (!row) return { version: '', trackViewUrl: '' };
+  return {
+    version: normalizeVersion(row.version),
+    trackViewUrl: String(row.trackViewUrl || ''),
+  };
+}
+
+async function fetchAndroidStoreVersion(packageName) {
+  const pkg = String(packageName || ANDROID_PACKAGE).trim() || ANDROID_PACKAGE;
+  const url =
+    'https://play.google.com/store/apps/details?id=' +
+    encodeURIComponent(pkg) +
+    '&hl=en&gl=US';
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
+  });
+  if (!res.ok) {
+    return { version: '', available: false, status: res.status };
+  }
+  const html = await res.text();
+  const patterns = [
+    /\[\[\[["'](\d+(?:\.\d+){1,3})["']\]\]/,
+    /Current Version<\/div><span[^>]*><div[^>]*><span[^>]*>([\d.]+)</,
+    /"softwareVersion"\s*:\s*"([\d.]+)"/,
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m && m[1]) return { version: normalizeVersion(m[1]), available: true };
+  }
+  return { version: '', available: true };
+}
+
+async function readAppVersionConfig() {
+  const snap = await db.doc(APP_VERSION_DOC).get();
+  const d = snap.exists ? snap.data() || {} : {};
+  const defaultTitle = 'Güncelleme gerekli';
+  const defaultMessage =
+    'KampüsteyimAPP’in yeni sürümü yayında. Devam etmek için uygulamayı mağazadan güncelle.';
+  return {
+    forceBelowMin: d.forceBelowMin !== false,
+    softUpdateEnabled: d.softUpdateEnabled !== false,
+    minVersion: normalizeVersion(d.minVersion || ''),
+    latestIosOverride: normalizeVersion(d.latestIosOverride || ''),
+    latestAndroidOverride: normalizeVersion(d.latestAndroidOverride || ''),
+    title: String(d.title || defaultTitle).trim() || defaultTitle,
+    message: String(d.message || defaultMessage).trim() || defaultMessage,
+    iosAppId: String(d.iosAppId || IOS_APP_ID).replace(/\D/g, '') || IOS_APP_ID,
+    androidPackage: String(d.androidPackage || ANDROID_PACKAGE).trim() || ANDROID_PACKAGE,
+    cachedIosVersion: normalizeVersion(d.cachedIosVersion || ''),
+    cachedAndroidVersion: normalizeVersion(d.cachedAndroidVersion || ''),
+    cachedAt: d.cachedAt || null,
+    updatedAt: d.updatedAt || null,
+  };
+}
+
+async function refreshStoreVersions(cfg, { force = false } = {}) {
+  const cachedAgeMs = cfg.cachedAt ? Date.now() - Date.parse(cfg.cachedAt) : Infinity;
+  const useCache = !force && Number.isFinite(cachedAgeMs) && cachedAgeMs < 30 * 60 * 1000;
+  let iosVersion = cfg.latestIosOverride || (useCache ? cfg.cachedIosVersion : '');
+  let androidVersion =
+    cfg.latestAndroidOverride || (useCache ? cfg.cachedAndroidVersion : '');
+  let iosUrl = '';
+  let androidAvailable = Boolean(androidVersion);
+
+  const tasks = [];
+  if (!cfg.latestIosOverride) {
+    tasks.push(
+      fetchIosStoreVersion(cfg.iosAppId)
+        .then((r) => {
+          if (r.version) iosVersion = r.version;
+          iosUrl = r.trackViewUrl || '';
+        })
+        .catch((e) => console.warn('[appVersion] ios lookup', e && e.message ? e.message : e)),
+    );
+  }
+  if (!cfg.latestAndroidOverride) {
+    tasks.push(
+      fetchAndroidStoreVersion(cfg.androidPackage)
+        .then((r) => {
+          if (r.version) {
+            androidVersion = r.version;
+            androidAvailable = true;
+          } else {
+            androidAvailable = r.available !== false;
+          }
+        })
+        .catch((e) => console.warn('[appVersion] play lookup', e && e.message ? e.message : e)),
+    );
+  }
+  await Promise.all(tasks);
+
+  const nowIso = new Date().toISOString();
+  await db
+    .doc(APP_VERSION_DOC)
+    .set(
+      {
+        cachedIosVersion: iosVersion || cfg.cachedIosVersion || '',
+        cachedAndroidVersion: androidVersion || cfg.cachedAndroidVersion || '',
+        cachedAt: nowIso,
+      },
+      { merge: true },
+    )
+    .catch(() => {});
+
+  return {
+    iosVersion: iosVersion || cfg.cachedIosVersion || '',
+    androidVersion: androidVersion || cfg.cachedAndroidVersion || '',
+    iosUrl,
+    androidAvailable,
+  };
+}
+
+/** Public: client version gate — also fetches store versions */
+exports.getAppUpdateGate = onRequest(
+  { region: 'europe-west1', cors: true, timeoutSeconds: 30 },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    try {
+      const q = req.method === 'GET' ? req.query || {} : req.body || {};
+      const platform = String(q.platform || '').toLowerCase();
+      const current = normalizeVersion(q.currentVersion || q.version || '');
+      const cfg = await readAppVersionConfig();
+      const store = await refreshStoreVersions(cfg, { force: String(q.refresh) === '1' });
+      const promo = await readPromoConfig();
+      const storeUrls = resolveStoreUrls(promo);
+
+      const storeVersion =
+        platform === 'ios'
+          ? store.iosVersion
+          : platform === 'android'
+            ? store.androidVersion
+            : store.iosVersion || store.androidVersion;
+
+      const belowMin =
+        Boolean(cfg.minVersion) &&
+        Boolean(current) &&
+        compareVersions(current, cfg.minVersion) < 0;
+      const belowStore =
+        Boolean(storeVersion) &&
+        Boolean(current) &&
+        compareVersions(current, storeVersion) < 0;
+
+      const forceUpdate = Boolean(current) && cfg.forceBelowMin && belowMin;
+      const softUpdate =
+        Boolean(current) && !forceUpdate && cfg.softUpdateEnabled && belowStore;
+
+      let storeUrl = DOWNLOAD_SECTION_URL;
+      if (platform === 'ios') {
+        storeUrl = storeUrls.ios || store.iosUrl || DEFAULT_APP_STORE_URL;
+      } else if (platform === 'android') {
+        storeUrl =
+          storeUrls.android ||
+          'https://play.google.com/store/apps/details?id=' + cfg.androidPackage;
+      }
+
+      res.set('Cache-Control', 'public, max-age=120');
+      res.status(200).json({
+        ok: true,
+        platform: platform || 'unknown',
+        currentVersion: current,
+        minVersion: cfg.minVersion,
+        storeVersion: storeVersion || '',
+        iosStoreVersion: store.iosVersion || '',
+        androidStoreVersion: store.androidVersion || '',
+        forceUpdate,
+        softUpdate,
+        updateRequired: forceUpdate || softUpdate,
+        title: cfg.title,
+        message: cfg.message,
+        storeUrl,
+        appStoreUrl: storeUrls.ios || store.iosUrl || DEFAULT_APP_STORE_URL,
+        playStoreUrl: storeUrls.android || '',
+        androidReady: Boolean(storeUrls.android),
+        softUpdateEnabled: cfg.softUpdateEnabled,
+        forceBelowMin: cfg.forceBelowMin,
+        cachedAt: cfg.cachedAt,
+      });
+    } catch (e) {
+      console.error('[getAppUpdateGate]', e);
+      res.status(500).json({ ok: false, error: 'Sürüm kontrolü başarısız' });
+    }
+  },
+);
+
+/** Admin: min version / force update / message */
+exports.updateAppVersionConfig = onCall(
+  { region: 'europe-west1', timeoutSeconds: 45 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    const data = request.data || {};
+    const nowIso = new Date().toISOString();
+    const patch = {
+      updatedAt: nowIso,
+      updatedBy: request.auth.uid,
+    };
+    if (data.minVersion != null) patch.minVersion = normalizeVersion(data.minVersion);
+    if (data.latestIosOverride != null) {
+      patch.latestIosOverride = normalizeVersion(data.latestIosOverride);
+    }
+    if (data.latestAndroidOverride != null) {
+      patch.latestAndroidOverride = normalizeVersion(data.latestAndroidOverride);
+    }
+    if (data.title != null) {
+      patch.title = sanitizePlainText(data.title, 120) || 'Güncelleme gerekli';
+    }
+    if (data.message != null) {
+      patch.message = sanitizePlainText(data.message, 500);
+    }
+    if (typeof data.forceBelowMin === 'boolean') patch.forceBelowMin = data.forceBelowMin;
+    if (typeof data.softUpdateEnabled === 'boolean') {
+      patch.softUpdateEnabled = data.softUpdateEnabled;
+    }
+    if (data.iosAppId) {
+      patch.iosAppId = String(data.iosAppId).replace(/\D/g, '') || IOS_APP_ID;
+    }
+    if (data.androidPackage) {
+      patch.androidPackage =
+        sanitizePlainText(data.androidPackage, 120) || ANDROID_PACKAGE;
+    }
+
+    await db.doc(APP_VERSION_DOC).set(patch, { merge: true });
+
+    let store = null;
+    if (data.refreshStore === true) {
+      const cfg = await readAppVersionConfig();
+      store = await refreshStoreVersions(Object.assign({}, cfg, patch), { force: true });
+    }
+
+    const cfg = await readAppVersionConfig();
+    return {
+      ok: true,
+      config: cfg,
+      store: store
+        ? { iosVersion: store.iosVersion, androidVersion: store.androidVersion }
+        : {
+            iosVersion: cfg.cachedIosVersion,
+            androidVersion: cfg.cachedAndroidVersion,
+          },
+    };
+  },
+);
+
+
+// —— Payments (PayTR + Shopier + IBAN) + event review ——
+// —— Payments (PayTR + Shopier + IBAN) + commerce (bilet / cüzdan / reklam) ——
+exports.updateSmtpConfig = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    const adminDoc = await assertPlatformAdmin(request.auth.uid);
+    if (adminDoc.isSuperAdmin !== true && adminDoc.role !== 'admin') {
+      throw new HttpsError('permission-denied', 'Yalnızca süper admin');
+    }
+    const host = sanitizePlainText(request.data?.smtp_host || 'smtp.kampusteyim.app', 120);
+    const port = String(request.data?.smtp_port || '465').trim();
+    const user = sanitizePlainText(request.data?.smtp_user || 'info@kampusteyim.app', 120);
+    const pass = String(request.data?.smtp_pass || '').trim();
+    const patch = {
+      smtp_host: host,
+      smtp_port: port,
+      smtp_user: user,
+      updated_at: new Date().toISOString(),
+    };
+    if (pass) patch.smtp_pass = pass;
+    await db.collection('app_secrets').doc('runtime').set(patch, { merge: true });
+    return { ok: true, smtp_user: user, smtp_host: host };
+  },
+);
+
+const { commerceModule } = require('./commerce');
+const _commerce = commerceModule({
+  db,
+  onCall,
+  HttpsError,
+  assertPlatformAdmin,
+  sanitizePlainText,
+  FieldValue,
+});
+exports.saveOrganizerPayoutIban = _commerce.saveOrganizerPayoutIban;
+exports.adminSetOrganizerCommerce = _commerce.adminSetOrganizerCommerce;
+exports.getOrganizerDashboard = _commerce.getOrganizerDashboard;
+exports.requestWithdrawal = _commerce.requestWithdrawal;
+exports.adminReviewWithdrawal = _commerce.adminReviewWithdrawal;
+exports.createEventDiscount = _commerce.createEventDiscount;
+exports.submitAdCampaign = _commerce.submitAdCampaign;
+exports.quoteAdCampaign = _commerce.quoteAdCampaign;
+exports.adminReviewAdCampaign = _commerce.adminReviewAdCampaign;
+exports.getActiveAds = _commerce.getActiveAds;
+exports.getMyTickets = _commerce.getMyTickets;
+
+const { orgGrowthModule } = require('./org_growth');
+const _orgGrowth = orgGrowthModule({
+  db,
+  onCall,
+  HttpsError,
+  assertPlatformAdmin,
+  sanitizePlainText,
+  FieldValue,
+  sendMail,
+  sendFcmToUser,
+  buildCampusPushPayload,
+  userAllowsPush,
+});
+exports.inviteOrgMember = _orgGrowth.inviteOrgMember;
+exports.respondOrgInvite = _orgGrowth.respondOrgInvite;
+exports.revokeOrgMember = _orgGrowth.revokeOrgMember;
+exports.getOrgInvite = _orgGrowth.getOrgInvite;
+exports.dispatchAdCampaignReach = _orgGrowth.dispatchAdCampaignReach;
+
+const { paymentsModule } = require('./payments');
+const _payments = paymentsModule({
+  db,
+  onCall,
+  onRequest,
+  HttpsError,
+  assertPlatformAdmin,
+  sanitizePlainText,
+  fulfillEventOrder: _commerce.fulfillEventOrder,
+  fulfillAdOrder: _commerce.fulfillAdOrder,
+  applyDiscountAmount: _commerce.applyDiscountAmount,
+});
+exports.updatePaymentsConfig = _payments.updatePaymentsConfig;
+exports.getPaymentsAdmin = _payments.getPaymentsAdmin;
+exports.getPaymentsPublic = _payments.getPaymentsPublic;
+exports.createPaymentOrder = _payments.createPaymentOrder;
+exports.confirmIbanTransfer = _payments.confirmIbanTransfer;
+exports.adminReviewPaymentOrder = _payments.adminReviewPaymentOrder;
+exports.paytrCallback = _payments.paytrCallback;
+exports.shopierCallback = _payments.shopierCallback;
+exports.shopierPayPage = _payments.shopierPayPage;
+exports.adminReviewEvent = _payments.adminReviewEvent;
+exports.adminDeleteEvent = _payments.adminDeleteEvent;

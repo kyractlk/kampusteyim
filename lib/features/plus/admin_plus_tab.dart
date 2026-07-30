@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../admin/admin_user_search_field.dart';
+import '../payments/admin_payments_panel.dart';
 import 'plus_config.dart';
 import 'plus_provider.dart';
 
@@ -25,8 +27,6 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
   final _plusStories = TextEditingController(text: '0');
   final _plusFiles = TextEditingController(text: '15');
   final _pricing = TextEditingController();
-  final _iban = TextEditingController();
-  final _ibanHolder = TextEditingController();
   final _discount = TextEditingController();
   final _grantUser = TextEditingController();
   final _grantDays = TextEditingController(text: '60');
@@ -54,8 +54,6 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
       _plusStories,
       _plusFiles,
       _pricing,
-      _iban,
-      _ibanHolder,
       _discount,
       _grantUser,
       _grantDays,
@@ -83,8 +81,6 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
     _plusStories.text = '${cfg.rateLimitsPlus.storiesDaily}';
     _plusFiles.text = '${cfg.rateLimitsPlus.filePostsDaily}';
     _pricing.text = cfg.pricingNote;
-    _iban.text = cfg.iban;
-    _ibanHolder.text = cfg.ibanHolder;
     _discount.text = cfg.discountNote;
   }
 
@@ -109,8 +105,6 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
         filePostsDaily: _n(_plusFiles, 15),
       ),
       pricingNote: _pricing.text.trim(),
-      iban: _iban.text.trim(),
-      ibanHolder: _ibanHolder.text.trim(),
       discountNote: _discount.text.trim(),
     );
     final err = await context.read<PlusProvider>().saveConfig(cfg);
@@ -165,8 +159,8 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Ücretsiz deneme, özellik bayrakları ve rate limit yerleri. '
-          'Ödeme (Play / App Store / IBAN) henüz kapalı.',
+          'Ücretsiz deneme, özellik bayrakları ve rate limit. '
+          'Kart / Shopier / IBAN ödemesi aşağıda yapılandırılır.',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
         ),
         const SizedBox(height: 16),
@@ -239,31 +233,10 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
         _numRow('Hikâye / gün*', _plusStories),
         _numRow('Dosya post / gün*', _plusFiles),
         const SizedBox(height: 16),
-        const Text(
-          'Ödeme placeholder (aktif değil)',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 8),
         TextField(
           controller: _pricing,
           decoration: const InputDecoration(
-            labelText: 'Fiyat notu',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _iban,
-          decoration: const InputDecoration(
-            labelText: 'IBAN (web — sonra)',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _ibanHolder,
-          decoration: const InputDecoration(
-            labelText: 'IBAN hesap sahibi',
+            labelText: 'Fiyat notu (görünen metin)',
             border: OutlineInputBorder(),
           ),
         ),
@@ -271,7 +244,7 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
         TextField(
           controller: _discount,
           decoration: const InputDecoration(
-            labelText: 'İndirim notu / push-popup metni (sonra)',
+            labelText: 'İndirim notu / push metni',
             border: OutlineInputBorder(),
           ),
           maxLines: 2,
@@ -285,20 +258,20 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Ayarları kaydet'),
+              : const Text('Plus ayarlarını kaydet'),
         ),
+        const Divider(height: 36),
+        const AdminPaymentsPanel(),
         const Divider(height: 36),
         const Text(
           'Kullanıcıya Plus ata / kaldır',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 8),
-        TextField(
+        AdminUserSearchField(
           controller: _grantUser,
-          decoration: const InputDecoration(
-            labelText: 'User ID (Firebase uid)',
-            border: OutlineInputBorder(),
-          ),
+          labelText: 'Kullanici ara (ad / e-posta / @handle / uid)',
+          hintText: 'Ornek: Ali Veli veya ali@mail.com',
         ),
         const SizedBox(height: 8),
         TextField(

@@ -28,12 +28,16 @@ class AuthProvider extends ChangeNotifier {
   final List<AppUser> _directory = [];
   /// Eski mock id → Firebase uid (paylaşım / feed tutarlılığı).
   final Map<String, String> _idAliases = {};
+  /// Instagram tarzı önerilenler — bu oturumda kapatılanlar (sonra tekrar çıkabilir).
+  final Set<String> _dismissedSuggestions = {};
 
   AppUser? get user => _user;
   bool get isAuthenticated => _user != null;
   bool get isBusy => _busy;
   String? get error => _error;
   List<AppUser> get directory => List.unmodifiable(_directory);
+  Set<String> get dismissedSuggestions =>
+      Set.unmodifiable(_dismissedSuggestions);
 
   AppUser? findUser(String id) {
     final raw = id.trim();
@@ -144,6 +148,10 @@ class AuthProvider extends ChangeNotifier {
         isSuperAdmin: m['isSuperAdmin'] == true,
         hasGoldBadge: m['hasGoldBadge'] == true,
         hasBlueBadge: m['hasBlueBadge'] == true,
+        badgeTitle: '${m['badgeTitle'] ?? ''}',
+        isCampusAmbassador: m['isCampusAmbassador'] == true,
+        embassyId: m['embassyId'] as String?,
+        isEventOrganizer: m['isEventOrganizer'] == true,
         plusActive: m['plusActive'] == true,
         plusSource: '${m['plusSource'] ?? ''}',
         plusStartsAt: DateTime.tryParse('${m['plusStartsAt'] ?? ''}'),
@@ -155,6 +163,12 @@ class AuthProvider extends ChangeNotifier {
         affiliatedCommunityId: m['affiliatedCommunityId'] as String?,
         affiliatedCommunityName: m['affiliatedCommunityName'] as String?,
         affiliatedOrgLogoUrl: m['affiliatedOrgLogoUrl'] as String?,
+        affiliatedCompanyId: m['affiliatedCompanyId'] as String?,
+        affiliatedCompanyName: m['affiliatedCompanyName'] as String?,
+        panelOrgId: m['panelOrgId'] as String?,
+        panelOrgType: m['panelOrgType'] as String?,
+        panelOrgName: m['panelOrgName'] as String?,
+        panelAccess: m['panelAccess'] == true,
         restrictionType: '${m['restrictionType'] ?? 'none'}',
         restrictionReason: '${m['restrictionReason'] ?? ''}',
         restrictionUntil: DateTime.tryParse('${m['restrictionUntil'] ?? ''}'),
@@ -194,7 +208,8 @@ class AuthProvider extends ChangeNotifier {
       final doc =
           await FirebaseFirestore.instance.collection('users').doc(fb.uid).get();
       if (!doc.exists || doc.data() == null) return;
-      final user = _appUserFromFirestore(doc.id, doc.data()!);
+      final data = doc.data()!;
+      final user = _appUserFromFirestore(doc.id, data);
       _user = user;
       _upsert(user);
       notifyListeners();
@@ -487,6 +502,10 @@ class AuthProvider extends ChangeNotifier {
           'isSuperAdmin': user.isSuperAdmin,
           'hasGoldBadge': user.hasGoldBadge,
           'hasBlueBadge': user.hasBlueBadge,
+          'badgeTitle': user.badgeTitle,
+          'isCampusAmbassador': user.isCampusAmbassador,
+          'embassyId': user.embassyId,
+          'isEventOrganizer': user.isEventOrganizer,
           'plusActive': user.plusActive,
           'plusSource': user.plusSource,
           'plusStartsAt': user.plusStartsAt?.toIso8601String(),
@@ -496,6 +515,12 @@ class AuthProvider extends ChangeNotifier {
           'staffRoleId': user.staffRoleId,
           'affiliatedCommunityId': user.affiliatedCommunityId,
           'affiliatedCommunityName': user.affiliatedCommunityName,
+          'affiliatedCompanyId': user.affiliatedCompanyId,
+          'affiliatedCompanyName': user.affiliatedCompanyName,
+          'panelOrgId': user.panelOrgId,
+          'panelOrgType': user.panelOrgType,
+          'panelOrgName': user.panelOrgName,
+          'panelAccess': user.panelAccess,
           'affiliatedOrgLogoUrl': user.affiliatedOrgLogoUrl,
           'restrictionType': user.restrictionType,
           'restrictionReason': user.restrictionReason,
@@ -946,6 +971,10 @@ class AuthProvider extends ChangeNotifier {
       isSuperAdmin: m['isSuperAdmin'] == true,
       hasGoldBadge: m['hasGoldBadge'] == true,
       hasBlueBadge: m['hasBlueBadge'] == true,
+      badgeTitle: '${m['badgeTitle'] ?? ''}',
+      isCampusAmbassador: m['isCampusAmbassador'] == true,
+      embassyId: m['embassyId'] as String?,
+      isEventOrganizer: m['isEventOrganizer'] == true,
       plusActive: m['plusActive'] == true,
       plusSource: '${m['plusSource'] ?? ''}',
       plusStartsAt: DateTime.tryParse('${m['plusStartsAt'] ?? ''}'),
@@ -957,6 +986,12 @@ class AuthProvider extends ChangeNotifier {
       affiliatedCommunityId: m['affiliatedCommunityId'] as String?,
       affiliatedCommunityName: m['affiliatedCommunityName'] as String?,
       affiliatedOrgLogoUrl: m['affiliatedOrgLogoUrl'] as String?,
+      affiliatedCompanyId: m['affiliatedCompanyId'] as String?,
+      affiliatedCompanyName: m['affiliatedCompanyName'] as String?,
+      panelOrgId: m['panelOrgId'] as String?,
+      panelOrgType: m['panelOrgType'] as String?,
+      panelOrgName: m['panelOrgName'] as String?,
+      panelAccess: m['panelAccess'] == true,
       restrictionType: '${m['restrictionType'] ?? 'none'}',
       restrictionReason: '${m['restrictionReason'] ?? ''}',
       restrictionUntil: DateTime.tryParse('${m['restrictionUntil'] ?? ''}'),
@@ -993,6 +1028,14 @@ class AuthProvider extends ChangeNotifier {
     if (me == null || targetId.trim().isEmpty) return false;
     final ids = idsFor(targetId);
     return me.following.any(ids.contains);
+  }
+
+  /// Önerilenler kartını kapat — yalnızca bu oturum; sonra tekrar çıkabilir.
+  Future<void> dismissSuggestion(String userId) async {
+    final id = userId.trim();
+    if (id.isEmpty) return;
+    _dismissedSuggestions.add(id);
+    notifyListeners();
   }
 
   void updateProfile({
@@ -1501,6 +1544,7 @@ class AuthProvider extends ChangeNotifier {
     } catch (_) {}
     await SecureSession.clear();
     _user = null;
+    _dismissedSuggestions.clear();
     notifyListeners();
   }
 

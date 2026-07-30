@@ -678,6 +678,7 @@
     <div class="wrap foot">
       <p>© KampüsteyimAPP · AYS Tech · Kayra Çatalkaya</p>
       <nav>
+        <a href="./elcilik.html">Kampüs Elçiliği</a>
         <a href="https://app.kampusteyim.app/privacy.html">Gizlilik</a>
         <a href="https://app.kampusteyim.app/terms.html">Şartlar</a>
         <a href="https://app.kampusteyim.app/child-safety.html">Çocuk güvenliği</a>
@@ -734,6 +735,16 @@
   const appSoon = document.getElementById('app-soon');
   const dlStatus = document.getElementById('dl-status');
 
+  function isAppStoreLink(u) {
+    return /^https?:\/\/(?:[a-z0-9-]+\.)*(?:apps\.apple\.com|itunes\.apple\.com)\//i.test(
+      String(u || '').trim(),
+    );
+  }
+  function isPlayStoreLink(u) {
+    const s = String(u || '').trim();
+    return /^https?:\/\/play\.google\.com\//i.test(s) || /^market:\/\//i.test(s);
+  }
+
   function storeLink(url, badgeSrc, alt, soonEl) {
     if (!url) return;
     const a = document.createElement('a');
@@ -753,13 +764,19 @@
     .then((r) => r.json())
     .then((data) => {
       if (!data || !data.ok) throw new Error('promo');
-      storeLink((data.playStoreUrl || '').trim(), PLAY_BADGE, 'Google Play', playSoon);
-      storeLink((data.appStoreUrl || '').trim(), APP_BADGE, 'App Store', appSoon);
+      const play = (data.androidUrl || data.playStoreUrl || '').trim();
+      const apple = (data.iosUrl || data.appStoreUrl || '').trim();
+      const playOk = isPlayStoreLink(play);
+      const appleOk = isAppStoreLink(apple);
+      if (playOk) storeLink(play, PLAY_BADGE, 'Google Play', playSoon);
+      if (appleOk) storeLink(apple, APP_BADGE, 'App Store', appSoon);
       setQr(data.qrTargetUrl || QR_FALLBACK);
       const parts = [];
-      if ((data.playStoreUrl || '').trim()) parts.push('Play hazır');
-      if ((data.appStoreUrl || '').trim()) parts.push('App Store hazır');
-      dlStatus.textContent = parts.length ? parts.join(' · ') : 'Mağaza linkleri yakında.';
+      if (playOk) parts.push('Play hazır');
+      if (appleOk) parts.push('App Store hazır');
+      dlStatus.textContent = parts.length
+        ? `${parts.join(' · ')}${playOk && appleOk ? '' : ' · diğer mağaza yakında'}`
+        : 'Mağaza linkleri yakında.';
     })
     .catch(() => {
       dlStatus.textContent = 'Linkler yüklenemedi; QR yine de çalışır.';

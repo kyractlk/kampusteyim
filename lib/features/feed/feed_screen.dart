@@ -22,6 +22,7 @@ import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../admin/admin_permissions.dart';
 import '../admin/admin_provider.dart';
+import '../ads/ads_provider.dart';
 import '../auth/data/auth_provider.dart';
 import '../home/home_shell.dart';
 import '../moderation/moderation_models.dart';
@@ -33,6 +34,7 @@ import '../plus/plus_widgets.dart';
 import '../stories/story_ring_bar.dart';
 import '../study/study_models.dart';
 import 'feed_provider.dart';
+import 'suggested_people_rail.dart';
 
 class FeedScreen extends StatelessWidget {
   const FeedScreen({super.key});
@@ -46,30 +48,52 @@ class FeedScreen extends StatelessWidget {
         ? allPosts
         : () {
             final filtered = allPosts
-                .where(
-                  (p) =>
-                      !user.blocks(p.authorId) &&
-                      !(auth.findUser(p.authorId)?.blocks(user.id) ?? false),
-                )
+                .where((p) {
+                  if (user.blocks(p.authorId)) return false;
+                  final author = auth.findUser(p.authorId);
+                  if (author?.blocks(user.id) ?? false) return false;
+                  // Gizli hesap: yalnızca kendi / takipçiler görür (Reels ile aynı).
+                  if (author != null &&
+                      author.isPrivateAccount &&
+                      !auth.idsFor(p.authorId).contains(user.id) &&
+                      !auth.follows(p.authorId)) {
+                    return false;
+                  }
+                  return true;
+                })
                 .toList();
             filtered.sort((a, b) {
+              final authorA = auth.findUser(a.authorId);
+              final authorB = auth.findUser(b.authorId);
               final sa = CampusAffinity.scorePost(
                 viewer: user,
-                author: auth.findUser(a.authorId),
+                author: authorA,
                 createdAt: a.createdAt,
                 likeCount: a.likeCount,
                 replyCount: a.replyCount,
                 repostCount: a.repostCount,
                 followingAuthor: auth.follows(a.authorId),
+                friendOfFriend: authorA != null &&
+                    CampusAffinity.isFriendOfFriend(
+                      viewer: user,
+                      candidate: authorA,
+                      auth: auth,
+                    ),
               );
               final sb = CampusAffinity.scorePost(
                 viewer: user,
-                author: auth.findUser(b.authorId),
+                author: authorB,
                 createdAt: b.createdAt,
                 likeCount: b.likeCount,
                 replyCount: b.replyCount,
                 repostCount: b.repostCount,
                 followingAuthor: auth.follows(b.authorId),
+                friendOfFriend: authorB != null &&
+                    CampusAffinity.isFriendOfFriend(
+                      viewer: user,
+                      candidate: authorB,
+                      auth: auth,
+                    ),
               );
               final cmp = sb.compareTo(sa);
               if (cmp != 0) return cmp;
@@ -144,6 +168,8 @@ class FeedScreen extends StatelessWidget {
             ),
           if (user != null)
             const SliverToBoxAdapter(child: StoryRingBar()),
+          if (user != null)
+            const SliverToBoxAdapter(child: SuggestedPeopleRail()),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -208,7 +234,19 @@ class FeedScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
             sliver: SliverList.separated(
               itemCount: posts.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              separatorBuilder: (context, index) {
+                final ads = context.read<AdsProvider>();
+                if ((index + 1) % 4 == 0) {
+                  final ad = ads.pick(ads.feed);
+                  if (ad != null) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: AdCard(ad: ad, compact: true),
+                    );
+                  }
+                }
+                return const SizedBox(height: 12);
+              },
               itemBuilder: (context, index) {
                 return PostCard(post: posts[index])
                     .animate()
@@ -756,7 +794,10 @@ class PostCard extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              if (gold || blue || author?.showGreenBadge == true) ...[
+                              if (gold ||
+                                  blue ||
+                                  author?.showGreenBadge == true ||
+                                  author?.isCampusAmbassador == true) ...[
                                 const SizedBox(width: 4),
                                 UserVerificationBadges(user: author, size: 15),
                               ],

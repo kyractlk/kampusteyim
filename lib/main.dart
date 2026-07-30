@@ -15,6 +15,9 @@ import 'core/permissions/app_permissions.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/keyboard_dismiss.dart';
 import 'features/admin/admin_provider.dart';
+import 'features/ads/ads_provider.dart';
+import 'features/app_update/app_update_provider.dart';
+import 'features/app_update/app_update_screen.dart';
 import 'features/auth/data/auth_provider.dart';
 import 'features/feed/feed_provider.dart';
 import 'features/jobs/jobs_provider.dart';
@@ -106,9 +109,11 @@ class _MtMobilAppState extends State<MtMobilApp> {
   late final JobsProvider _jobs;
   late final AdminProvider _admin;
   late final MaintenanceProvider _maintenance;
+  late final AppUpdateProvider _appUpdate;
   late final StoriesProvider _stories;
   late final ReelsProvider _reels;
   late final PlusProvider _plus;
+  late final AdsProvider _ads;
   late final router = createRouter(_auth);
 
   @override
@@ -122,13 +127,16 @@ class _MtMobilAppState extends State<MtMobilApp> {
     unawaited(_jobs.bindJobsFromFirestore());
     _admin = AdminProvider();
     _maintenance = MaintenanceProvider();
+    _appUpdate = AppUpdateProvider();
     _stories = StoriesProvider()..attachAuth(_auth);
     _reels = ReelsProvider()
       ..attachAuth(_auth)
       ..attachFeed(_feed);
     _plus = PlusProvider()..bind();
+    _ads = AdsProvider();
     unawaited(_plus.ensureConfigSeeded());
     _auth.addListener(_onAuth);
+    unawaited(_ads.refresh());
   }
 
   void _onAuth() {
@@ -136,6 +144,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
     final u = _auth.user;
     if (u != null) {
       unawaited(_admin.loadRolesFromFirestore());
+      unawaited(_ads.refresh(city: u.city, university: u.university));
     }
     if (u != null && u.isCompany) {
       unawaited(_jobs.bindCompanyFromUser(u));
@@ -153,9 +162,11 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _jobs.dispose();
     _admin.dispose();
     _maintenance.dispose();
+    _appUpdate.dispose();
     _stories.dispose();
     _reels.dispose();
     _plus.dispose();
+    _ads.dispose();
     super.dispose();
   }
 
@@ -169,9 +180,11 @@ class _MtMobilAppState extends State<MtMobilApp> {
         ChangeNotifierProvider.value(value: _jobs),
         ChangeNotifierProvider.value(value: _admin),
         ChangeNotifierProvider.value(value: _maintenance),
+        ChangeNotifierProvider.value(value: _appUpdate),
         ChangeNotifierProvider.value(value: _stories),
         ChangeNotifierProvider.value(value: _reels),
         ChangeNotifierProvider.value(value: _plus),
+        ChangeNotifierProvider.value(value: _ads),
       ],
       child: MaterialApp.router(
         title: AppInfo.appName,
@@ -187,6 +200,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
         ],
         builder: (context, child) {
           final maint = context.watch<MaintenanceProvider>();
+          final upd = context.watch<AppUpdateProvider>();
           final auth = context.watch<AuthProvider>();
           final bypass =
               context.read<AdminProvider>().canAccessDuringMaintenance(auth.user);
@@ -200,15 +214,27 @@ class _MtMobilAppState extends State<MtMobilApp> {
               path == '/sifre-sifirla' ||
               path.startsWith('/r/');
 
+          if (upd.blocksApp && !staffPath) {
+            return const AppUpdateForceScreen();
+          }
+
           if (maint.blocksApp && !bypass && !staffPath) {
             return const MaintenanceScreen();
           }
           // Klavye açılınca içerik yukarı kaysın; notch / gesture inset korunur.
           // Boş alana / başka widget’a dokununca klavye kapanır (odak alanı hariç).
           final media = MediaQuery.maybeOf(context);
-          final content = KeyboardDismissOnTap(
+          Widget content = KeyboardDismissOnTap(
             child: child ?? const SizedBox.shrink(),
           );
+          if (upd.showSoftBanner) {
+            content = Column(
+              children: [
+                Expanded(child: content),
+                const AppUpdateSoftBanner(),
+              ],
+            );
+          }
           if (media == null) return content;
           return MediaQuery(
             data: media.copyWith(

@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -312,7 +314,267 @@ class _AdminMaintenanceTabState extends State<AdminMaintenanceTab> {
             ),
           ),
         ),
+        const SizedBox(height: 28),
+        const _AppVersionGatePanel(),
       ],
+    );
+  }
+}
+
+class _AppVersionGatePanel extends StatefulWidget {
+  const _AppVersionGatePanel();
+
+  @override
+  State<_AppVersionGatePanel> createState() => _AppVersionGatePanelState();
+}
+
+class _AppVersionGatePanelState extends State<_AppVersionGatePanel> {
+  final _min = TextEditingController();
+  final _title = TextEditingController(text: 'Güncelleme gerekli');
+  final _message = TextEditingController(
+    text:
+        'KampüsteyimAPP’in yeni sürümü yayında. Devam etmek için uygulamayı mağazadan güncelle.',
+  );
+  final _iosOverride = TextEditingController();
+  final _androidOverride = TextEditingController();
+  bool _forceBelowMin = true;
+  bool _softEnabled = true;
+  bool _loading = true;
+  bool _saving = false;
+  String _iosStore = '—';
+  String _androidStore = '—';
+  String? _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _min.dispose();
+    _title.dispose();
+    _message.dispose();
+    _iosOverride.dispose();
+    _androidOverride.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load({bool refreshStore = false}) async {
+    setState(() {
+      _loading = true;
+      _status = null;
+    });
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('app_version')
+          .get();
+      final d = snap.data() ?? {};
+      _min.text = '${d['minVersion'] ?? ''}';
+      _title.text = '${d['title'] ?? _title.text}';
+      _message.text = '${d['message'] ?? _message.text}';
+      _iosOverride.text = '${d['latestIosOverride'] ?? ''}';
+      _androidOverride.text = '${d['latestAndroidOverride'] ?? ''}';
+      _forceBelowMin = d['forceBelowMin'] != false;
+      _softEnabled = d['softUpdateEnabled'] != false;
+      _iosStore = '${d['cachedIosVersion'] ?? '—'}';
+      _androidStore = '${d['cachedAndroidVersion'] ?? '—'}';
+
+      if (refreshStore || _iosStore == '—' || _iosStore.isEmpty) {
+        final callable =
+            FirebaseFunctions.instanceFor(region: 'europe-west1')
+                .httpsCallable('updateAppVersionConfig');
+        final res = await callable.call({'refreshStore': true});
+        final data = Map<String, dynamic>.from(res.data as Map? ?? {});
+        final store = Map<String, dynamic>.from(data['store'] as Map? ?? {});
+        final cfg = Map<String, dynamic>.from(data['config'] as Map? ?? {});
+        _iosStore = '${store['iosVersion'] ?? cfg['cachedIosVersion'] ?? _iosStore}';
+        _androidStore =
+            '${store['androidVersion'] ?? cfg['cachedAndroidVersion'] ?? _androidStore}';
+        if (_iosStore.isEmpty) _iosStore = '—';
+        if (_androidStore.isEmpty) _androidStore = '—';
+      }
+    } catch (e) {
+      _status = 'Yüklenemedi: $e';
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _save({bool refreshStore = false}) async {
+    setState(() {
+      _saving = true;
+      _status = null;
+    });
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('updateAppVersionConfig');
+      final res = await callable.call({
+        'minVersion': _min.text.trim(),
+        'title': _title.text.trim(),
+        'message': _message.text.trim(),
+        'latestIosOverride': _iosOverride.text.trim(),
+        'latestAndroidOverride': _androidOverride.text.trim(),
+        'forceBelowMin': _forceBelowMin,
+        'softUpdateEnabled': _softEnabled,
+        'refreshStore': refreshStore,
+      });
+      final data = Map<String, dynamic>.from(res.data as Map? ?? {});
+      final store = Map<String, dynamic>.from(data['store'] as Map? ?? {});
+      _iosStore = '${store['iosVersion'] ?? _iosStore}';
+      _androidStore = '${store['androidVersion'] ?? _androidStore}';
+      if (_iosStore.isEmpty) _iosStore = '—';
+      if (_androidStore.isEmpty) _androidStore = '—';
+      _status = refreshStore
+          ? 'Kaydedildi · mağaza sürümleri yenilendi'
+          : 'Sürüm kapısı kaydedildi';
+    } catch (e) {
+      _status = 'Kaydedilemedi: $e';
+    }
+    if (mounted) setState(() => _saving = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Uygulama sürümü',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'App Store / Play sürümleri otomatik okunur. Minimum sürümün altındaki '
+          'kullanıcılar uygulamayı kullanamaz ve mağazaya yönlendirilir. '
+          'Mağazada daha yeni sürüm varsa soft uyarı çıkar.',
+          style: TextStyle(
+            fontSize: 12.5,
+            color: AppColors.textSecondary,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _chip('App Store', _iosStore),
+            _chip('Play Store', _androidStore),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _min,
+          decoration: const InputDecoration(
+            labelText: 'Zorunlu minimum sürüm',
+            hintText: 'örn. 1.0.32',
+            helperText: 'Bu sürümün altı → tam ekran “güncelle” kilidi',
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _title,
+          decoration: const InputDecoration(labelText: 'Başlık'),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _message,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Mesaj'),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _iosOverride,
+          decoration: const InputDecoration(
+            labelText: 'iOS sürüm override (opsiyonel)',
+            hintText: 'Boş bırak → App Store’dan oku',
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _androidOverride,
+          decoration: const InputDecoration(
+            labelText: 'Android sürüm override (opsiyonel)',
+            hintText: 'Boş bırak → Play’den oku / cache',
+          ),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Minimum altını zorla'),
+          subtitle: const Text('minVersion altındaki kullanıcılar kilitlenir'),
+          value: _forceBelowMin,
+          onChanged: (v) => setState(() => _forceBelowMin = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Soft güncelleme uyarısı'),
+          subtitle: const Text('Mağazada daha yeni sürüm varsa alt banner'),
+          value: _softEnabled,
+          onChanged: (v) => setState(() => _softEnabled = v),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _saving ? null : () => _save(refreshStore: true),
+                icon: const Icon(Icons.storefront_outlined, size: 18),
+                label: const Text('Mağazadan yenile'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton(
+                onPressed: _saving ? null : () => _save(),
+                child: Text(_saving ? '…' : 'Kaydet'),
+              ),
+            ),
+          ],
+        ),
+        if (_status != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            _status!,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _chip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceMuted,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value.isEmpty ? '—' : value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: AppColors.navy,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

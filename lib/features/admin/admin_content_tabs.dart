@@ -9,6 +9,7 @@ import '../../core/utils/app_nav.dart';
 import '../../core/utils/app_share.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
+import '../../data/mock/mock_data.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
@@ -40,6 +41,7 @@ class AdminUsersTab extends StatefulWidget {
 class _AdminUsersTabState extends State<AdminUsersTab> {
   final _q = TextEditingController();
   String _role = 'all';
+  String _university = 'all';
   bool _syncing = false;
 
   @override
@@ -65,12 +67,19 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
     if (_role != 'all') {
       users = users.where((u) => u.role.name == _role).toList();
     }
+    if (_university != 'all') {
+      users = users
+          .where((u) => u.university.trim() == _university)
+          .toList();
+    }
     if (q.isNotEmpty) {
       users = users.where((u) {
         return u.fullName.toLowerCase().contains(q) ||
             u.email.toLowerCase().contains(q) ||
             u.handle.toLowerCase().contains(q) ||
-            u.studentNo.contains(q);
+            u.studentNo.contains(q) ||
+            u.university.toLowerCase().contains(q) ||
+            u.city.toLowerCase().contains(q);
       }).toList();
     }
     users.sort((a, b) => a.fullName.compareTo(b.fullName));
@@ -88,7 +97,7 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
                     child: TextField(
                       controller: _q,
                       decoration: InputDecoration(
-                        hintText: 'İsim, e-posta, @handle ara…',
+                        hintText: 'İsim, e-posta, @handle, okul ara…',
                         prefixIcon: const Icon(Icons.search_rounded),
                         suffixIcon: q.isEmpty
                             ? null
@@ -135,6 +144,38 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
                           label: Text(e.$2),
                           selected: _role == e.$1,
                           onSelected: (_) => setState(() => _role = e.$1),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        avatar: const Icon(Icons.school_outlined, size: 16),
+                        label: const Text('Tüm okullar'),
+                        selected: _university == 'all',
+                        onSelected: (_) =>
+                            setState(() => _university = 'all'),
+                      ),
+                    ),
+                    for (final uni in MockData.universities)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(
+                            uni
+                                .replaceAll(' Üniversitesi', '')
+                                .replaceAll('Gaziantep ', 'G.'),
+                          ),
+                          selected: _university == uni,
+                          onSelected: (_) =>
+                              setState(() => _university = uni),
                         ),
                       ),
                   ],
@@ -232,6 +273,33 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
                               child: Text('Kurum ilişkisini kaldır')),
                         ],
                       ],
+                      if (widget.admin.can(
+                              widget.me, AdminPermission.manageAmbassadors) &&
+                          !u.isCommunity &&
+                          u.role != UserRole.company)
+                        PopupMenuItem(
+                          value: u.isCampusAmbassador
+                              ? 'unambassador'
+                              : 'ambassador',
+                          child: Text(
+                            u.isCampusAmbassador
+                                ? 'Elçiliği kaldır'
+                                : 'Kampüs elçisi yap',
+                          ),
+                        ),
+                      if (widget.admin
+                              .can(widget.me, AdminPermission.manageUsers) &&
+                          u.role == UserRole.company)
+                        PopupMenuItem(
+                          value: u.isEventOrganizer
+                              ? 'unorganizer'
+                              : 'organizer',
+                          child: Text(
+                            u.isEventOrganizer
+                                ? 'Organizatörlüğü kaldır'
+                                : 'Etkinlik organizatörü yap',
+                          ),
+                        ),
                       if (widget.admin
                           .can(widget.me, AdminPermission.restrictUsers)) ...[
                         const PopupMenuItem(

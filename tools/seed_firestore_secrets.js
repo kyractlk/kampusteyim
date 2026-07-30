@@ -79,7 +79,7 @@ async function main() {
   const fields = {
     openai_api_key: { stringValue: env.OPENAI_API_KEY || '' },
     openai_cv_model: { stringValue: env.OPENAI_CV_MODEL || 'gpt-4o-mini' },
-    smtp_host: { stringValue: env.SMTP_HOST || 'smtp.gaunengineering.com.tr' },
+    smtp_host: { stringValue: env.SMTP_HOST || 'smtp.kampusteyim.app' },
     smtp_port: { stringValue: env.SMTP_PORT || '465' },
     smtp_user: { stringValue: env.SMTP_USER || '' },
     smtp_pass: { stringValue: env.SMTP_PASS || '' },

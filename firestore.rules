@@ -159,9 +159,54 @@ service cloud.firestore {
     }
 
     /// AYS Tech bakım durumu — herkes okur; yazma yalnızca admin / CF.
+    /// Gizli ödeme anahtarları app_secrets/payments’ta (client okuyamaz).
     match /app_config/{docId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    /// Ödeme siparişleri — yalnızca CF yazar; admin hepsini, kullanıcı kendi kaydını okur.
+    match /payment_orders/{orderId} {
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.uid == request.auth.uid);
+      allow create, update, delete: if false;
+    }
+
+    match /event_tickets/{id} {
+      allow read: if isAdmin() ||
+        (signedIn() && (
+          resource.data.uid == request.auth.uid ||
+          resource.data.organizerId == request.auth.uid
+        ));
+      allow write: if false;
+    }
+
+    match /withdrawal_requests/{id} {
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.companyId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /organizer_ledger/{id} {
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.organizerId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /ad_campaigns/{id} {
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.companyId == request.auth.uid) ||
+        (resource.data.status == 'approved');
+      allow write: if false;
+    }
+
+    match /org_invites/{id} {
+      allow read: if isAdmin() ||
+        (signedIn() && (
+          resource.data.inviteeUid == request.auth.uid ||
+          resource.data.orgId == request.auth.uid
+        ));
+      allow write: if false;
     }
 
     match /maintenance_subscribers/{id} {
@@ -176,6 +221,20 @@ service cloud.firestore {
 
     /// Landing başvuruları — yalnızca Cloud Functions yazar; admin okur.
     match /lead_applications/{id} {
+      allow read, update, delete: if isAdmin();
+      allow create: if false;
+    }
+
+    /// Kampüs elçiliği — CF yazar; admin yönetir.
+    match /embassies/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /ambassador_forms/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /ambassador_applications/{id} {
       allow read, update, delete: if isAdmin();
       allow create: if false;
     }

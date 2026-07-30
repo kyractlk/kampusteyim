@@ -5,10 +5,11 @@ import '../../core/icons/mt_icons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
+import '../payments/payment_checkout_sheet.dart';
 import 'plus_gate.dart';
 import 'plus_provider.dart';
 
-/// Gold/mavi + Plus yeşil.
+/// Gold/mavi + Plus yeşil + kampüs elçisi.
 class UserVerificationBadges extends StatelessWidget {
   const UserVerificationBadges({
     super.key,
@@ -33,6 +34,10 @@ class UserVerificationBadges extends StatelessWidget {
     if (plusOn && u.showGreenBadge && !u.showGoldBadge && !u.showBlueBadge) {
       if (children.isNotEmpty) children.add(SizedBox(width: size * 0.25));
       children.add(VerifiedBadge(green: true, size: size));
+    }
+    if (u.isCampusAmbassador) {
+      if (children.isNotEmpty) children.add(SizedBox(width: size * 0.25));
+      children.add(CampusAmbassadorBadge(size: size));
     }
     if (children.isEmpty) return const SizedBox.shrink();
     return Row(mainAxisSize: MainAxisSize.min, children: children);
@@ -102,7 +107,7 @@ class _PlusPrivilegesCardState extends State<PlusPrivilegesCard> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Otomatik yenileme: kapalı (ödeme yakında)',
+                'Otomatik yenileme: kapalı — süre bitince yeniden satın al.',
                 style: TextStyle(color: Colors.white54, fontSize: 12),
               ),
               const SizedBox(height: 10),
@@ -110,10 +115,19 @@ class _PlusPrivilegesCardState extends State<PlusPrivilegesCard> {
               _perk('CV dil + renk teması', cfg.features.cvTheme),
               _perk('Yüksek CV-AI kotası', cfg.features.higherCvQuota),
               _perk('Yeşil tick', cfg.features.greenBadge),
+              const SizedBox(height: 10),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.lime,
+                  side: const BorderSide(color: AppColors.lime),
+                ),
+                onPressed: () => openPaymentCheckout(context),
+                child: const Text('Süreyi uzat / yeniden satın al'),
+              ),
             ] else ...[
               const Text(
                 'KampüsteyimPlus ile dosya paylaş, CV’ni renklendir, '
-                'yeşil tick kazan. Şu an herkese ücretsiz deneme.',
+                'yeşil tick kazan.',
                 style: TextStyle(color: Colors.white70, height: 1.35),
               ),
               const SizedBox(height: 12),
@@ -136,9 +150,16 @@ class _PlusPrivilegesCardState extends State<PlusPrivilegesCard> {
                         ),
                 )
               else
-                const Text(
-                  'Ücretsiz denemeyi kullandın. Ödeme yakında; admin Plus atayabilir.',
-                  style: TextStyle(color: Colors.white60, fontSize: 13),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.lime,
+                    foregroundColor: AppColors.navy,
+                  ),
+                  onPressed: () => openPaymentCheckout(context),
+                  child: const Text(
+                    'Plus satın al',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
             ],
           ],

@@ -393,6 +393,17 @@ class _SideNav extends StatelessWidget {
           onTap: () {},
         ),
         ListTile(
+          leading: const Icon(Icons.event_outlined),
+          title: const Text('Etkinlikler'),
+          onTap: () => context.push('/firma/events'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.account_balance_wallet_outlined),
+          title: const Text('Organizatör · bakiye'),
+          subtitle: const Text('Satış, çekim, reklam'),
+          onTap: () => context.push('/firma/organizer'),
+        ),
+        ListTile(
           leading: const Icon(Icons.people_outline),
           title: const Text('Öğrenci tara'),
           onTap: () => context.push('/firma/students'),

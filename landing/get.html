@@ -100,7 +100,7 @@
     <h1>Kampüsteyim<span>APP</span></h1>
     <p class="status">Yönlendiriliyor<span class="dots" aria-hidden="true"></span></p>
     <p class="fallback">
-      <a id="manual" href="https://app.kampusteyim.app">Uygulamaya git</a>
+      <a id="manual" href="https://kampusteyim.app/#indir">İndirme sayfasına git</a>
     </p>
   </div>
 
@@ -108,8 +108,9 @@
 (function () {
   const TRACK_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/trackPromoScan';
   const PROMO_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/getPromoPublic';
-  const APP_FALLBACK = 'https://app.kampusteyim.app';
-  const TIMEOUT_MS = 2500;
+  const IOS_STORE = 'https://apps.apple.com/tr/app/id6793663176';
+  const DOWNLOAD_SECTION = 'https://kampusteyim.app/#indir';
+  const CONFIG_WAIT_MS = 900;
 
   const ua = navigator.userAgent || '';
   let platform = 'other';
@@ -119,65 +120,84 @@
     platform = 'android';
   }
 
+  function isAppStoreLink(u) {
+    return /^https?:\/\/(?:[a-z0-9-]+\.)*(?:apps\.apple\.com|itunes\.apple\.com)\//i.test(
+      String(u || '').trim(),
+    );
+  }
+  function isPlayStoreLink(u) {
+    const s = String(u || '').trim();
+    return /^https?:\/\/play\.google\.com\//i.test(s) || /^market:\/\//i.test(s);
+  }
+
+  function bakedTarget() {
+    if (platform === 'ios') return IOS_STORE;
+    return DOWNLOAD_SECTION;
+  }
+
+  function pickFromConfig(cfg) {
+    if (!cfg) return bakedTarget();
+    if (platform === 'ios') {
+      const ios = cfg.iosUrl || cfg.appStoreUrl;
+      return isAppStoreLink(ios) ? ios : IOS_STORE;
+    }
+    if (platform === 'android') {
+      const play = cfg.androidUrl || cfg.playStoreUrl;
+      return isPlayStoreLink(play) ? play : DOWNLOAD_SECTION;
+    }
+    return cfg.downloadSectionUrl || DOWNLOAD_SECTION;
+  }
+
+  const manual = document.getElementById('manual');
+  manual.href = bakedTarget();
+  manual.textContent = platform === 'ios' ? 'App Store’a git' : 'İndirme sayfasına git';
+
   let redirected = false;
   function go(url) {
     if (redirected) return;
-    const target = (url && String(url).trim()) || APP_FALLBACK;
     redirected = true;
-    location.href = target;
+    location.replace(String(url || '').trim() || bakedTarget());
   }
 
-  document.getElementById('manual').href = APP_FALLBACK;
+  // Tarama sayacı yönlendirmeyi bloklamasın.
+  try {
+    const payload = JSON.stringify({ platform, source: 'qr', ua: ua.slice(0, 240) });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(TRACK_URL, new Blob([payload], { type: 'application/json' }));
+    } else {
+      fetch(TRACK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+        mode: 'cors',
+      }).catch(function () {});
+    }
+  } catch (_) {}
 
-  const timer = setTimeout(() => go(APP_FALLBACK), TIMEOUT_MS);
+  // Admin linkini kısa süre bekle; gelmezse platforma göre sabit hedefe git.
+  const timer = setTimeout(function () {
+    go(bakedTarget());
+  }, CONFIG_WAIT_MS);
 
-  function pickFromPromo(cfg) {
-    if (!cfg) return APP_FALLBACK;
-    if (platform === 'ios') return cfg.appStoreUrl || cfg.playStoreUrl || APP_FALLBACK;
-    if (platform === 'android') return cfg.playStoreUrl || cfg.appStoreUrl || APP_FALLBACK;
-    return cfg.playStoreUrl || cfg.appStoreUrl || APP_FALLBACK;
-  }
+  const ctrl = new AbortController();
+  setTimeout(function () {
+    try {
+      ctrl.abort();
+    } catch (_) {}
+  }, CONFIG_WAIT_MS);
 
-  function fetchJson(url, opts, ms) {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), ms);
-    return fetch(url, { ...opts, signal: ctrl.signal })
-      .then((r) => r.json())
-      .finally(() => clearTimeout(t));
-  }
-
-  fetchJson(
-    TRACK_URL,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform, source: 'qr' }),
-    },
-    TIMEOUT_MS - 200,
-  )
-    .then((data) => {
-      if (data && data.ok) {
-        clearTimeout(timer);
-        const url =
-          data.redirectUrl ||
-          (platform === 'ios' ? data.appStoreUrl : data.playStoreUrl) ||
-          data.playStoreUrl ||
-          data.appStoreUrl;
-        go(url);
-        return;
-      }
-      throw new Error('track');
+  fetch(PROMO_URL, { method: 'GET', signal: ctrl.signal })
+    .then(function (r) {
+      return r.json();
     })
-    .catch(() => {
-      return fetchJson(PROMO_URL, { method: 'GET' }, 1200)
-        .then((data) => {
-          clearTimeout(timer);
-          go(pickFromPromo(data && data.ok ? data : null));
-        })
-        .catch(() => {
-          clearTimeout(timer);
-          go(APP_FALLBACK);
-        });
+    .then(function (data) {
+      clearTimeout(timer);
+      go(pickFromConfig(data && data.ok ? data : null));
+    })
+    .catch(function () {
+      clearTimeout(timer);
+      go(bakedTarget());
     });
 })();
   </script>

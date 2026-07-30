@@ -17,7 +17,7 @@ class AdminPromoHubTab extends StatefulWidget {
 }
 
 class _AdminPromoHubTabState extends State<AdminPromoHubTab> {
-  /// kampusteyim | (gelecek alt menüler)
+  /// kampusteyim | landing
   String _sub = 'kampusteyim';
 
   @override
@@ -36,7 +36,7 @@ class _AdminPromoHubTabState extends State<AdminPromoHubTab> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Kampüs tanıtım araçları. Yeni alt menüler buraya eklenecek.',
+                'Mağaza linkleri, QR ve landing sayfası içerikleri admin’den yönetilir.',
                 style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 10),
@@ -45,22 +45,14 @@ class _AdminPromoHubTabState extends State<AdminPromoHubTab> {
                 child: Row(
                   children: [
                     _subChip(
-                      'KampüsteyimAPP tanıtımları',
+                      'Mağaza & QR',
                       _sub == 'kampusteyim',
                       () => setState(() => _sub = 'kampusteyim'),
                     ),
                     _subChip(
-                      'Yakında…',
-                      false,
-                      () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Yeni tanıtım alt menüleri yakında eklenecek.',
-                            ),
-                          ),
-                        );
-                      },
+                      'Landing CMS',
+                      _sub == 'landing',
+                      () => setState(() => _sub = 'landing'),
                     ),
                   ],
                 ),
@@ -71,8 +63,8 @@ class _AdminPromoHubTabState extends State<AdminPromoHubTab> {
         const Divider(height: 1),
         Expanded(
           child: switch (_sub) {
-            'kampusteyim' => const _KampusteyimPromoPanel(),
-            _ => const SizedBox.shrink(),
+            'landing' => const _LandingCmsPanel(),
+            _ => const _KampusteyimPromoPanel(),
           },
         ),
       ],
@@ -183,6 +175,58 @@ class _KampusteyimPromoPanelState extends State<_KampusteyimPromoPanel> {
     }
   }
 
+  static final _appStorePattern = RegExp(
+    r'^https?://([a-z0-9-]+\.)*(apps\.apple\.com|itunes\.apple\.com)/',
+    caseSensitive: false,
+  );
+  static final _playStorePattern = RegExp(
+    r'^(https?://play\.google\.com/|market://)',
+    caseSensitive: false,
+  );
+
+  bool get _appleOk => _appStorePattern.hasMatch(_apple.text.trim());
+  bool get _playOk => _playStorePattern.hasMatch(_play.text.trim());
+
+  Widget? _storeWarning() {
+    final problems = <String>[];
+    if (_play.text.trim().isNotEmpty && !_playOk) {
+      problems.add(
+        'Google Play alanı mağaza linki değil. Bu yüzden Android taramaları '
+        'mağaza yerine siteye gidiyordu; şu an bu link yok sayılıp kullanıcı '
+        'indirme bölümüne yönlendiriliyor.',
+      );
+    }
+    if (_apple.text.trim().isNotEmpty && !_appleOk) {
+      problems.add(
+        'App Store alanı apps.apple.com linki değil; iOS taramaları varsayılan '
+        'App Store adresine gidiyor.',
+      );
+    }
+    if (problems.isEmpty) return null;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 18, color: Colors.orange),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              problems.join('\n\n'),
+              style: const TextStyle(fontSize: 12, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String get _qrImageUrl {
     final data = Uri.encodeComponent(_qrTarget);
     return 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=10&data=$data';
@@ -287,25 +331,44 @@ class _KampusteyimPromoPanelState extends State<_KampusteyimPromoPanel> {
         const SizedBox(height: 6),
         const Text(
           'Landing’deki Google Play / App Store rozetleri ve QR yönlendirmesi '
-          'bu linkleri kullanır. QR okutulunca iOS → App Store, Android → Play.',
+          'bu linkleri kullanır. QR okutulunca iOS → App Store, Android → Play. '
+          'Sadece gerçek mağaza linkleri kabul edilir; başka bir adres girilirse '
+          'yok sayılır ve kullanıcı web sitesine değil indirme bölümüne gider.',
           style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.35),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _play,
-          decoration: const InputDecoration(
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
             labelText: 'Google Play URL',
             hintText: 'https://play.google.com/store/apps/details?id=…',
+            suffixIcon: _play.text.trim().isEmpty
+                ? null
+                : Icon(
+                    _playOk ? Icons.check_circle_outline : Icons.error_outline,
+                    color: _playOk ? AppColors.lime : Colors.orange,
+                    size: 20,
+                  ),
           ),
         ),
         const SizedBox(height: 10),
         TextField(
           controller: _apple,
-          decoration: const InputDecoration(
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
             labelText: 'App Store URL',
-            hintText: 'https://apps.apple.com/…',
+            hintText: 'https://apps.apple.com/tr/app/id6793663176',
+            suffixIcon: _apple.text.trim().isEmpty
+                ? null
+                : Icon(
+                    _appleOk ? Icons.check_circle_outline : Icons.error_outline,
+                    color: _appleOk ? AppColors.lime : Colors.orange,
+                    size: 20,
+                  ),
           ),
         ),
+        ?_storeWarning(),
         const SizedBox(height: 12),
         FilledButton(
           onPressed: _saving ? null : _save,
@@ -415,6 +478,214 @@ class _KampusteyimPromoPanelState extends State<_KampusteyimPromoPanel> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Landing CMS — kampusteyim.app metinleri admin’den.
+class _LandingCmsPanel extends StatefulWidget {
+  const _LandingCmsPanel();
+
+  @override
+  State<_LandingCmsPanel> createState() => _LandingCmsPanelState();
+}
+
+class _LandingCmsPanelState extends State<_LandingCmsPanel> {
+  final _heroTitle = TextEditingController();
+  final _heroSubtitle = TextEditingController();
+  final _instagram = TextEditingController();
+  final _about = TextEditingController();
+  final _benefits = TextEditingController();
+  final _steps = TextEditingController();
+  final _disclaimer = TextEditingController();
+  final _kvkk = TextEditingController();
+  bool _loading = true;
+  bool _saving = false;
+  bool _ambassadorEnabled = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _heroTitle.dispose();
+    _heroSubtitle.dispose();
+    _instagram.dispose();
+    _about.dispose();
+    _benefits.dispose();
+    _steps.dispose();
+    _disclaimer.dispose();
+    _kvkk.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('landing')
+          .get();
+      final d = snap.data() ?? {};
+      _heroTitle.text = '${d['heroTitle'] ?? 'KampüsteyimAPP'}';
+      _heroSubtitle.text =
+          '${d['heroSubtitle'] ?? 'Doğrulanmış kampüs sosyal ağı'}';
+      _instagram.text =
+          '${d['instagramUrl'] ?? 'https://instagram.com/kampusteyimapp'}';
+      _about.text = '${d['aboutText'] ?? ''}';
+      final benefits = (d['benefits'] as List?) ?? const [];
+      _benefits.text = benefits.map((e) => '$e').join('\n');
+      final steps = (d['steps'] as List?) ?? const [];
+      _steps.text = steps.map((e) => '$e').join('\n');
+      _disclaimer.text = '${d['disclaimer'] ?? ''}';
+      _kvkk.text = '${d['kvkkSummary'] ?? ''}';
+      _ambassadorEnabled = d['ambassadorPageEnabled'] != false;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Yüklenemedi: $e')),
+        );
+      }
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('updateLandingConfig');
+      await callable.call({
+        'heroTitle': _heroTitle.text.trim(),
+        'heroSubtitle': _heroSubtitle.text.trim(),
+        'instagramUrl': _instagram.text.trim(),
+        'aboutText': _about.text.trim(),
+        'benefits': _benefits.text
+            .split('\n')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList(),
+        'steps': _steps.text
+            .split('\n')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList(),
+        'disclaimer': _disclaimer.text.trim(),
+        'kvkkSummary': _kvkk.text.trim(),
+        'ambassadorPageEnabled': _ambassadorEnabled,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Landing CMS kaydedildi')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Kaydedilemedi: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          'Landing CMS · ${AppInfo.marketingUrl}',
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _heroTitle,
+          decoration: const InputDecoration(
+            labelText: 'Hero başlık',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _heroSubtitle,
+          decoration: const InputDecoration(
+            labelText: 'Hero alt yazı',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _instagram,
+          decoration: const InputDecoration(
+            labelText: 'Instagram URL',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _about,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Hakkında / AYS Tech + KampüsteyimAPP',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _benefits,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            labelText: 'Avantajlar (satır satır)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _steps,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Yapılacaklar / adımlar (satır satır)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _disclaimer,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Disclaimer',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _kvkk,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'KVKK özeti',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Elçilik başvuru sayfası açık'),
+          value: _ambassadorEnabled,
+          onChanged: (v) => setState(() => _ambassadorEnabled = v),
+        ),
+        const SizedBox(height: 8),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? 'Kaydediliyor…' : 'Landing ayarlarını kaydet'),
+        ),
+      ],
     );
   }
 }

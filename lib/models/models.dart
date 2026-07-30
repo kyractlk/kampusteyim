@@ -45,8 +45,18 @@ class AppUser {
     this.affiliatedCommunityId,
     this.affiliatedCommunityName,
     this.affiliatedOrgLogoUrl,
+    this.affiliatedCompanyId,
+    this.affiliatedCompanyName,
+    this.panelOrgId,
+    this.panelOrgType,
+    this.panelOrgName,
+    this.panelAccess = false,
     this.hasGoldBadge = false,
     this.hasBlueBadge = false,
+    this.badgeTitle = '',
+    this.isCampusAmbassador = false,
+    this.embassyId,
+    this.isEventOrganizer = false,
     this.plusActive = false,
     this.plusSource = '',
     this.plusStartsAt,
@@ -99,8 +109,20 @@ class AppUser {
   final String? affiliatedCommunityName;
   /// İlişkili kurum logosu (Twitter tarzı minik rozet).
   final String? affiliatedOrgLogoUrl;
+  final String? affiliatedCompanyId;
+  final String? affiliatedCompanyName;
+  final String? panelOrgId;
+  final String? panelOrgType;
+  final String? panelOrgName;
+  final bool panelAccess;
   final bool hasGoldBadge;
   final bool hasBlueBadge;
+  /// Örn. "Kampüs Elçisi" — gold tick yanında görünen unvan.
+  final String badgeTitle;
+  final bool isCampusAmbassador;
+  final String? embassyId;
+  /// Firma hesabı: kampüs dışı etkinlik oluşturabilir (admin onayı gerekir).
+  final bool isEventOrganizer;
   /// KampüsteyimPlus (sunucu + istemci doğrulaması).
   final bool plusActive;
   /// trial | admin | store | iban
@@ -158,6 +180,14 @@ class AppUser {
   bool get isAdmin => canAccessAdmin;
   bool get isCompany => role == UserRole.company;
   bool get showGoldBadge => isCommunity || hasGoldBadge;
+
+  /// Profil unvanı (elçi vb.).
+  String get displayBadgeTitle {
+    final t = badgeTitle.trim();
+    if (t.isNotEmpty) return t;
+    if (isCampusAmbassador) return 'Kampüs Elçisi';
+    return '';
+  }
   /// Mavi tick yalnızca açıkça verilmişse (ilişki ayrı gösterilir).
   bool get showBlueBadge => !showGoldBadge && hasBlueBadge;
 
@@ -174,7 +204,9 @@ class AppUser {
       isPlusActive && !showGoldBadge && !showBlueBadge;
 
   /// Profilde üniversite rozeti gösterilsin mi?
+  /// Firma / reklam hesaplarında üniversite rozeti yok.
   bool get showUniversityBadge {
+    if (isCompany) return false;
     final u = university.trim();
     if (u.isEmpty || u == '—') return false;
     return role == UserRole.student ||
@@ -286,8 +318,19 @@ class AppUser {
     String? affiliatedCommunityId,
     String? affiliatedCommunityName,
     String? affiliatedOrgLogoUrl,
+    String? affiliatedCompanyId,
+    String? affiliatedCompanyName,
+    String? panelOrgId,
+    String? panelOrgType,
+    String? panelOrgName,
+    bool? panelAccess,
     bool? hasGoldBadge,
     bool? hasBlueBadge,
+    String? badgeTitle,
+    bool? isCampusAmbassador,
+    String? embassyId,
+    bool clearEmbassy = false,
+    bool? isEventOrganizer,
     bool? plusActive,
     String? plusSource,
     DateTime? plusStartsAt,
@@ -351,8 +394,18 @@ class AppUser {
       affiliatedOrgLogoUrl: clearAffiliation
           ? null
           : (affiliatedOrgLogoUrl ?? this.affiliatedOrgLogoUrl),
+      affiliatedCompanyId: affiliatedCompanyId ?? this.affiliatedCompanyId,
+      affiliatedCompanyName: affiliatedCompanyName ?? this.affiliatedCompanyName,
+      panelOrgId: panelOrgId ?? this.panelOrgId,
+      panelOrgType: panelOrgType ?? this.panelOrgType,
+      panelOrgName: panelOrgName ?? this.panelOrgName,
+      panelAccess: panelAccess ?? this.panelAccess,
       hasGoldBadge: hasGoldBadge ?? this.hasGoldBadge,
       hasBlueBadge: hasBlueBadge ?? this.hasBlueBadge,
+      badgeTitle: badgeTitle ?? this.badgeTitle,
+      isCampusAmbassador: isCampusAmbassador ?? this.isCampusAmbassador,
+      embassyId: clearEmbassy ? null : (embassyId ?? this.embassyId),
+      isEventOrganizer: isEventOrganizer ?? this.isEventOrganizer,
       plusActive: plusActive ?? this.plusActive,
       plusSource: plusSource ?? this.plusSource,
       plusStartsAt: clearPlusDates
@@ -856,6 +909,7 @@ class EventApplication {
 }
 
 /// Kimler başvurabilir: campus | members | students
+/// scope: campus (okulumdaki) | offcampus (kampüs dışı)
 class CampusEvent {
   const CampusEvent({
     required this.id,
@@ -874,6 +928,16 @@ class CampusEvent {
     this.audience = 'campus',
     this.applicationDeadline,
     this.applicationsOpen = true,
+    this.scope = 'campus',
+    this.university = '',
+    this.city = '',
+    this.status = 'approved',
+    this.organizerCompanyId,
+    this.organizerCompanyName,
+    this.mapUrl = '',
+    this.rules = '',
+    this.priceTiers = const [],
+    this.paymentRequired = false,
   });
 
   final String id;
@@ -894,6 +958,22 @@ class CampusEvent {
   final DateTime? applicationDeadline;
   /// Son başvuru geçince false olur; tarih uzatılınca tekrar true.
   final bool applicationsOpen;
+  /// campus | offcampus
+  final String scope;
+  final String university;
+  final String city;
+  /// pending | approved | rejected
+  final String status;
+  final String? organizerCompanyId;
+  final String? organizerCompanyName;
+  final String mapUrl;
+  final String rules;
+  final List<EventPriceTier> priceTiers;
+  final bool paymentRequired;
+
+  bool get isCampusScoped => scope != 'offcampus';
+  bool get isApproved => status == 'approved' || status.isEmpty;
+  bool get isPending => status == 'pending';
 
   int get approvedCount => applications
       .where((a) => a.status == EventApplicationStatus.approved)
@@ -917,7 +997,11 @@ class CampusEvent {
   }
 
   bool get canAcceptApplications =>
-      applicationsOpen && !isDeadlinePassed && !isCapacityFull && !isRosterFull;
+      isApproved &&
+      applicationsOpen &&
+      !isDeadlinePassed &&
+      !isCapacityFull &&
+      !isRosterFull;
 
   String get audienceLabel {
     switch (audience) {
@@ -931,6 +1015,9 @@ class CampusEvent {
         return 'Tüm kampüs';
     }
   }
+
+  String get organizerLabel =>
+      (organizerCompanyName ?? communityName ?? '').trim();
 
   bool isEligible(AppUser user, {bool Function(String communityId)? follows}) {
     switch (audience) {
@@ -950,6 +1037,16 @@ class CampusEvent {
     }
   }
 
+  bool matchesCampusUniversity(String userUniversity) {
+    if (!isCampusScoped) return false;
+    final mine = userUniversity.trim().toLowerCase();
+    if (mine.isEmpty) return false;
+    final eventUni = university.trim().toLowerCase();
+    if (eventUni.isNotEmpty) return eventUni == mine;
+    // Eski kayıtlar: community'nin üniversitesi client tarafında çözülür.
+    return true;
+  }
+
   bool hasActiveApplication(String userId) => applications.any(
         (a) =>
             a.userId == userId &&
@@ -961,17 +1058,13 @@ class CampusEvent {
     AppUser? user,
     bool Function(String communityId)? follows,
   }) {
+    if (!isApproved) return 'Onay bekliyor';
     if (user != null && hasActiveApplication(user.id)) return 'Başvuruldu';
-    if (isApplied) return 'Başvuruldu';
-    if (isRosterFull) return 'Kadro doldu';
-    if (isCapacityFull) return 'Kadro doldu';
-    if (!applicationsOpen || isDeadlinePassed) {
-      return 'Başvurular kapandı';
-    }
+    if (!applicationsOpen) return 'Başvurular kapalı';
+    if (isDeadlinePassed) return 'Son başvuru tarihi geçti';
+    if (isRosterFull || isCapacityFull) return 'Kontenjan dolu';
     if (user != null && !isEligible(user, follows: follows)) {
-      return audience == 'followers'
-          ? 'Yalnızca takipçiler başvurabilir'
-          : 'Bu etkinliğe başvuramazsın';
+      return 'Bu etkinliğe başvuramazsın';
     }
     return '';
   }
@@ -990,6 +1083,16 @@ class CampusEvent {
     String? description,
     String? location,
     String? imageUrl,
+    String? scope,
+    String? university,
+    String? city,
+    String? status,
+    String? organizerCompanyId,
+    String? organizerCompanyName,
+    String? mapUrl,
+    String? rules,
+    List<EventPriceTier>? priceTiers,
+    bool? paymentRequired,
   }) {
     return CampusEvent(
       id: id,
@@ -1009,6 +1112,16 @@ class CampusEvent {
       applicationDeadline:
           clearDeadline ? null : (applicationDeadline ?? this.applicationDeadline),
       applicationsOpen: applicationsOpen ?? this.applicationsOpen,
+      scope: scope ?? this.scope,
+      university: university ?? this.university,
+      city: city ?? this.city,
+      status: status ?? this.status,
+      organizerCompanyId: organizerCompanyId ?? this.organizerCompanyId,
+      organizerCompanyName: organizerCompanyName ?? this.organizerCompanyName,
+      mapUrl: mapUrl ?? this.mapUrl,
+      rules: rules ?? this.rules,
+      priceTiers: priceTiers ?? this.priceTiers,
+      paymentRequired: paymentRequired ?? this.paymentRequired,
     );
   }
 
@@ -1027,6 +1140,16 @@ class CampusEvent {
         'audience': audience,
         'applicationDeadline': applicationDeadline?.toIso8601String(),
         'applicationsOpen': applicationsOpen,
+        'scope': scope,
+        'university': university,
+        'city': city,
+        'status': status,
+        'organizerCompanyId': organizerCompanyId,
+        'organizerCompanyName': organizerCompanyName,
+        'mapUrl': mapUrl,
+        'rules': rules,
+        'priceTiers': priceTiers.map((e) => e.toMap()).toList(),
+        'paymentRequired': paymentRequired,
       };
 
   factory CampusEvent.fromMap(String id, Map<String, dynamic> m) {
@@ -1039,6 +1162,16 @@ class CampusEvent {
         }
       }
     }
+    final tiersRaw = m['priceTiers'];
+    final tiers = <EventPriceTier>[];
+    if (tiersRaw is List) {
+      for (final e in tiersRaw) {
+        if (e is Map) {
+          tiers.add(EventPriceTier.fromMap(Map<String, dynamic>.from(e)));
+        }
+      }
+    }
+    final scope = '${m['scope'] ?? 'campus'}';
     return CampusEvent(
       id: id,
       title: '${m['title'] ?? ''}',
@@ -1057,6 +1190,41 @@ class CampusEvent {
           ? DateTime.tryParse('${m['applicationDeadline']}')
           : null,
       applicationsOpen: m['applicationsOpen'] != false,
+      scope: scope == 'offcampus' ? 'offcampus' : 'campus',
+      university: '${m['university'] ?? ''}',
+      city: '${m['city'] ?? ''}',
+      status: '${m['status'] ?? 'approved'}',
+      organizerCompanyId: m['organizerCompanyId'] as String?,
+      organizerCompanyName: m['organizerCompanyName'] as String?,
+      mapUrl: '${m['mapUrl'] ?? ''}',
+      rules: '${m['rules'] ?? ''}',
+      priceTiers: tiers,
+      paymentRequired: m['paymentRequired'] == true,
     );
   }
 }
+
+class EventPriceTier {
+  const EventPriceTier({
+    required this.label,
+    required this.amount,
+    this.currency = 'TRY',
+  });
+
+  final String label;
+  final double amount;
+  final String currency;
+
+  Map<String, dynamic> toMap() => {
+        'label': label,
+        'amount': amount,
+        'currency': currency,
+      };
+
+  factory EventPriceTier.fromMap(Map<String, dynamic> m) => EventPriceTier(
+        label: '${m['label'] ?? ''}',
+        amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        currency: '${m['currency'] ?? 'TRY'}',
+      );
+}
+

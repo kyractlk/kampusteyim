@@ -47,6 +47,10 @@
           "destination": "/terms.html"
         },
         {
+          "source": "/sales",
+          "destination": "/sales.html"
+        },
+        {
           "source": "/delete-account",
           "destination": "/delete-account.html"
         },
@@ -119,6 +123,20 @@
         "README.md",
         "data/raw_*.json"
       ],
+      "rewrites": [
+        {
+          "source": "/get",
+          "destination": "/get.html"
+        },
+        {
+          "source": "/indir",
+          "destination": "/get.html"
+        },
+        {
+          "source": "/elcilik",
+          "destination": "/elcilik.html"
+        }
+      ],
       "headers": [
         {
           "source": "**",
@@ -139,6 +157,24 @@
         },
         {
           "source": "index.html",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
+          "source": "/get.html",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-store"
+            }
+          ]
+        },
+        {
+          "source": "/elcilik.html",
           "headers": [
             {
               "key": "Cache-Control",

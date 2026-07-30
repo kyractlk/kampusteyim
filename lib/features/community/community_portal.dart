@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -7,10 +8,11 @@ import 'package:uuid/uuid.dart';
 import '../../core/icons/mt_icons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/models.dart';
+import '../ads/ad_campaign_form.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
 
-/// Topluluk hesabı yönetim paneli — duyuru, etkinlik, başvuru onayı, logo.
+/// Topluluk hesabi yonetim paneli: duyuru, etkinlik, basvuru onayi, logo, reklam, kadro.
 class CommunityPortalScreen extends StatefulWidget {
   const CommunityPortalScreen({super.key});
 
@@ -25,16 +27,26 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final me = auth.user;
-    if (me == null || !me.isCommunity) {
+    if (me == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Topluluk paneli')),
+        body: const Center(child: Text('Giris gerekli')),
+      );
+    }
+    final staffCommunity = me.panelAccess &&
+        me.panelOrgType == 'community' &&
+        (me.panelOrgId ?? '').isNotEmpty;
+    if (!me.isCommunity && !staffCommunity) {
       return Scaffold(
         appBar: AppBar(title: const Text('Topluluk paneli')),
         body: const Center(
-          child: Text('Bu panel yalnızca topluluk hesapları içindir.'),
+          child: Text('Bu panel yalnizca topluluk hesaplari / kadro icindir.'),
         ),
       );
     }
+    final effectiveOrgId = me.isCommunity ? me.id : (me.panelOrgId ?? me.id);
 
-    if (!me.communityCanPublish) {
+    if (me.isCommunity && !me.communityCanPublish) {
       return Scaffold(
         appBar: AppBar(title: const Text('Topluluk paneli')),
         body: Padding(
@@ -45,7 +57,7 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
               const MtIcon(MtIcons.community, size: 48, color: AppColors.gold),
               const SizedBox(height: 12),
               const Text(
-                'Logo yüklemeden duyuru, etkinlik veya paylaşım yapamazsın.',
+                'Logo yuklemeden duyuru, etkinlik veya paylasim yapamazsin.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
@@ -63,7 +75,7 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
                     ),
                   );
                 },
-                child: const Text('Varsayılan MT logosunu ata'),
+                child: const Text('Varsayilan MT logosunu ata'),
               ),
             ],
           ),
@@ -75,6 +87,8 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
       _CommunityEventsTab(me: me),
       _CommunityAnnouncementsTab(me: me),
       _CommunityApplicationsTab(me: me),
+      _CommunityAdsTab(orgId: effectiveOrgId, me: me),
+      _CommunityStaffTab(orgId: effectiveOrgId),
     ];
 
     return Scaffold(
@@ -109,7 +123,15 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
           ),
           NavigationDestination(
             icon: Icon(Icons.how_to_reg_outlined),
-            label: 'Başvuru',
+            label: 'Basvuru',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.ads_click_outlined),
+            label: 'Reklam',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.group_add_outlined),
+            label: 'Kadro',
           ),
         ],
       ),
@@ -160,7 +182,7 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
     return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
-  String _fmt(DateTime d) => DateFormat('d MMM yyyy · HH:mm', 'tr').format(d);
+  String _fmt(DateTime d) => DateFormat('d MMM yyyy - HH:mm', 'tr').format(d);
 
   @override
   Widget build(BuildContext context) {
@@ -175,13 +197,13 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
         const SizedBox(height: 8),
         TextField(
           controller: _title,
-          decoration: const InputDecoration(labelText: 'Başlık'),
+          decoration: const InputDecoration(labelText: 'Baslik'),
         ),
         const SizedBox(height: 8),
         TextField(
           controller: _desc,
           maxLines: 3,
-          decoration: const InputDecoration(labelText: 'Açıklama'),
+          decoration: const InputDecoration(labelText: 'Aciklama'),
         ),
         const SizedBox(height: 8),
         TextField(
@@ -197,14 +219,14 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           initialValue: _audience,
-          decoration: const InputDecoration(labelText: 'Kimler katılabilir?'),
+          decoration: const InputDecoration(labelText: 'Kimler katilabilir?'),
           items: const [
-            DropdownMenuItem(value: 'followers', child: Text('Takipçiler')),
-            DropdownMenuItem(value: 'campus', child: Text('Tüm kampüs')),
-            DropdownMenuItem(value: 'students', child: Text('Sadece öğrenciler')),
+            DropdownMenuItem(value: 'followers', child: Text('Takipciler')),
+            DropdownMenuItem(value: 'campus', child: Text('Tum kampus')),
+            DropdownMenuItem(value: 'students', child: Text('Sadece ogrenciler')),
             DropdownMenuItem(
               value: 'members',
-              child: Text('Topluluk üyeleri'),
+              child: Text('Topluluk uyeleri'),
             ),
           ],
           onChanged: (v) => setState(() => _audience = v ?? 'followers'),
@@ -222,7 +244,7 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text('Son başvuru saati'),
+          title: const Text('Son basvuru saati'),
           subtitle: Text(_fmt(_deadline)),
           trailing: const Icon(Icons.timer_outlined),
           onTap: () async {
@@ -239,7 +261,7 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(
-                    'Son başvuru saati, etkinlik tarihinden önce olmalı.',
+                    'Son basvuru saati, etkinlik tarihinden once olmali.',
                   ),
                 ),
               );
@@ -251,7 +273,7 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
                 title: _title.text.trim(),
                 description: _desc.text.trim(),
                 location:
-                    _loc.text.trim().isEmpty ? 'Kampüs' : _loc.text.trim(),
+                    _loc.text.trim().isEmpty ? 'Kampus' : _loc.text.trim(),
                 startsAt: _startsAt,
                 capacity: cap,
                 audience: _audience,
@@ -269,10 +291,10 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
             _desc.clear();
             if (!context.mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Etkinlik yayınlandı')),
+              const SnackBar(content: Text('Etkinlik yayinlandi')),
             );
           },
-          child: const Text('Etkinlik yayınla'),
+          child: const Text('Etkinlik yayinla'),
         ),
         const Divider(height: 32),
         Text(
@@ -288,11 +310,11 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
             ),
             title: Text(e.title),
             subtitle: Text(
-              '${DateFormat('d MMM yyyy', 'tr').format(e.startsAt)} · '
-              '${e.approvedCount}/${e.capacity} kadro · '
+              '${DateFormat('d MMM yyyy', 'tr').format(e.startsAt)} - '
+              '${e.approvedCount}/${e.capacity} kadro - '
               '${e.pendingCount} bekleyen'
-              '${e.isRosterFull ? ' · Kadro doldu' : ''}'
-              '${!e.applicationsOpen || e.isDeadlinePassed ? ' · Başvuru kapalı' : ''}',
+              '${e.isRosterFull ? ' - Kadro doldu' : ''}'
+              '${!e.applicationsOpen || e.isDeadlinePassed ? ' - Basvuru kapali' : ''}',
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openManageSheet(context, e),
@@ -328,12 +350,12 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Kadro: ${event.approvedCount}/${event.capacity} · '
+                'Kadro: ${event.approvedCount}/${event.capacity} - '
                 'Bekleyen: ${event.pendingCount}\n'
                 'Kimler: ${event.audienceLabel}\n'
-                'Son başvuru: ${event.applicationDeadline == null ? '—' : _fmt(event.applicationDeadline!)}'
+                'Son basvuru: ${event.applicationDeadline == null ? '-' : _fmt(event.applicationDeadline!)}'
                 '${event.isRosterFull ? '\nDurum: Kadro doldu' : ''}'
-                '${!event.applicationsOpen || event.isDeadlinePassed ? '\nDurum: Başvurular kapandı' : ''}',
+                '${!event.applicationsOpen || event.isDeadlinePassed ? '\nDurum: Basvurular kapandi' : ''}',
                 style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -358,14 +380,14 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        'Son başvuru ${_fmt(picked)} olarak uzatıldı. '
+                        'Son basvuru ${_fmt(picked)} olarak uzatildi. '
                         'Topluluk adminine bildirildi.',
                       ),
                     ),
                   );
                 },
                 icon: const Icon(Icons.update),
-                label: const Text('Son başvuru saatini uzat / yeniden aç'),
+                label: const Text('Son basvuru saatini uzat / yeniden ac'),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -409,7 +431,7 @@ class _CommunityAnnouncementsTabState extends State<_CommunityAnnouncementsTab> 
       children: [
         TextField(
           controller: _title,
-          decoration: const InputDecoration(labelText: 'Başlık'),
+          decoration: const InputDecoration(labelText: 'Baslik'),
         ),
         const SizedBox(height: 8),
         TextField(
@@ -424,10 +446,10 @@ class _CommunityAnnouncementsTabState extends State<_CommunityAnnouncementsTab> 
           items: const [
             DropdownMenuItem(
               value: 'followers',
-              child: Text('Takipçiler (push + e-posta)'),
+              child: Text('Takipciler (push + e-posta)'),
             ),
-            DropdownMenuItem(value: 'members', child: Text('Üyeler')),
-            DropdownMenuItem(value: 'campus', child: Text('Kampüs geneli')),
+            DropdownMenuItem(value: 'members', child: Text('Uyeler')),
+            DropdownMenuItem(value: 'campus', child: Text('Kampus geneli')),
           ],
           onChanged: (v) => setState(() => _audience = v ?? 'followers'),
         ),
@@ -455,13 +477,13 @@ class _CommunityAnnouncementsTabState extends State<_CommunityAnnouncementsTab> 
               SnackBar(
                 content: Text(
                   _audience == 'followers'
-                      ? 'Duyuru yayınlandı · takipçilere bildirim gönderiliyor'
-                      : 'Duyuru yayınlandı',
+                      ? 'Duyuru yayinlandi - takipcilere bildirim gonderiliyor'
+                      : 'Duyuru yayinlandi',
                 ),
               ),
             );
           },
-          child: const Text('Duyuru yayınla'),
+          child: const Text('Duyuru yayinla'),
         ),
       ],
     );
@@ -493,7 +515,7 @@ class _CommunityApplicationsTab extends StatelessWidget {
     });
 
     if (rows.isEmpty) {
-      return const Center(child: Text('Başvuru yok'));
+      return const Center(child: Text('Basvuru yok'));
     }
 
     return ListView.separated(
@@ -513,9 +535,9 @@ class _CommunityApplicationsTab extends StatelessWidget {
             title: Text(app.userName),
             subtitle: Text(
               '${event.title}\n'
-              '${pending ? 'Bekliyor' : 'Onaylı'} · '
+              '${pending ? 'Bekliyor' : 'Onayli'} - '
               '${event.approvedCount}/${event.capacity} kadro'
-              '${event.isRosterFull ? ' · Kadro doldu' : ''}',
+              '${event.isRosterFull ? ' - Kadro doldu' : ''}',
             ),
             isThreeLine: true,
             trailing: Row(
@@ -532,7 +554,7 @@ class _CommunityApplicationsTab extends StatelessWidget {
                     icon: const Icon(Icons.check_circle, color: AppColors.lime),
                   ),
                   IconButton(
-                    tooltip: 'Reddet (slot açılır)',
+                    tooltip: 'Reddet (slot acilir)',
                     onPressed: () => feed.reviewEventApplication(
                       eventId: event.id,
                       applicationId: app.id,
@@ -542,7 +564,7 @@ class _CommunityApplicationsTab extends StatelessWidget {
                   ),
                 ],
                 IconButton(
-                  tooltip: 'Başvuruyu sil',
+                  tooltip: 'Basvuruyu sil',
                   onPressed: () async {
                     await feed.deleteEventApplication(
                       eventId: event.id,
@@ -553,7 +575,7 @@ class _CommunityApplicationsTab extends StatelessWidget {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
-                          'Başvuru silindi · kontenjan açıldı · admin bilgilendirildi',
+                          'Basvuru silindi - kontenjan acildi - admin bilgilendirildi',
                         ),
                       ),
                     );
@@ -565,6 +587,188 @@ class _CommunityApplicationsTab extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _CommunityAdsTab extends StatelessWidget {
+  const _CommunityAdsTab({required this.orgId, required this.me});
+  final String orgId;
+  final AppUser me;
+
+  @override
+  Widget build(BuildContext context) {
+    final events = context
+        .watch<FeedProvider>()
+        .events
+        .where((e) => e.communityId == orgId)
+        .map((e) => (id: e.id, title: e.title))
+        .toList();
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Sponsor tanit, ucretsiz etkinlik veya ucretli sponsor reklami. '
+          'Il / universite secimi zorunlu; admin onaylar.',
+          style: TextStyle(color: AppColors.textSecondary, height: 1.35),
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: () async {
+            final ok = await AdCampaignFormSheet.open(
+              context,
+              ownerType: 'community',
+              events: events,
+            );
+            if (ok == true && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Reklam talebi gonderildi')),
+              );
+            }
+          },
+          icon: const Icon(Icons.campaign),
+          label: const Text('Yeni reklam / sponsor'),
+        ),
+        const SizedBox(height: 16),
+        StreamBuilder(
+          stream: FirebaseFirestore.instance
+              .collection('ad_campaigns')
+              .where('ownerId', isEqualTo: orgId)
+              .limit(40)
+              .snapshots(),
+          builder: (context, snap) {
+            if (!snap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final docs = snap.data!.docs;
+            if (docs.isEmpty) {
+              return const Text('Henuz reklam talebi yok.');
+            }
+            return Column(
+              children: [
+                for (final d in docs) ...[
+                  Card(
+                    child: ListTile(
+                      title: Text('${d.data()['title']}'),
+                      subtitle: Text(
+                        '${d.data()['status']} - ${d.data()['adKind']}',
+                      ),
+                    ),
+                  ),
+                  if (d.data()['status'] == 'awaiting_payment')
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: AdIbanPaymentCard(
+                        amount:
+                            (d.data()['quotedAmount'] as num?)?.toDouble() ?? 0,
+                        iban: '${d.data()['payoutIban'] ?? ''}',
+                        holder: '${d.data()['payoutIbanHolder'] ?? ''}',
+                        bank: '${d.data()['payoutBank'] ?? ''}',
+                        code: '${d.data()['ibanReference'] ?? ''}',
+                      ),
+                    ),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _CommunityStaffTab extends StatefulWidget {
+  const _CommunityStaffTab({required this.orgId});
+  final String orgId;
+
+  @override
+  State<_CommunityStaffTab> createState() => _CommunityStaffTabState();
+}
+
+class _CommunityStaffTabState extends State<_CommunityStaffTab> {
+  final _query = TextEditingController();
+  bool _panel = true;
+  bool _badge = true;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  Future<void> _invite(AppUser u) async {
+    setState(() => _busy = true);
+    try {
+      await OrgInviteService.invite(
+        orgId: widget.orgId,
+        orgType: 'community',
+        inviteeUid: u.id,
+        grantPanelAccess: _panel,
+        grantBlueBadge: _badge,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${u.fullName} davet edildi')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final q = _query.text.trim();
+    final hits = q.isEmpty
+        ? <AppUser>[]
+        : auth
+            .searchUsers(q)
+            .where((u) => !u.isCommunity && !u.isCompany)
+            .take(20)
+            .toList();
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Yonetim kadrosu davet et: panel erisimi ve/veya mavi tick.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        SwitchListTile(
+          title: const Text('Panele erisim'),
+          value: _panel,
+          onChanged: (v) => setState(() => _panel = v),
+        ),
+        SwitchListTile(
+          title: const Text('Mavi tick'),
+          value: _badge,
+          onChanged: (v) => setState(() => _badge = v),
+        ),
+        TextField(
+          controller: _query,
+          decoration: const InputDecoration(
+            labelText: 'Kullanici ara',
+            border: OutlineInputBorder(),
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        if (_busy) const LinearProgressIndicator(),
+        ...hits.map(
+          (u) => ListTile(
+            title: Text(u.fullName),
+            subtitle: Text(u.email),
+            trailing: FilledButton(
+              onPressed: _busy ? null : () => _invite(u),
+              child: const Text('Davet'),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

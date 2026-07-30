@@ -87,8 +87,18 @@ enum AdminPermission {
   ),
   managePromo(
     'manage_promo',
-    'Tanıtım sistemleri (indir linkleri, QR, istatistik)',
+    'Tanıtım: mağaza linkleri, QR, istatistik',
     'Tanıtım',
+  ),
+  manageLanding(
+    'manage_landing',
+    'Landing sayfası metinleri / CMS',
+    'Tanıtım',
+  ),
+  manageAmbassadors(
+    'manage_ambassadors',
+    'Kampüs elçilikleri, elçiler ve başvuru formları',
+    'Elçilik',
   ),
   manageLegalTexts(
     'manage_legal_texts',
@@ -99,6 +109,11 @@ enum AdminPermission {
     'manage_plus',
     'KampüsteyimPlus ayarları / atama',
     'Sistem',
+  ),
+  manageAds(
+    'manage_ads',
+    'Reklam / sponsor teklif / push-mail bot',
+    'Ticaret',
   );
 
   const AdminPermission(this.key, this.label, this.group);
@@ -240,7 +255,7 @@ class StaffRole {
         StaffRole(
           id: 'role_moderator',
           name: 'Moderatör',
-          description: 'Şikayet, paylaşım, kısıtlama ve kullanıcı inceleme.',
+          description: 'Şikayet, paylaşım, kısıtlama ve içerik denetimi.',
           permissions: {
             AdminPermission.reviewReports,
             AdminPermission.viewPosts,
@@ -249,7 +264,6 @@ class StaffRole {
             AdminPermission.manageUsers,
             AdminPermission.sendBroadcast,
             AdminPermission.reviewStudyRooms,
-            AdminPermission.reviewLeads,
             AdminPermission.accessDuringMaintenance,
           },
           isSystem: true,
@@ -257,7 +271,7 @@ class StaffRole {
         StaffRole(
           id: 'role_community_mgr',
           name: 'Topluluk Yöneticisi',
-          description: 'Badge, topluluk hesabı ve içerik görünümü.',
+          description: 'Topluluk hesapları, rozet ve kampüs elçiliği.',
           permissions: {
             AdminPermission.manageUsers,
             AdminPermission.manageBadges,
@@ -267,6 +281,7 @@ class StaffRole {
             AdminPermission.moderateFeed,
             AdminPermission.sendBroadcast,
             AdminPermission.reviewStudyRooms,
+            AdminPermission.manageAmbassadors,
             AdminPermission.reviewLeads,
             AdminPermission.accessDuringMaintenance,
           },
@@ -275,7 +290,7 @@ class StaffRole {
         StaffRole(
           id: 'role_ops',
           name: 'Hesap Operasyon',
-          description: 'Firma/topluluk hesabı ve şifre sıfırlama.',
+          description: 'Firma/topluluk hesabı, şifre ve landing başvuruları.',
           permissions: {
             AdminPermission.createCompany,
             AdminPermission.createCommunity,
@@ -288,8 +303,8 @@ class StaffRole {
         ),
         StaffRole(
           id: 'role_sysops',
-          name: 'Sistem Operasyon',
-          description: 'AYS Tech bakım, push ve yayın bildirimleri.',
+          name: 'Sistem & Yayın',
+          description: 'Bakım, push, Plus, KVKK, tanıtım ve landing CMS.',
           permissions: {
             AdminPermission.manageMaintenance,
             AdminPermission.accessDuringMaintenance,
@@ -297,16 +312,59 @@ class StaffRole {
             AdminPermission.manageUsers,
             AdminPermission.viewPosts,
             AdminPermission.manageLegalTexts,
-            AdminPermission.reviewLeads,
             AdminPermission.managePromo,
+            AdminPermission.manageLanding,
             AdminPermission.managePlus,
+            AdminPermission.manageAds,
+          },
+          isSystem: true,
+        ),
+        StaffRole(
+          id: 'role_growth',
+          name: 'Büyüme & Tanıtım',
+          description: 'Landing CMS, mağaza linkleri, QR, başvurular ve reklam.',
+          permissions: {
+            AdminPermission.managePromo,
+            AdminPermission.manageLanding,
+            AdminPermission.reviewLeads,
+            AdminPermission.manageAmbassadors,
+            AdminPermission.manageUsers,
+            AdminPermission.manageAds,
+            AdminPermission.accessDuringMaintenance,
+          },
+          isSystem: true,
+        ),
+        StaffRole(
+          id: 'role_ads_commerce',
+          name: 'Reklam & Ticaret',
+          description: 'Reklam onay, sponsor teklif, Plus ve firma ticaret.',
+          permissions: {
+            AdminPermission.manageAds,
+            AdminPermission.managePlus,
+            AdminPermission.createCompany,
+            AdminPermission.reviewLeads,
+            AdminPermission.manageBadges,
+            AdminPermission.accessDuringMaintenance,
+          },
+          isSystem: true,
+        ),
+        StaffRole(
+          id: 'role_ambassador_ops',
+          name: 'Elçilik Operasyon',
+          description: 'Kampüs elçilikleri, formlar, elçi onayları ve rozet.',
+          permissions: {
+            AdminPermission.manageAmbassadors,
+            AdminPermission.manageBadges,
+            AdminPermission.manageUsers,
+            AdminPermission.reviewLeads,
+            AdminPermission.accessDuringMaintenance,
           },
           isSystem: true,
         ),
         StaffRole(
           id: 'role_hr_desk',
           name: 'Destek Masası',
-          description: 'Kullanıcı desteği, şifre ve şikayet triyajı.',
+          description: 'Kullanıcı desteği, şifre, şikayet ve geri bildirim.',
           permissions: {
             AdminPermission.manageUsers,
             AdminPermission.resetPassword,
@@ -314,10 +372,7 @@ class StaffRole {
             AdminPermission.viewPosts,
             AdminPermission.reviewFeedback,
             AdminPermission.reviewLeads,
-            AdminPermission.managePromo,
             AdminPermission.reviewStudyRooms,
-            AdminPermission.manageLegalTexts,
-            AdminPermission.managePlus,
             AdminPermission.accessDuringMaintenance,
           },
           isSystem: true,

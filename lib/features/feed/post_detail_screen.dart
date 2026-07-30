@@ -16,6 +16,7 @@ import '../auth/data/auth_provider.dart';
 import '../moderation/moderation_models.dart';
 import '../moderation/report_sheet.dart';
 import '../notifications/notification_provider.dart';
+import '../plus/plus_widgets.dart';
 import 'feed_provider.dart';
 import 'feed_screen.dart';
 
@@ -393,6 +394,7 @@ class _CommentTile extends StatelessWidget {
     final time = DateFormat('d MMM · HH:mm', 'tr').format(comment.createdAt);
     final me = context.watch<AuthProvider>().user;
     final auth = context.read<AuthProvider>();
+    final author = auth.findUser(comment.authorId);
     final canPin = comment.authorId == postAuthorId || me?.id == postAuthorId;
     final isOwn = me != null &&
         (comment.authorId == me.id ||
@@ -436,6 +438,10 @@ class _CommentTile extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          if (author != null) ...[
+                            const SizedBox(width: 4),
+                            UserVerificationBadges(user: author, size: 13),
+                          ],
                           if (comment.isPinned) ...[
                             const SizedBox(width: 6),
                             const Icon(Icons.push_pin,

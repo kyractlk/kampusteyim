@@ -318,7 +318,8 @@ class _UserProfileViewState extends State<UserProfileView> {
                     ),
                     if (user.showGoldBadge ||
                         user.showBlueBadge ||
-                        user.showGreenBadge) ...[
+                        user.showGreenBadge ||
+                        user.isCampusAmbassador) ...[
                       const SizedBox(width: 6),
                       UserVerificationBadges(user: user, size: 18),
                     ],
@@ -332,6 +333,40 @@ class _UserProfileViewState extends State<UserProfileView> {
                   user.handle,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
                 ),
+                if (user.displayBadgeTitle.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.cyan.withValues(alpha: 0.55),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (user.isCampusAmbassador) ...[
+                          const CampusAmbassadorBadge(size: 15),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          user.displayBadgeTitle,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                            letterSpacing: 0.1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (user.showUniversityBadge) ...[
                   const SizedBox(height: 8),
                   UniversityBadge(
@@ -465,6 +500,28 @@ class _UserProfileViewState extends State<UserProfileView> {
           if (isSelf) ...[
             const SizedBox(height: 12),
             const PlusPrivilegesCard(),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.confirmation_number_outlined),
+              title: const Text('Biletlerim'),
+              subtitle: const Text('Satın alınan etkinlik biletleri'),
+              onTap: () => context.push('/tickets'),
+            ),
+            if (user.panelAccess && (user.panelOrgId ?? '').isNotEmpty) ...[
+              const SizedBox(height: 4),
+              ListTile(
+                leading: const Icon(Icons.dashboard_customize_outlined),
+                title: Text('${user.panelOrgName ?? 'Organizasyon'} paneli'),
+                subtitle: const Text('Kadro erişimin var'),
+                onTap: () {
+                  if (user.panelOrgType == 'community') {
+                    context.push('/community');
+                  } else {
+                    context.push('/firma/dashboard');
+                  }
+                },
+              ),
+            ],
             if (user.isCompany) ...[
               const SizedBox(height: 12),
               Material(
