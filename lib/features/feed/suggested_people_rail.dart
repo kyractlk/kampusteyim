@@ -1,27 +1,85 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/storage/media_disk_cache.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/campus_affinity.dart';
+import '../../core/widgets/social_widgets.dart';
 import '../auth/data/auth_provider.dart';
 
-/// Instagram tarzı yatay "Onerilenler" rayı.
-class SuggestedPeopleRail extends StatelessWidget {
+/// Instagram tarzı yatay "Önerilenler" rayı — fotoğraflar disk cache + prefetch.
+class SuggestedPeopleRail extends StatefulWidget {
   const SuggestedPeopleRail({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    final me = auth.user;
-    if (me == null) return const SizedBox.shrink();
+  State<SuggestedPeopleRail> createState() => _SuggestedPeopleRailState();
+}
 
-    final items = PeopleSuggestions.build(
+class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
+  List<SuggestedPerson> _items = const [];
+  String _fingerprint = '';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _rebuildIfNeeded();
+  }
+
+  void _rebuildIfNeeded() {
+    final auth = context.read<AuthProvider>();
+    final me = auth.user;
+    if (me == null) {
+      if (_items.isNotEmpty) {
+        setState(() {
+          _items = const [];
+          _fingerprint = '';
+        });
+      }
+      return;
+    }
+
+    // Dizin / takip / dismiss değişince yeniden hesapla.
+    final fp =
+        '${me.id}|${me.following.length}|${auth.dismissedSuggestions.length}|'
+        '${auth.directory.length}|${me.outgoingFollowRequests.length}';
+    if (fp == _fingerprint && _items.isNotEmpty) return;
+
+    final next = PeopleSuggestions.build(
       auth: auth,
       dismissed: auth.dismissedSuggestions,
       limit: 20,
     );
-    if (items.isEmpty) return const SizedBox.shrink();
+    _fingerprint = fp;
+    _items = next;
+    _prefetchPhotos(next);
+    if (mounted) setState(() {});
+  }
+
+  void _prefetchPhotos(List<SuggestedPerson> items) {
+    if (kIsWeb) return;
+    final urls = items
+        .map((e) => e.user.photoUrl?.trim() ?? '')
+        .where((u) => u.startsWith('http'))
+        .toList(growable: false);
+    if (urls.isEmpty) return;
+    MediaDiskCache.instance.prefetchAll(urls, concurrency: 6, front: true);
+    // Image cache'e de erken bas.
+    for (final url in urls.take(12)) {
+      unawaited(precacheImage(NetworkImage(url), context).catchError((_) {}));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Takip durumu güncellensin diye auth'u dinle; liste fingerprint ile korunur.
+    context.watch<AuthProvider>();
+    _rebuildIfNeeded();
+
+    if (_items.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -58,10 +116,10 @@ class SuggestedPeopleRail extends StatelessWidget {
           child: ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             scrollDirection: Axis.horizontal,
-            itemCount: items.length,
+            itemCount: _items.length,
             separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, i) {
-              final item = items[i];
+              final item = _items[i];
               return _SuggestCard(item: item);
             },
           ),
@@ -99,22 +157,11 @@ class _SuggestCard extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(10, 28, 10, 10),
                 child: Column(
                   children: [
-                    CircleAvatar(
+                    UserAvatar(
+                      name: u.fullName,
+                      photoUrl: u.communityLogoUrl ?? u.photoUrl,
                       radius: 34,
-                      backgroundColor: AppColors.navy.withValues(alpha: 0.08),
-                      backgroundImage: (u.photoUrl != null &&
-                              u.photoUrl!.trim().isNotEmpty)
-                          ? NetworkImage(u.photoUrl!)
-                          : null,
-                      child: (u.photoUrl == null || u.photoUrl!.trim().isEmpty)
-                          ? Text(
-                              u.initials,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.navy,
-                              ),
-                            )
-                          : null,
+                      isCommunity: u.isCommunity,
                     ),
                     const SizedBox(height: 8),
                     Text(

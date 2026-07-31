@@ -267,6 +267,18 @@ class UserAvatar extends StatelessWidget {
         ),
       );
     } else if (useNetwork) {
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      final px = (size * dpr).round().clamp(48, 256);
+      final ph = SizedBox(
+        width: size,
+        height: size,
+        child: ColoredBox(
+          color: isCommunity
+              ? AppColors.navy
+              : AppColors.cyan.withValues(alpha: 0.22),
+          child: Center(child: _initials()),
+        ),
+      );
       avatar = CircleAvatar(
         radius: radius,
         backgroundColor:
@@ -277,16 +289,10 @@ class UserAvatar extends StatelessWidget {
             width: size,
             height: size,
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => SizedBox(
-              width: size,
-              height: size,
-              child: ColoredBox(
-                color: isCommunity
-                    ? AppColors.navy
-                    : AppColors.cyan.withValues(alpha: 0.22),
-                child: Center(child: _initials()),
-              ),
-            ),
+            cacheWidth: px,
+            cacheHeight: px,
+            placeholder: ph,
+            errorBuilder: (_, _, _) => ph,
           ),
         ),
       );
