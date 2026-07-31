@@ -479,14 +479,35 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
   }
 }
 
+/// Ticaret · reklam / etkinlik IBAN onayları.
 class AdminPaymentReviewsPanel extends StatelessWidget {
-  const AdminPaymentReviewsPanel({super.key});
+  const AdminPaymentReviewsPanel({
+    super.key,
+    this.includeProducts = const {'ad', 'event'},
+    this.scrollable = true,
+  });
+
+  final Set<String> includeProducts;
+  final bool scrollable;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PendingIbanOrders(
+      includeProducts: includeProducts,
+      scrollable: scrollable,
+    );
+  }
+}
+
+/// Plus sekmesi · yalnızca KampüsteyimPlus IBAN onayları.
+class AdminPlusPaymentReviewsPanel extends StatelessWidget {
+  const AdminPlusPaymentReviewsPanel({super.key});
 
   @override
   Widget build(BuildContext context) {
     return const _PendingIbanOrders(
-      includeProducts: {'plus', 'ad', 'event'},
-      scrollable: true,
+      includeProducts: {'plus'},
+      scrollable: false,
     );
   }
 }

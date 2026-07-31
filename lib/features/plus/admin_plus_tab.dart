@@ -261,6 +261,13 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
               : const Text('Plus ayarlarını kaydet'),
         ),
         const Divider(height: 36),
+        const Text(
+          'Bekleyen Plus IBAN ödemeleri',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        const AdminPlusPaymentReviewsPanel(),
+        const Divider(height: 36),
         const AdminPaymentsPanel(),
         const Divider(height: 36),
         const Text(

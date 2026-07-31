@@ -10,6 +10,8 @@ function commerceModule({
   assertPlatformAdmin,
   sanitizePlainText,
   FieldValue,
+  findUserDocByAnyId,
+  expandFieldPaths,
 }) {
   const TICKETS = 'event_tickets';
   const WITHDRAWALS = 'withdrawal_requests';
@@ -108,7 +110,21 @@ function commerceModule({
   async function getOrganizerSettings(uid) {
     const snap = await db.collection('users').doc(uid).get();
     const u = snap.data() || {};
-    const s = u.organizerSettings || {};
+    // Eski kayıtlarda ayarlar `organizerSettings.x` adlı düz alanlarda duruyor.
+    const legacy = (key) => u[`organizerSettings.${key}`];
+    const nested = u.organizerSettings || {};
+    const s = new Proxy(
+      {},
+      {
+        get: (_, key) =>
+          nested[key] !== undefined ? nested[key] : legacy(key),
+      },
+    );
+    const wallet = u.organizerWallet || {};
+    const balance =
+      wallet.balance !== undefined
+        ? wallet.balance
+        : u['organizerWallet.balance'];
     return {
       user: u,
       payoutIban: String(s.payoutIban || '').trim(),
@@ -118,7 +134,7 @@ function commerceModule({
         s.commissionPercent != null ? s.commissionPercent : 10,
       ),
       minWithdrawal: Number(s.minWithdrawal != null ? s.minWithdrawal : 500),
-      balance: Number((u.organizerWallet || {}).balance || 0),
+      balance: Number(balance || 0),
       isEventOrganizer: u.isEventOrganizer === true,
       isCompany: u.role === 'company',
       name: String(u.companyName || u.displayName || u.username || uid),
@@ -229,12 +245,12 @@ function commerceModule({
     // Organizatör bakiyesi + ledger
     if (net > 0) {
       await db.collection('users').doc(organizerId).set(
-        {
+        expandFieldPaths({
           'organizerWallet.balance': FieldValue.increment(net),
           'organizerWallet.currency': 'TRY',
           'organizerWallet.updatedAt': nowIso(),
           updatedAt: nowIso(),
-        },
+        }),
         { merge: true },
       );
       await db.collection(LEDGER).add({
@@ -284,9 +300,15 @@ function commerceModule({
       }
       await db.collection('users').doc(uid).set(
         {
-          'organizerSettings.payoutIban': iban,
-          'organizerSettings.payoutIbanHolder': holder,
-          'organizerSettings.payoutBank': bank,
+          ...expandFieldPaths({
+            'organizerSettings.payoutIban': iban,
+            'organizerSettings.payoutIbanHolder': holder,
+            'organizerSettings.payoutBank': bank,
+          }),
+          // Noktalı anahtarla düz alan olarak yazılmış eski kayıtları temizle.
+          'organizerSettings.payoutIban': FieldValue.delete(),
+          'organizerSettings.payoutIbanHolder': FieldValue.delete(),
+          'organizerSettings.payoutBank': FieldValue.delete(),
           updatedAt: nowIso(),
         },
         { merge: true },
@@ -306,7 +328,10 @@ function commerceModule({
       if (!rawKey) throw new HttpsError('invalid-argument', 'companyId gerekli');
 
       let companyId = rawKey;
-      let userSnap = await db.collection('users').doc(rawKey).get();
+      // AppUser.id stableId olabilir; gerçek dokümanı çöz (aksi halde
+      // users/{stableId} altında hayalet doküman oluşur).
+      let userSnap = (await findUserDocByAnyId(rawKey)) || { exists: false };
+      if (userSnap.exists) companyId = userSnap.id;
       if (!userSnap.exists && rawKey.includes('@')) {
         const q = await db
           .collection('users')
@@ -359,7 +384,10 @@ function commerceModule({
       if (typeof request.data?.isEventOrganizer === 'boolean') {
         patch.isEventOrganizer = request.data.isEventOrganizer;
       }
-      await db.collection('users').doc(companyId).set(patch, { merge: true });
+      await db
+        .collection('users')
+        .doc(companyId)
+        .set(expandFieldPaths(patch), { merge: true });
       return { ok: true, companyId };
     },
   );
@@ -485,11 +513,11 @@ function commerceModule({
       };
       await ref.set(row);
       await db.collection('users').doc(uid).set(
-        {
+        expandFieldPaths({
           'organizerWallet.balance': FieldValue.increment(-amount),
           'organizerWallet.currency': 'TRY',
           'organizerWallet.updatedAt': nowIso(),
-        },
+        }),
         { merge: true },
       );
       await db.collection(LEDGER).add({
@@ -548,11 +576,11 @@ function commerceModule({
         );
         if (amount > 0) {
           await db.collection('users').doc(w.companyId).set(
-            {
+            expandFieldPaths({
               'organizerWallet.balance': FieldValue.increment(amount),
               'organizerWallet.currency': 'TRY',
               'organizerWallet.updatedAt': nowIso(),
-            },
+            }),
             { merge: true },
           );
           await db.collection(LEDGER).add({
@@ -1144,7 +1172,7 @@ function commerceModule({
           });
         }
       }
-      await ref.set(patch, { merge: true });
+      await ref.set(expandFieldPaths(patch), { merge: true });
       return { ok: true };
     },
   );

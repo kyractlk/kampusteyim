@@ -9,6 +9,7 @@ import '../../core/theme/app_colors.dart';
 import '../../data/mock/mock_data.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
+import '../commerce/commerce_service.dart';
 import '../feed/feed_provider.dart';
 
 /// Organizatör firma: kampüs dışı etkinlik oluşturur → admin onayı.
@@ -95,11 +96,10 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
   Future<void> _openCreate(BuildContext context, AppUser me) async {
     // Etkinlik açmadan önce çekim IBAN zorunlu
     try {
-      final snap =
-          await FirebaseFirestore.instance.collection('users').doc(me.id).get();
-      final s = snap.data()?['organizerSettings'];
-      final iban = s is Map ? '${s['payoutIban'] ?? ''}'.trim() : '';
-      final holder = s is Map ? '${s['payoutIbanHolder'] ?? ''}'.trim() : '';
+      final data = await CommerceService.getOrganizerDashboard();
+      final s = Map<String, dynamic>.from(data['settings'] as Map? ?? {});
+      final iban = '${s['payoutIban'] ?? ''}'.trim();
+      final holder = '${s['payoutIbanHolder'] ?? ''}'.trim();
       if (iban.isEmpty || holder.isEmpty) {
         if (!context.mounted) return;
         final go = await showDialog<bool>(
@@ -129,6 +129,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
       }
     } catch (_) {}
 
+    if (!context.mounted) return;
     final title = TextEditingController();
     final desc = TextEditingController();
     final location = TextEditingController();

@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import 'core/auth/secure_session.dart';
 import 'core/constants/app_info.dart';
 import 'core/permissions/app_permissions.dart';
+import 'core/storage/media_warm_helper.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/keyboard_dismiss.dart';
 import 'features/admin/admin_provider.dart';
@@ -137,6 +138,8 @@ class _MtMobilAppState extends State<MtMobilApp> {
     unawaited(_plus.ensureConfigSeeded());
     _auth.addListener(_onAuth);
     unawaited(_ads.refresh());
+    // Hikâye + Reels sürekli indirme helper'ı (açık / arka plan).
+    MediaWarmHelper.instance.start(stories: _stories, reels: _reels);
   }
 
   void _onAuth() {
@@ -155,6 +158,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
 
   @override
   void dispose() {
+    MediaWarmHelper.instance.stop();
     _auth.removeListener(_onAuth);
     _auth.dispose();
     _feed.dispose();

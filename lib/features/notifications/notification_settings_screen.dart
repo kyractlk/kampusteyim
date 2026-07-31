@@ -38,7 +38,8 @@ class _NotificationSettingsScreenState
     final user = auth.user;
     if (user != null) {
       try {
-        await FirebaseFirestore.instance.collection('users').doc(user.id).set({
+        final docId = auth.currentDocId ?? user.id;
+        await FirebaseFirestore.instance.collection('users').doc(docId).set({
           'notificationPrefs': next.toJson(),
           'updatedAt': DateTime.now().toIso8601String(),
         }, SetOptions(merge: true));

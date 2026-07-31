@@ -144,16 +144,20 @@ class StoriesProvider extends ChangeNotifier {
   }
 
   Future<void> _prefetchVisibleMedia() async {
-    final items = visibleItemsForViewer();
-    final urls = items
-        .map((s) => s.mediaUrl)
-        .where((u) => u.startsWith('http'))
-        .toList();
+    final urls = warmMediaUrls();
     // Atıldığı / geldiği an diske yaz — tıklanınca anlık.
-    MediaDiskCache.instance.prefetchAll(urls, concurrency: 4);
-    for (final url in urls.take(20)) {
+    MediaDiskCache.instance.prefetchAll(urls, concurrency: 5, front: true);
+    for (final url in urls.take(24)) {
       unawaited(_prefetchUrl(url, isVideo: false));
     }
+  }
+
+  /// MediaWarmHelper için görünür hikâye medya URL'leri.
+  List<String> warmMediaUrls() {
+    return visibleItemsForViewer()
+        .map((s) => s.mediaUrl)
+        .where((u) => u.startsWith('http'))
+        .toList(growable: false);
   }
 
   Future<void> _prefetchUrl(String url, {required bool isVideo}) async {

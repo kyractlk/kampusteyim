@@ -35,7 +35,9 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if true;
-      allow create: if isOwner(userId) || isAdmin();
+      // Admin ayrıcalıklı yazmaları Cloud Functions üzerinden yapar; istemciye
+      // create izni verilirse stableId ile hayalet doküman oluşuyor.
+      allow create: if isOwner(userId);
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin();
 

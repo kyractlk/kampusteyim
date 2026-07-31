@@ -860,6 +860,33 @@ exports.dispatchPush = onCall({ region: 'europe-west1' }, async (request) => {
 /**
  * Firma staj/iş ilanı: feed post + takipçilere push/inbox (+opsiyonel mail)
  */
+/**
+ * `set(..., { merge: true })` noktalı anahtarları alan yolu olarak değil,
+ * düz alan adı olarak yazar (yalnızca `update()` yol olarak yorumlar).
+ * Bu yardımcı noktalı anahtarları iç içe map'e çevirir.
+ */
+function expandFieldPaths(patch) {
+  const out = {};
+  for (const [key, value] of Object.entries(patch || {})) {
+    if (!key.includes('.')) {
+      out[key] = value;
+      continue;
+    }
+    const parts = key.split('.');
+    let node = out;
+    for (let i = 0; i < parts.length - 1; i += 1) {
+      const part = parts[i];
+      const next = node[part];
+      if (typeof next !== 'object' || next === null || Array.isArray(next)) {
+        node[part] = {};
+      }
+      node = node[part];
+    }
+    node[parts[parts.length - 1]] = value;
+  }
+  return out;
+}
+
 async function findUserDocByAnyId(userId) {
   const id = String(userId || '').trim();
   if (!id) return null;
@@ -6563,6 +6590,8 @@ const _commerce = commerceModule({
   assertPlatformAdmin,
   sanitizePlainText,
   FieldValue,
+  findUserDocByAnyId,
+  expandFieldPaths,
 });
 exports.saveOrganizerPayoutIban = _commerce.saveOrganizerPayoutIban;
 exports.adminSetOrganizerCommerce = _commerce.adminSetOrganizerCommerce;
@@ -6598,6 +6627,7 @@ const _orgGrowth = orgGrowthModule({
   sendFcmToUser,
   buildCampusPushPayload,
   userAllowsPush,
+  expandFieldPaths,
 });
 exports.inviteOrgMember = _orgGrowth.inviteOrgMember;
 exports.respondOrgInvite = _orgGrowth.respondOrgInvite;

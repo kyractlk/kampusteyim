@@ -18,6 +18,7 @@ function orgGrowthModule({
   sendFcmToUser,
   buildCampusPushPayload,
   userAllowsPush,
+  expandFieldPaths,
 }) {
   const INVITES = 'org_invites';
   const ADS = 'ad_campaigns';
@@ -107,7 +108,7 @@ function orgGrowthModule({
       if (eventSnap.exists) return;
       await eventRef.set({ adId, field, createdAt: nowIso() });
     }
-    await ref.set(patch, { merge: true });
+    await ref.set(expandFieldPaths(patch), { merge: true });
   }
 
   const trackAdEmailOpen = onRequest(
@@ -609,7 +610,7 @@ function orgGrowthModule({
     }
 
     await ref.set(
-      {
+      expandFieldPaths({
         reachDispatchedAt: nowIso(),
         reachPushCount: pushN,
         reachMailCount: mailN,
@@ -619,7 +620,7 @@ function orgGrowthModule({
         'metricsByPlacement.push.sent': FieldValue.increment(pushN),
         'metricsByPlacement.email.sent': FieldValue.increment(mailN),
         updatedAt: nowIso(),
-      },
+      }),
       { merge: true },
     );
     return { ok: true, targets: targets.length, push: pushN, mail: mailN };

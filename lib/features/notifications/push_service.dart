@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../../core/storage/media_warm_helper.dart';
+
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Arka plan — sistem tray / APNs gösterir
@@ -116,6 +118,14 @@ class PushService {
           channelId: isAdmin ? 'mt_mobil_admin' : 'mt_mobil_social',
           payload: payload,
         );
+        // Hikâye / reels push'u → arka planda medyayı hemen ısıt.
+        final type = '${data['type'] ?? ''}';
+        if (type.contains('story') ||
+            type.contains('reel') ||
+            type == 'promo' ||
+            type == 'activity') {
+          unawaited(MediaWarmHelper.instance.kick(reason: 'fcm:$type'));
+        }
       });
 
       FirebaseMessaging.onMessageOpenedApp.listen((msg) {

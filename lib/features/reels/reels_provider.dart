@@ -83,6 +83,30 @@ class ReelsProvider extends ChangeNotifier {
     await ReelsVideoCache.instance.prefetch(feed, count: 24, keepWarm: true);
   }
 
+  /// MediaWarmHelper için görünür reels medya URL'leri.
+  List<String> warmMediaUrls() {
+    return feedFor(_auth?.user?.id)
+        .map((r) => r.mediaUrl)
+        .where((u) => u.startsWith('http'))
+        .toList(growable: false);
+  }
+
+  /// Disk + controller ısıtma (sekme kapalıyken de).
+  Future<void> warmAllMedia({bool forceControllers = false}) async {
+    final feed = feedFor(_auth?.user?.id);
+    if (feed.isEmpty) return;
+    MediaDiskCache.instance.prefetchAll(
+      feed.map((r) => r.mediaUrl),
+      concurrency: 4,
+      front: true,
+    );
+    await ReelsVideoCache.instance.prefetch(
+      feed,
+      count: forceControllers ? 28 : 20,
+      keepWarm: true,
+    );
+  }
+
   Future<void> prefetchAround(List<CampusReel> feed, int index) async {
     if (feed.isEmpty) return;
     final start = (index - 3).clamp(0, feed.length);

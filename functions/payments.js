@@ -644,7 +644,13 @@ ${fields}
       const snap = await ref.get();
       if (!snap.exists) throw new HttpsError('not-found', 'Sipariş yok');
       const order = snap.data() || {};
-      await assertAdminPermission(request.auth.uid, 'review_payments');
+      const product = String(order.product || 'plus').toLowerCase();
+      // Plus onayları manage_plus; reklam/etkinlik review_payments ister.
+      if (product === 'plus') {
+        await assertAdminPermission(request.auth.uid, 'manage_plus');
+      } else {
+        await assertAdminPermission(request.auth.uid, 'review_payments');
+      }
       const cfg = await readPublicPayments();
       if (approve) {
         await ref.set(
@@ -656,7 +662,7 @@ ${fields}
           },
           { merge: true },
         );
-        if (order.product === 'plus' || order.product === 'event' || order.product === 'ad') {
+        if (product === 'plus' || product === 'event' || product === 'ad') {
           await fulfillPaidOrder(order, cfg.plusDays);
         }
       } else {

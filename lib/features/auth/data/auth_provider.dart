@@ -890,6 +890,16 @@ class AuthProvider extends ChangeNotifier {
     return user.id;
   }
 
+  /// Oturumdaki kullanıcının Firestore doküman kimliği.
+  /// `AppUser.id` stableId olabildiği için doğrudan Firestore erişiminde
+  /// bunun yerine bu değer kullanılmalı.
+  String? get currentDocId {
+    final uid = fa.FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null && uid.isNotEmpty) return uid;
+    final me = _user;
+    return me == null ? null : _firestoreDocIdFor(me);
+  }
+
   /// Firestore’daki tüm üyeleri dizine yükle (canlı arama).
   Future<int> syncDirectoryFromFirestore({int maxDocs = 2000}) async {
     if (_directorySyncing) return _directory.length;
