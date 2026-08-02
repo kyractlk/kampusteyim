@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +9,7 @@ import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_info.dart';
 import '../../core/icons/mt_icons.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/theme_provider.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/utils/breakpoints.dart';
 import '../../core/widgets/app_circle_logo.dart';
@@ -17,6 +20,9 @@ import '../reels/reels_provider.dart';
 
 /// Reels alt menü — içerik yüksekliği (home indicator / sistem inset hariç).
 const double kReelsBottomNavHeight = 50;
+
+/// Floating Liquid Glass bar yüksekliği (içerik + padding).
+const double kGlassNavBarHeight = 64;
 
 /// Alt menü altındaki sistem boşluğu — önce %30, sonra bir %20 daha kısaltıldı.
 double shellBottomNavInset(BuildContext context) =>
@@ -90,20 +96,29 @@ class HomeShell extends StatelessWidget {
     // —— MOBİL: alt nav + tam genişlik içerik ——
     if (!wide) {
       final reelsMode = index == 1;
+      final glass = context.watch<ThemeProvider>().isLiquidGlass;
+      final darkTheme = context.watch<ThemeProvider>().isDark;
       return PopScope(
         canPop: false,
         onPopInvokedWithResult: _onPop,
         child: Scaffold(
           resizeToAvoidBottomInset: true,
-          extendBody: reelsMode,
+          extendBody: true,
           backgroundColor: reelsMode ? Colors.black : null,
           body: navigationShell,
-          bottomNavigationBar: _ShellBottomNavBar(
-            index: index,
-            reelsMode: reelsMode,
-            onTap: (i) => _onTap(context, i),
-            destinations: _destinations(loggedIn),
-          ),
+          bottomNavigationBar: glass || darkTheme || reelsMode
+              ? _LiquidGlassNavBar(
+                  index: index,
+                  reelsMode: reelsMode,
+                  onTap: (i) => _onTap(context, i),
+                  destinations: _destinations(loggedIn),
+                )
+              : _ShellBottomNavBar(
+                  index: index,
+                  reelsMode: reelsMode,
+                  onTap: (i) => _onTap(context, i),
+                  destinations: _destinations(loggedIn),
+                ),
         ),
       );
     }
@@ -209,7 +224,152 @@ class HomeShell extends StatelessWidget {
       ];
 }
 
-/// Mobil alt menü — Reels + normal; alttaki sistem boşluğu %30 kısaltılır.
+/// Floating Liquid Glass alt bar — buğulu şeffaf Dynamic Island hissi.
+class _LiquidGlassNavBar extends StatelessWidget {
+  const _LiquidGlassNavBar({
+    required this.index,
+    required this.reelsMode,
+    required this.onTap,
+    required this.destinations,
+  });
+
+  final int index;
+  final bool reelsMode;
+  final ValueChanged<int> onTap;
+  final List<NavigationDestination> destinations;
+
+  @override
+  Widget build(BuildContext context) {
+    final inset = shellBottomNavInset(context);
+    final dark = Theme.of(context).brightness == Brightness.dark || reelsMode;
+    final pillFill = dark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white.withValues(alpha: 0.55);
+    final pillBorder = dark
+        ? Colors.white.withValues(alpha: 0.22)
+        : Colors.white.withValues(alpha: 0.75);
+    final selectedBg = dark
+        ? Colors.white.withValues(alpha: 0.22)
+        : AppColors.navy.withValues(alpha: 0.88);
+    final selectedFg = dark ? Colors.white : Colors.white;
+    final idleFg = dark
+        ? Colors.white.withValues(alpha: 0.62)
+        : AppColors.textSecondary;
+
+    return SafeArea(
+      top: false,
+      minimum: EdgeInsets.only(bottom: inset > 0 ? 2 : 8),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(14, 0, 14, inset > 0 ? 4 : 10),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(32),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: pillFill,
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(color: pillBorder, width: 1.1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: dark ? 0.35 : 0.12),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: SizedBox(
+                height: kGlassNavBarHeight,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < destinations.length; i++)
+                      Expanded(
+                        child: _GlassNavItem(
+                          destination: destinations[i],
+                          selected: i == index,
+                          selectedBg: selectedBg,
+                          selectedFg: selectedFg,
+                          idleFg: idleFg,
+                          onTap: () => onTap(i),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassNavItem extends StatelessWidget {
+  const _GlassNavItem({
+    required this.destination,
+    required this.selected,
+    required this.selectedBg,
+    required this.selectedFg,
+    required this.idleFg,
+    required this.onTap,
+  });
+
+  final NavigationDestination destination;
+  final bool selected;
+  final Color selectedBg;
+  final Color selectedFg;
+  final Color idleFg;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = selected
+        ? (destination.selectedIcon ?? destination.icon)
+        : destination.icon;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(28),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: selected ? selectedBg : Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            child: IconTheme(
+              data: IconThemeData(
+                size: 22,
+                color: selected ? selectedFg : idleFg,
+              ),
+              child: icon,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            destination.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected
+                  ? (Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white
+                      : AppColors.navy)
+                  : idleFg,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Mobil alt menü — klasik (cam kapalıyken).
 class _ShellBottomNavBar extends StatelessWidget {
   const _ShellBottomNavBar({
     required this.index,

@@ -14,11 +14,11 @@ import 'core/constants/app_info.dart';
 import 'core/permissions/app_permissions.dart';
 import 'core/storage/media_warm_helper.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_provider.dart';
 import 'core/widgets/keyboard_dismiss.dart';
 import 'features/admin/admin_provider.dart';
 import 'features/ads/ads_provider.dart';
 import 'features/app_update/app_update_provider.dart';
-import 'features/app_update/app_update_screen.dart';
 import 'features/auth/data/auth_provider.dart';
 import 'features/feed/feed_provider.dart';
 import 'features/jobs/jobs_provider.dart';
@@ -115,6 +115,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
   late final ReelsProvider _reels;
   late final PlusProvider _plus;
   late final AdsProvider _ads;
+  late final ThemeProvider _theme;
   late final router = createRouter(_auth);
 
   @override
@@ -129,6 +130,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _admin = AdminProvider();
     _maintenance = MaintenanceProvider();
     _appUpdate = AppUpdateProvider();
+    _theme = ThemeProvider();
     _stories = StoriesProvider()..attachAuth(_auth);
     _reels = ReelsProvider()
       ..attachAuth(_auth)
@@ -171,6 +173,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _reels.dispose();
     _plus.dispose();
     _ads.dispose();
+    _theme.dispose();
     super.dispose();
   }
 
@@ -185,69 +188,65 @@ class _MtMobilAppState extends State<MtMobilApp> {
         ChangeNotifierProvider.value(value: _admin),
         ChangeNotifierProvider.value(value: _maintenance),
         ChangeNotifierProvider.value(value: _appUpdate),
+        ChangeNotifierProvider.value(value: _theme),
         ChangeNotifierProvider.value(value: _stories),
         ChangeNotifierProvider.value(value: _reels),
         ChangeNotifierProvider.value(value: _plus),
         ChangeNotifierProvider.value(value: _ads),
       ],
-      child: MaterialApp.router(
-        title: AppInfo.appName,
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light,
-        routerConfig: router,
-        locale: const Locale('tr'),
-        supportedLocales: const [Locale('tr'), Locale('en')],
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        builder: (context, child) {
-          final maint = context.watch<MaintenanceProvider>();
-          final upd = context.watch<AppUpdateProvider>();
-          final auth = context.watch<AuthProvider>();
-          final bypass =
-              context.read<AdminProvider>().canAccessDuringMaintenance(auth.user);
+      child: Consumer<ThemeProvider>(
+        builder: (context, theme, _) {
+          final style = theme.style;
+          final lightTheme = style == AppVisualStyle.liquidGlass
+              ? AppTheme.liquidGlass
+              : AppTheme.light;
+          return MaterialApp.router(
+            title: AppInfo.appName,
+            debugShowCheckedModeBanner: false,
+            theme: lightTheme,
+            darkTheme: AppTheme.dark,
+            themeMode: theme.themeMode,
+            routerConfig: router,
+            locale: const Locale('tr'),
+            supportedLocales: const [Locale('tr'), Locale('en')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            builder: (context, child) {
+              final maint = context.watch<MaintenanceProvider>();
+              final auth = context.watch<AuthProvider>();
+              final bypass = context
+                  .read<AdminProvider>()
+                  .canAccessDuringMaintenance(auth.user);
 
-          // Bakımda personel kapısı — web’de Uri.base, mobilde GoRouter (güvenli).
-          final path = _currentAppPath(context);
-          final staffPath = path == '/admin' ||
-              path.startsWith('/admin/') ||
-              path == '/login' ||
-              path == '/sifremi-unuttum' ||
-              path == '/sifre-sifirla' ||
-              path.startsWith('/r/');
+              final path = _currentAppPath(context);
+              final staffPath = path == '/admin' ||
+                  path.startsWith('/admin/') ||
+                  path == '/login' ||
+                  path == '/sifremi-unuttum' ||
+                  path == '/sifre-sifirla' ||
+                  path.startsWith('/r/');
 
-          if (upd.blocksApp && !staffPath) {
-            return const AppUpdateForceScreen();
-          }
-
-          if (maint.blocksApp && !bypass && !staffPath) {
-            return const MaintenanceScreen();
-          }
-          // Klavye açılınca içerik yukarı kaysın; notch / gesture inset korunur.
-          // Boş alana / başka widget’a dokununca klavye kapanır (odak alanı hariç).
-          final media = MediaQuery.maybeOf(context);
-          Widget content = KeyboardDismissOnTap(
-            child: child ?? const SizedBox.shrink(),
-          );
-          if (upd.showSoftBanner) {
-            content = Column(
-              children: [
-                Expanded(child: content),
-                const AppUpdateSoftBanner(),
-              ],
-            );
-          }
-          if (media == null) return content;
-          return MediaQuery(
-            data: media.copyWith(
-              textScaler: media.textScaler.clamp(
-                minScaleFactor: 0.9,
-                maxScaleFactor: 1.25,
-              ),
-            ),
-            child: content,
+              if (maint.blocksApp && !bypass && !staffPath) {
+                return const MaintenanceScreen();
+              }
+              final media = MediaQuery.maybeOf(context);
+              Widget content = KeyboardDismissOnTap(
+                child: child ?? const SizedBox.shrink(),
+              );
+              if (media == null) return content;
+              return MediaQuery(
+                data: media.copyWith(
+                  textScaler: media.textScaler.clamp(
+                    minScaleFactor: 0.9,
+                    maxScaleFactor: 1.25,
+                  ),
+                ),
+                child: content,
+              );
+            },
           );
         },
       ),

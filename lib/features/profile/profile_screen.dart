@@ -9,6 +9,7 @@ import '../../core/icons/brand_svgs.dart';
 import '../../core/icons/mt_icons.dart';
 import '../../core/storage/media_upload.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/theme_provider.dart';
 import '../../core/utils/app_share.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/widgets/app_circle_logo.dart';
@@ -24,6 +25,50 @@ import '../notifications/notification_provider.dart';
 import '../plus/plus_widgets.dart';
 import '../reels/reel_models.dart';
 import '../reels/reels_provider.dart';
+
+Future<void> openThemePicker(BuildContext context) async {
+  final theme = context.read<ThemeProvider>();
+  final selected = await showModalBottomSheet<AppVisualStyle>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(
+                'Tema seç',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              ),
+            ),
+            for (final s in AppVisualStyle.values)
+              ListTile(
+                leading: Icon(
+                  switch (s) {
+                    AppVisualStyle.classic => Icons.wb_sunny_outlined,
+                    AppVisualStyle.liquidGlass => Icons.blur_on_rounded,
+                    AppVisualStyle.dark => Icons.dark_mode_outlined,
+                  },
+                ),
+                title: Text(s.label),
+                subtitle: Text(s.subtitle),
+                trailing: theme.style == s
+                    ? const Icon(Icons.check_circle, color: AppColors.cyan)
+                    : null,
+                onTap: () => Navigator.pop(ctx, s),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    },
+  );
+  if (selected != null && context.mounted) {
+    await theme.setStyle(selected);
+  }
+}
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -666,6 +711,17 @@ class _UserProfileViewState extends State<UserProfileView> {
               title: const Text('Geri bildirim bırak'),
               subtitle: const Text('Öneri / hata · admin paneline düşer'),
               onTap: () => context.push('/profile/feedback'),
+            ),
+            const SizedBox(height: 10),
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: const BorderSide(color: AppColors.border),
+              ),
+              leading: const Icon(Icons.palette_outlined),
+              title: const Text('Tema'),
+              subtitle: Text(context.watch<ThemeProvider>().style.label),
+              onTap: () => openThemePicker(context),
             ),
             const SizedBox(height: 10),
             ListTile(

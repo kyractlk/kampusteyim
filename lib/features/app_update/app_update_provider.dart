@@ -12,9 +12,7 @@ import 'app_update_models.dart';
 /// Açılışta mağaza sürümünü kontrol eder; soft / force güncelleme üretir.
 class AppUpdateProvider extends ChangeNotifier {
   AppUpdateProvider() {
-    if (!kIsWeb) {
-      unawaited(check());
-    }
+    // Sürüm güncelleme kapısı kapalı — kullanıcıyı engellemez / banner göstermez.
   }
 
   static const _gateUrl =
@@ -27,9 +25,8 @@ class AppUpdateProvider extends ChangeNotifier {
   String? localVersion;
   String? status;
 
-  bool get blocksApp => gate.forceUpdate;
-  bool get showSoftBanner =>
-      gate.softUpdate && !gate.forceUpdate && !softDismissed;
+  bool get blocksApp => false;
+  bool get showSoftBanner => false;
 
   Future<void> check({bool refresh = false}) async {
     if (kIsWeb) return;

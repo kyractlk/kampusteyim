@@ -11,6 +11,21 @@ import '../../models/models.dart';
 import '../notifications/notification_models.dart';
 import '../notifications/notification_provider.dart';
 
+/// Akış filtresi — Firestore stream canlı kalır; filtre client tarafında uygulanır.
+enum FeedScope {
+  all,
+  city,
+  university,
+}
+
+extension FeedScopeX on FeedScope {
+  String get label => switch (this) {
+        FeedScope.all => 'Tümü',
+        FeedScope.city => 'Şehrim',
+        FeedScope.university => 'Üniversitem',
+      };
+}
+
 class FeedProvider extends ChangeNotifier {
   FeedProvider() {
     _posts = [];
@@ -38,6 +53,16 @@ class FeedProvider extends ChangeNotifier {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _eventsSub;
   final Set<String> _likedLocal = {};
   final Set<String> _repostedLocal = {};
+
+  /// Akış kapsamı: tümü · şehir · üniversite (client-side realtime filtre).
+  FeedScope _scope = FeedScope.all;
+  FeedScope get scope => _scope;
+
+  void setScope(FeedScope next) {
+    if (_scope == next) return;
+    _scope = next;
+    notifyListeners();
+  }
 
   List<Post> get posts {
     return _posts

@@ -43,9 +43,11 @@ class FeedScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final allPosts = context.watch<FeedProvider>().posts;
+    final feed = context.watch<FeedProvider>();
+    final allPosts = feed.posts;
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
+    final scope = feed.scope;
     final posts = user == null
         ? allPosts
         : () {
@@ -53,50 +55,65 @@ class FeedScreen extends StatelessWidget {
               if (user.blocks(p.authorId)) return false;
               final author = auth.findUser(p.authorId);
               if (author?.blocks(user.id) ?? false) return false;
-              // Gizli hesap: yalnızca kendi / takipçiler görür (Reels ile aynı).
               if (author != null &&
                   author.isPrivateAccount &&
                   !auth.idsFor(p.authorId).contains(user.id) &&
                   !auth.follows(p.authorId)) {
                 return false;
               }
+              // Şehir / üniversite kapsamı — yazar profiline göre.
+              if (scope == FeedScope.city) {
+                final myCity = user.city.trim().toLowerCase();
+                if (myCity.isEmpty) return false;
+                final their = (author?.city ?? '').trim().toLowerCase();
+                if (their.isEmpty || their != myCity) return false;
+              } else if (scope == FeedScope.university) {
+                final myUni = user.university.trim().toLowerCase();
+                if (myUni.isEmpty) return false;
+                final their = (author?.university ?? '').trim().toLowerCase();
+                if (their.isEmpty || their != myUni) return false;
+              }
               return true;
             }).toList();
             filtered.sort((a, b) {
               final authorA = auth.findUser(a.authorId);
               final authorB = auth.findUser(b.authorId);
+              // Kapsamlı akışlarda yenilik biraz daha önde.
+              final recencyBoost = scope == FeedScope.all ? 1.0 : 1.35;
               final sa = CampusAffinity.scorePost(
-                viewer: user,
-                author: authorA,
-                createdAt: a.createdAt,
-                likeCount: a.likeCount,
-                replyCount: a.replyCount,
-                repostCount: a.repostCount,
-                followingAuthor: auth.follows(a.authorId),
-                friendOfFriend:
-                    authorA != null &&
-                    CampusAffinity.isFriendOfFriend(
-                      viewer: user,
-                      candidate: authorA,
-                      auth: auth,
-                    ),
-              );
+                    viewer: user,
+                    author: authorA,
+                    createdAt: a.createdAt,
+                    likeCount: a.likeCount,
+                    replyCount: a.replyCount,
+                    repostCount: a.repostCount,
+                    followingAuthor: auth.follows(a.authorId),
+                    friendOfFriend:
+                        authorA != null &&
+                        CampusAffinity.isFriendOfFriend(
+                          viewer: user,
+                          candidate: authorA,
+                          auth: auth,
+                        ),
+                  ) *
+                  recencyBoost;
               final sb = CampusAffinity.scorePost(
-                viewer: user,
-                author: authorB,
-                createdAt: b.createdAt,
-                likeCount: b.likeCount,
-                replyCount: b.replyCount,
-                repostCount: b.repostCount,
-                followingAuthor: auth.follows(b.authorId),
-                friendOfFriend:
-                    authorB != null &&
-                    CampusAffinity.isFriendOfFriend(
-                      viewer: user,
-                      candidate: authorB,
-                      auth: auth,
-                    ),
-              );
+                    viewer: user,
+                    author: authorB,
+                    createdAt: b.createdAt,
+                    likeCount: b.likeCount,
+                    replyCount: b.replyCount,
+                    repostCount: b.repostCount,
+                    followingAuthor: auth.follows(b.authorId),
+                    friendOfFriend:
+                        authorB != null &&
+                        CampusAffinity.isFriendOfFriend(
+                          viewer: user,
+                          candidate: authorB,
+                          auth: auth,
+                        ),
+                  ) *
+                  recencyBoost;
               final cmp = sb.compareTo(sa);
               if (cmp != 0) return cmp;
               return b.createdAt.compareTo(a.createdAt);
@@ -174,6 +191,15 @@ class FeedScreen extends StatelessWidget {
             if (user != null) const SliverToBoxAdapter(child: StoryRingBar()),
             if (user != null)
               const SliverToBoxAdapter(child: SuggestedPeopleRail()),
+            if (user != null)
+              SliverToBoxAdapter(
+                child: _FeedScopeChips(
+                  scope: scope,
+                  onChanged: feed.setScope,
+                  city: user.city,
+                  university: user.university,
+                ),
+              ),
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -235,7 +261,12 @@ class FeedScreen extends StatelessWidget {
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                4,
+                16,
+                24 + kGlassNavBarHeight + shellBottomNavInset(context),
+              ),
               sliver: SliverList.separated(
                 itemCount: posts.length,
                 separatorBuilder: (context, index) {
@@ -257,6 +288,88 @@ class FeedScreen extends StatelessWidget {
                       .fadeIn(delay: (40 * index).ms)
                       .slideY(begin: 0.04);
                 },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FeedScopeChips extends StatelessWidget {
+  const _FeedScopeChips({
+    required this.scope,
+    required this.onChanged,
+    required this.city,
+    required this.university,
+  });
+
+  final FeedScope scope;
+  final ValueChanged<FeedScope> onChanged;
+  final String city;
+  final String university;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final s in FeedScope.values) ...[
+              if (s != FeedScope.values.first) const SizedBox(width: 8),
+              ChoiceChip(
+                label: Text(
+                  s == FeedScope.city && city.trim().isNotEmpty
+                      ? 'Şehrim'
+                      : s == FeedScope.university && university.trim().isNotEmpty
+                          ? 'Üniversitem'
+                          : s.label,
+                ),
+                selected: scope == s,
+                onSelected: (_) => onChanged(s),
+                selectedColor: AppColors.navy,
+                labelStyle: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: scope == s ? Colors.white : AppColors.textPrimary,
+                ),
+                backgroundColor: AppColors.surface,
+                side: BorderSide(
+                  color: scope == s
+                      ? AppColors.navy
+                      : AppColors.border.withValues(alpha: 0.9),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                showCheckmark: false,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.lime.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.bolt_rounded, size: 14, color: AppColors.lime),
+                  SizedBox(width: 4),
+                  Text(
+                    'Canlı',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.navySoft,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
