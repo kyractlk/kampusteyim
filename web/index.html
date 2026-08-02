@@ -54,6 +54,22 @@
     <div class="label">KampüsteyimAPP</div>
   </div>
   <script>
+    // Mobil derin link: uygulama varsa aç, yoksa mağaza (admin promo linkleri).
+    (function () {
+      try {
+        if (sessionStorage.getItem('kt_web_continue') === '1') return;
+      } catch (e) {}
+      var path = location.pathname || '/';
+      if (!/^\/(post|user|event|announcement|stories|reels|tickets)(\/|$)/.test(path)) return;
+      var ua = navigator.userAgent || '';
+      var mobile = /iphone|ipad|ipod|android/i.test(ua) ||
+        (/macintosh/i.test(ua) && 'ontouchend' in document);
+      if (!mobile) return;
+      var q = path + (location.search || '') + (location.hash || '');
+      location.replace('/deeplink.html?path=' + encodeURIComponent(q));
+    })();
+  </script>
+  <script>
     (function () {
       var boot = document.getElementById('boot');
       var removed = false;
@@ -65,13 +81,10 @@
           if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
         }, 300);
       }
-      // Yalnizca gercekten gecikirse spinner goster (1.2s)
       setTimeout(function () {
         if (!removed && boot) boot.classList.add('show-wait');
       }, 1200);
-      // Ilk frame gelince kaldir
       window.addEventListener('flutter-first-frame', hideBoot);
-      // Emniyet: en fazla ~3.5s sonra kaldir (web takilmasin)
       setTimeout(hideBoot, 3500);
     })();
   </script>

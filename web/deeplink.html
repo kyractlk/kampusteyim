@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#0B1F3A" />
+  <title>KampüsteyimAPP · Açılıyor…</title>
+  <link rel="icon" href="./kampusteyim_icon.png" type="image/png" />
+  <style>
+    :root {
+      --navy: #0B1F3A;
+      --cyan: #00D4C8;
+      --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100svh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font);
+      color: #fff;
+      background:
+        radial-gradient(ellipse 70% 50% at 20% 30%, rgba(0, 212, 200, 0.28), transparent 55%),
+        linear-gradient(155deg, #061426 0%, #0B1F3A 55%, #123456 100%);
+      padding: 1.5rem;
+      text-align: center;
+    }
+    .card { max-width: 22rem; width: 100%; }
+    .logo {
+      width: 72px; height: 72px; border-radius: 18px;
+      margin: 0 auto 1.1rem; box-shadow: 0 12px 36px rgba(0,0,0,.35);
+    }
+    h1 { font-size: 1.45rem; font-weight: 800; margin: 0 0 .4rem; letter-spacing: -.02em; }
+    h1 span { color: var(--cyan); }
+    p { margin: 0 0 1rem; color: rgba(255,255,255,.72); font-size: .95rem; line-height: 1.4; }
+    .btn {
+      display: block; width: 100%;
+      border: 0; border-radius: 14px;
+      padding: .95rem 1rem; margin: .55rem 0 0;
+      font-weight: 700; font-size: .98rem; cursor: pointer;
+      text-decoration: none; color: #061426; background: var(--cyan);
+    }
+    .btn.secondary {
+      background: rgba(255,255,255,.12); color: #fff;
+      border: 1px solid rgba(255,255,255,.28);
+    }
+    .hint { margin-top: 1rem; font-size: .8rem; color: rgba(255,255,255,.5); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="./kampusteyim_icon.png" width="72" height="72" alt="KampüsteyimAPP" />
+    <h1>Kampüsteyim<span>APP</span></h1>
+    <p id="status">Uygulamada açmayı deniyoruz…</p>
+    <a class="btn" id="store" href="https://kampusteyim.app/#indir">Uygulamayı indir</a>
+    <a class="btn secondary" id="web" href="/">Web’de devam et</a>
+    <p class="hint">Uygulama yüklüyse otomatik açılır. Yoksa App Store / Play Store’a yönlendirilirsin.</p>
+  </div>
+  <script>
+(function () {
+  var PROMO_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/getPromoPublic';
+  var IOS_STORE = 'https://apps.apple.com/tr/app/id6793663176';
+  var DOWNLOAD = 'https://kampusteyim.app/#indir';
+  var PACKAGE = 'com.aystech.kampusteyimapp';
+  var HOST = 'app.kampusteyim.app';
+
+  var params = new URLSearchParams(location.search);
+  var path = params.get('path') || '/';
+  if (path.charAt(0) !== '/') path = '/' + path;
+  // Güvenlik: yalnızca uygulama içi path’ler
+  if (!/^\/(post|user|event|announcement|stories|reels|tickets|home|profile|search|about)(\/|$)/.test(path)
+      && path !== '/reels' && path !== '/tickets' && path !== '/home' && path !== '/profile' && path !== '/search' && path !== '/about') {
+    path = '/home';
+  }
+
+  var ua = navigator.userAgent || '';
+  var isIOS = /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && 'ontouchend' in document);
+  var isAndroid = /android/i.test(ua);
+
+  var storeBtn = document.getElementById('store');
+  var webBtn = document.getElementById('web');
+  var statusEl = document.getElementById('status');
+  webBtn.href = path + (location.hash || '');
+
+  webBtn.addEventListener('click', function () {
+    try { sessionStorage.setItem('kt_web_continue', '1'); } catch (e) {}
+  });
+
+  function isAppStore(u) {
+    return /^https?:\/\/(?:[a-z0-9-]+\.)*(?:apps\.apple\.com|itunes\.apple\.com)\//i.test(String(u || ''));
+  }
+  function isPlay(u) {
+    var s = String(u || '');
+    return /^https?:\/\/play\.google\.com\//i.test(s) || /^market:\/\//i.test(s);
+  }
+
+  var storeUrl = isIOS ? IOS_STORE : DOWNLOAD;
+  storeBtn.href = storeUrl;
+  storeBtn.textContent = isIOS ? 'App Store’dan indir' : (isAndroid ? 'Google Play’den indir' : 'İndirme sayfasına git');
+
+  function applyStore(cfg) {
+    if (!cfg) return;
+    if (isIOS) {
+      var ios = cfg.iosUrl || cfg.appStoreUrl;
+      if (isAppStore(ios)) storeUrl = ios;
+    } else if (isAndroid) {
+      var play = cfg.androidUrl || cfg.playStoreUrl;
+      if (isPlay(play)) storeUrl = play;
+      else storeUrl = cfg.downloadSectionUrl || DOWNLOAD;
+    } else {
+      storeUrl = cfg.downloadSectionUrl || DOWNLOAD;
+    }
+    storeBtn.href = storeUrl;
+  }
+
+  function tryOpenApp() {
+    var httpsUrl = 'https://' + HOST + path;
+    if (isAndroid) {
+      var intent =
+        'intent://' + HOST + path +
+        '#Intent;scheme=https;package=' + PACKAGE +
+        ';S.browser_fallback_url=' + encodeURIComponent(storeUrl) +
+        ';end';
+      statusEl.textContent = 'Uygulama açılıyor…';
+      location.href = intent;
+      return;
+    }
+    if (isIOS) {
+      // Custom scheme fallback (Universal Links kurulunca OS doğrudan app’e alır)
+      var custom = 'kampusteyim://open' + path;
+      statusEl.textContent = 'Uygulama açılıyor…';
+      var gone = false;
+      var t0 = Date.now();
+      window.addEventListener('pagehide', function () { gone = true; });
+      window.addEventListener('blur', function () { gone = true; });
+      location.href = custom;
+      setTimeout(function () {
+        if (gone || document.hidden) return;
+        // Universal Link dene
+        location.href = httpsUrl;
+      }, 350);
+      setTimeout(function () {
+        if (gone || document.hidden || Date.now() - t0 < 1200) return;
+        statusEl.textContent = 'Uygulama bulunamadı · indirmeye yönlendiriliyor…';
+        location.replace(storeUrl);
+      }, 1600);
+      return;
+    }
+    // Masaüstü: web’de aç
+    location.replace(path);
+  }
+
+  fetch(PROMO_URL, { method: 'GET' })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      applyStore(data && data.ok ? data : null);
+      tryOpenApp();
+    })
+    .catch(function () {
+      tryOpenApp();
+    });
+
+  // Android: intent fail olursa store
+  if (isAndroid) {
+    setTimeout(function () {
+      if (document.hidden) return;
+      statusEl.textContent = 'Uygulama bulunamadı · indirmeye yönlendiriliyor…';
+      location.replace(storeUrl);
+    }, 2200);
+  }
+})();
+  </script>
+</body>
+</html>

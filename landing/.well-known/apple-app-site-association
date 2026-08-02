@@ -1,0 +1,25 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "8496F2PR53.com.aystech.mtMobil",
+        "paths": [
+          "/post/*",
+          "/user/*",
+          "/event/*",
+          "/announcement/*",
+          "/stories/*",
+          "/reels",
+          "/reels/*",
+          "/tickets",
+          "/tickets/*",
+          "/home",
+          "/profile",
+          "/search",
+          "/about"
+        ]
+      }
+    ]
+  }
+}

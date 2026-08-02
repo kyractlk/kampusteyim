@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.aystech.kampusteyimapp",
+      "sha256_cert_fingerprints": [
+        "0D:A9:BE:A4:35:98:3C:A6:C7:76:5A:08:F5:99:DE:F5:CE:63:8B:38:7A:42:07:C6:66:E7:11:81:32:FB:BC:AF"
+      ]
+    }
+  }
+]

@@ -5,5 +5,12 @@
 	<!-- App Store / TestFlight production push -->
 	<key>aps-environment</key>
 	<string>production</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:app.kampusteyim.app</string>
+		<string>applinks:ayskampuss.web.app</string>
+		<string>applinks:kampusteyim.app</string>
+		<string>applinks:www.kampusteyim.app</string>
+	</array>
 </dict>
 </plist>

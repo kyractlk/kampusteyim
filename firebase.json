@@ -34,8 +34,8 @@
       "public": "build/web",
       "ignore": [
         "firebase.json",
-        "**/.*",
-        "**/node_modules/**"
+        "**/node_modules/**",
+        "**/.git/**"
       ],
       "rewrites": [
         {
@@ -68,6 +68,41 @@
         }
       ],
       "headers": [
+        {
+          "source": "/.well-known/apple-app-site-association",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=300"
+            }
+          ]
+        },
+        {
+          "source": "/.well-known/assetlinks.json",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=300"
+            }
+          ]
+        },
+        {
+          "source": "/deeplink.html",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
         {
           "source": "**",
           "headers": [
@@ -118,8 +153,8 @@
       "public": "landing",
       "ignore": [
         "firebase.json",
-        "**/.*",
         "**/node_modules/**",
+        "**/.git/**",
         "README.md",
         "data/raw_*.json"
       ],
@@ -138,6 +173,32 @@
         }
       ],
       "headers": [
+        {
+          "source": "/.well-known/apple-app-site-association",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=300"
+            }
+          ]
+        },
+        {
+          "source": "/.well-known/assetlinks.json",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=300"
+            }
+          ]
+        },
         {
           "source": "**",
           "headers": [

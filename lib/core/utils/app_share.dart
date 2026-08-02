@@ -41,6 +41,13 @@ class AppShare {
       '$baseUrl/announcement/${Uri.encodeComponent(id)}';
   static String event(String id) =>
       '$baseUrl/event/${Uri.encodeComponent(id)}';
+  static String story(String userId) =>
+      '$baseUrl/stories/view/${Uri.encodeComponent(userId)}';
+  static String reels({String? reelId}) {
+    if (reelId == null || reelId.trim().isEmpty) return '$baseUrl/reels';
+    return '$baseUrl/reels?id=${Uri.encodeComponent(reelId.trim())}';
+  }
+  static String tickets() => '$baseUrl/tickets';
 
   /// Web’de panoya kopyalar; native’de sistem paylaşımını dener.
   static Future<void> shareLink({

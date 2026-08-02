@@ -80,5 +80,18 @@
 	<string>KampüsteyimAPP öğrenci belgesi, medya ve hikâye paylaşımı için fotoğraf kütüphanene erişir.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>KampüsteyimAPP video hikâye ve medya kaydı için mikrofona erişir.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.aystech.kampusteyim</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>kampusteyim</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -50,6 +50,13 @@ GoRouter createRouter(AuthProvider auth) {
     initialLocation: '/home',
     refreshListenable: auth,
     redirect: (context, state) {
+      // Custom scheme: kampusteyim://open/post/… → /post/…
+      final fullPath = state.uri.path;
+      if (fullPath == '/open' || fullPath.startsWith('/open/')) {
+        final rest = fullPath == '/open' ? '/home' : fullPath.substring(5);
+        final q = state.uri.query.isEmpty ? '' : '?${state.uri.query}';
+        return '$rest$q';
+      }
       final loggedIn = auth.isAuthenticated;
       final loc = state.matchedLocation;
       final user = auth.user;
