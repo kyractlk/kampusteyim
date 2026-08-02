@@ -55,12 +55,13 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            // AAB strip hatası (llvm-strip) — native lib’leri olduğu gibi paketle.
-            packaging {
-                jniLibs {
-                    keepDebugSymbols += listOf("**/*.so")
-                }
-            }
+        }
+    }
+
+    // AAB strip hatası (llvm-strip) — native lib’leri olduğu gibi paketle.
+    packaging {
+        jniLibs {
+            keepDebugSymbols += setOf("**/*.so")
         }
     }
 }
