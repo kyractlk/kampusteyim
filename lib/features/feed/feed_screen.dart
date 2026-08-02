@@ -19,6 +19,7 @@ import '../../core/utils/breakpoints.dart';
 import '../../core/utils/campus_affinity.dart';
 import '../../core/utils/hashtag_utils.dart';
 import '../../core/utils/mention_utils.dart';
+import '../../core/widgets/double_tap_like.dart';
 import '../../core/widgets/liquid_glass.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
@@ -34,6 +35,7 @@ import '../notifications/notification_provider.dart';
 import '../plus/plus_gate.dart';
 import '../plus/plus_provider.dart';
 import '../plus/plus_widgets.dart';
+import '../reels/reels_provider.dart';
 import '../stories/story_ring_bar.dart';
 import '../study/study_models.dart';
 import 'feed_provider.dart';
@@ -72,6 +74,13 @@ class FeedScreen extends StatelessWidget {
               filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
               return filtered;
             }
+            final reels = context.read<ReelsProvider>();
+            final signals = EngagementSignals.fromContent(
+              auth: auth,
+              viewerId: user.id,
+              posts: allPosts,
+              reels: reels.items,
+            );
             filtered.sort((a, b) {
               final authorA = auth.findUser(a.authorId);
               final authorB = auth.findUser(b.authorId);
@@ -92,6 +101,8 @@ class FeedScreen extends StatelessWidget {
                           candidate: authorA,
                           auth: auth,
                         ),
+                    hashtags: a.hashtags,
+                    signals: signals,
                   ) *
                   recencyBoost;
               final sb = CampusAffinity.scorePost(
@@ -109,6 +120,8 @@ class FeedScreen extends StatelessWidget {
                           candidate: authorB,
                           auth: auth,
                         ),
+                    hashtags: b.hashtags,
+                    signals: signals,
                   ) *
                   recencyBoost;
               final cmp = sb.compareTo(sa);
@@ -311,7 +324,7 @@ class _FeedScopeChips extends StatelessWidget {
   Widget build(BuildContext context) {
     final liquid = LiquidGlass.enabled(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -1274,20 +1287,49 @@ class PostCard extends StatelessWidget {
       ),
     );
 
-    if (!liquid) return card;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-            spreadRadius: -4,
-          ),
-        ],
-      ),
-      child: card,
+    Widget wrapped = card;
+    if (liquid) {
+      wrapped = DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 22,
+              offset: const Offset(0, 10),
+              spreadRadius: -4,
+            ),
+          ],
+        ),
+        child: card,
+      );
+    }
+
+    return DoubleTapLike(
+      onLike: () {
+        if (!AuthGate.requireAuth(
+          context,
+          message: 'Beğenmek için giriş yapmalısın.',
+        )) {
+          return;
+        }
+        // Instagram: çift tık yalnızca beğenir.
+        if (post.isLiked) return;
+        feed.toggleLike(post.id);
+        final me = auth.user;
+        if (me != null && post.authorId != me.id) {
+          context.read<NotificationProvider>().pushSocial(
+                toUserId: post.authorId,
+                title: 'Yeni beğeni',
+                body: '${me.fullName} gönderini beğendi',
+                emoji: 'LIKE',
+                type: 'like',
+                actorId: me.id,
+                targetId: post.id,
+              );
+        }
+      },
+      child: wrapped,
     );
   }
 }

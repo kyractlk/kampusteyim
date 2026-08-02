@@ -17,6 +17,7 @@ import 'admin_feedback_tab.dart';
 import 'admin_legal_tab.dart';
 import 'admin_maintenance_tab.dart';
 import 'admin_permissions.dart';
+import 'admin_partners_tab.dart';
 import 'admin_provider.dart';
 import 'admin_registrations_tab.dart';
 import 'admin_study_rooms_tab.dart';
@@ -275,6 +276,13 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           icon: const Icon(Icons.gavel_outlined, size: 22),
           required: const [AdminPermission.manageLegalTexts],
           builder: () => AdminLegalTab(editorName: me.fullName),
+        ),
+      if (admin.can(me, AdminPermission.manageUsers))
+        _AdminTab(
+          label: 'İş ortakları',
+          icon: const MtIcon(MtIcons.partners, size: 22),
+          required: const [AdminPermission.manageUsers],
+          builder: () => const AdminPartnersTab(),
         ),
     ];
 

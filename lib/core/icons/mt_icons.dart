@@ -165,6 +165,76 @@ class MtIcons {
   <path d="M4.8 9.2 12 13.6l7.2-4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
 </svg>''';
 
+  static const settings = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.7"/>
+  <path d="M19.4 13.1a1.7 1.7 0 0 0 .3-1.1 1.7 1.7 0 0 0-.3-1.1l1.5-1.2-1.5-2.6-1.8.5a6.7 6.7 0 0 0-1.9-1.1L15.4 4h-3l-.3 1.9a6.7 6.7 0 0 0-1.9 1.1l-1.8-.5L6.9 9.1l1.5 1.2a1.7 1.7 0 0 0-.3 1.1 1.7 1.7 0 0 0 .3 1.1L6.9 13.7l1.5 2.6 1.8-.5a6.7 6.7 0 0 0 1.9 1.1l.3 1.9h3l.3-1.9a6.7 6.7 0 0 0 1.9-1.1l1.8.5 1.5-2.6-1.5-1.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+</svg>''';
+
+  static const password = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="8.2" cy="12" r="3.2" stroke="currentColor" stroke-width="1.7"/>
+  <path d="M11.2 12h8.3M16.2 12v2.4M18.6 12v2.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+</svg>''';
+
+  static const privacy = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 3.5 19 7v5.2c0 4.4-3 7.6-7 8.8-4-1.2-7-4.4-7-8.8V7l7-3.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+  <path d="M9.5 12.2 11.4 14l3.6-3.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>''';
+
+  static const palette = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 4.2a7.8 7.8 0 1 0 0 15.6h1.4a2.2 2.2 0 0 0 0-4.4H12a3.4 3.4 0 1 1 0-6.8" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+  <circle cx="8.2" cy="10.2" r="1" fill="currentColor"/>
+  <circle cx="10.2" cy="7.8" r="1" fill="currentColor"/>
+  <circle cx="13.8" cy="7.8" r="1" fill="currentColor"/>
+  <circle cx="15.8" cy="10.4" r="1" fill="currentColor"/>
+</svg>''';
+
+  static const ticket = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M4.5 9.2V7.5A2 2 0 0 1 6.5 5.5h11a2 2 0 0 1 2 2v1.7a2 2 0 0 0 0 3.6v1.7a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-1.7a2 2 0 0 0 0-3.6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+  <path d="M9.5 8v8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="1.6 2"/>
+</svg>''';
+
+  static const timer = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="13" r="7.2" stroke="currentColor" stroke-width="1.7"/>
+  <path d="M12 13V9.5M10 4.5h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+</svg>''';
+
+  static const feedback = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M5 6.5h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H10l-4.5 3v-3H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+  <path d="M8 11h8M8 14h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+</svg>''';
+
+  static const info = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.7"/>
+  <path d="M12 10.5v5.2M12 8.2h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+</svg>''';
+
+  static const logout = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M10 5.5H7.5A2 2 0 0 0 5.5 7.5v9a2 2 0 0 0 2 2H10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M13 12h7.5M17.5 9 20.5 12l-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>''';
+
+  static const partners = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="8" cy="9" r="2.6" stroke="currentColor" stroke-width="1.6"/>
+  <circle cx="16" cy="9" r="2.6" stroke="currentColor" stroke-width="1.6"/>
+  <path d="M4.2 18.5c.5-2 2-3.2 3.8-3.2M19.8 18.5c-.5-2-2-3.2-3.8-3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M10.5 13.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+</svg>''';
+
+  static const trash = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M6 8.5h12M9.5 8.5V6.8A1.3 1.3 0 0 1 10.8 5.5h2.4a1.3 1.3 0 0 1 1.3 1.3v1.7M8 8.5l.7 10.2a1.5 1.5 0 0 0 1.5 1.4h4.6a1.5 1.5 0 0 0 1.5-1.4L17 8.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>''';
+
   /// Bildirim tipine göre SVG + renk.
   static (String svg, Color color) forNotificationType(String type) {
     final t = type.toLowerCase().trim();

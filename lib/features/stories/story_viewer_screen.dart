@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../core/storage/media_disk_cache.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/media_load_pulse.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../core/widgets/web_safe_image.dart';
@@ -407,10 +408,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         );
       } else {
         media = const Center(
-          child: SizedBox(
-            width: 36,
-            height: 36,
-            child: CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.5),
+          child: MediaLoadPulse(
+            kind: MediaLoadKind.story,
+            size: 84,
           ),
         );
       }
@@ -419,13 +419,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         url: item.mediaUrl,
         fit: BoxFit.contain,
         placeholder: const Center(
-          child: SizedBox(
-            width: 36,
-            height: 36,
-            child: CircularProgressIndicator(
-              color: Colors.white70,
-              strokeWidth: 2.5,
-            ),
+          child: MediaLoadPulse(
+            kind: MediaLoadKind.story,
+            size: 84,
           ),
         ),
         errorBuilder: (_, __, ___) => const Icon(
@@ -463,18 +459,6 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                 child: media,
               ),
             ),
-            if (_waitingMedia && !_mediaReady)
-              const Positioned(
-                top: 56,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Text(
-                    'Yükleniyor…',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ),
-              ),
             Positioned(
               top: 8,
               left: 8,

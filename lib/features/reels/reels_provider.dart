@@ -268,6 +268,14 @@ class ReelsProvider extends ChangeNotifier {
     final list = _items.where((r) => _canSeeReel(r, viewerId)).toList();
     if (viewerId == null || viewerId.isEmpty) return list;
     final viewer = _auth?.user;
+    final signals = viewer == null || _auth == null
+        ? EngagementSignals.empty
+        : EngagementSignals.fromContent(
+            auth: _auth!,
+            viewerId: viewerId,
+            posts: _feed?.posts ?? const [],
+            reels: _items,
+          );
     list.sort((a, b) {
       final authorA = _auth?.findUser(a.authorId);
       final authorB = _auth?.findUser(b.authorId);
@@ -284,6 +292,10 @@ class ReelsProvider extends ChangeNotifier {
               candidate: authorA,
               auth: _auth!,
             ),
+        likeCount: a.likedBy.length,
+        commentCount: a.commentCount,
+        hashtags: a.hashtags,
+        signals: signals,
       );
       final sb = CampusAffinity.scoreReel(
         viewer: viewer,
@@ -298,6 +310,10 @@ class ReelsProvider extends ChangeNotifier {
               candidate: authorB,
               auth: _auth!,
             ),
+        likeCount: b.likedBy.length,
+        commentCount: b.commentCount,
+        hashtags: b.hashtags,
+        signals: signals,
       );
       final cmp = sb.compareTo(sa);
       if (cmp != 0) return cmp;

@@ -86,5 +86,13 @@ service firebase.storage {
         && underSize()
         && isMedia();
     }
+
+    // İş ortakları logoları — herkes okur; giriş yapan admin UI’dan yazar.
+    match /partners/{allPaths=**} {
+      allow read: if true;
+      allow write: if signedIn()
+        && underSize()
+        && request.resource.contentType.matches('image/.*');
+    }
   }
 }

@@ -258,7 +258,7 @@ class _UserProfileViewState extends State<UserProfileView> {
               icon: Badge(
                 isLabelVisible: incomingCount > 0,
                 label: Text('$incomingCount'),
-                child: const Icon(Icons.menu_rounded),
+                child: const MtIcon(MtIcons.settings, size: 22),
               ),
             ),
             if (user.isAdmin)
@@ -292,12 +292,17 @@ class _UserProfileViewState extends State<UserProfileView> {
       ),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16,
+          0,
           8,
-          16,
+          0,
           28 + kGlassNavBarHeight + shellBottomNavInset(context),
         ),
         children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -790,7 +795,11 @@ class _UserProfileViewState extends State<UserProfileView> {
               ),
             ],
           ],
+              ],
+            ),
+          ),
           const SizedBox(height: 14),
+          // Instagram: sekme + grid tam genişlik / ortalı (üst padding’e bağlı değil).
           ProfileContentTabs(
             canSee: canSeeContent,
             feedPosts: feedPosts,

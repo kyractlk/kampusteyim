@@ -29,6 +29,7 @@ import 'features/maintenance/maintenance_provider.dart';
 import 'features/maintenance/maintenance_screen.dart';
 import 'features/notifications/notification_provider.dart';
 import 'features/notifications/push_service.dart';
+import 'features/partners/partners_provider.dart';
 import 'features/plus/plus_provider.dart';
 import 'features/reels/reels_provider.dart';
 import 'features/stories/stories_provider.dart';
@@ -120,6 +121,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
   late final ReelsProvider _reels;
   late final PlusProvider _plus;
   late final AdsProvider _ads;
+  late final PartnersProvider _partners;
   late final ThemeProvider _theme;
   late final router = createRouter(_auth);
   String? _boundNotifyUid;
@@ -143,6 +145,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
       ..attachFeed(_feed);
     _plus = PlusProvider()..bind();
     _ads = AdsProvider();
+    _partners = PartnersProvider();
     unawaited(_plus.ensureConfigSeeded());
     _auth.addListener(_onAuth);
     unawaited(_ads.refresh());
@@ -182,6 +185,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _reels.dispose();
     _plus.dispose();
     _ads.dispose();
+    _partners.dispose();
     _theme.dispose();
     super.dispose();
   }
@@ -202,6 +206,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
         ChangeNotifierProvider.value(value: _reels),
         ChangeNotifierProvider.value(value: _plus),
         ChangeNotifierProvider.value(value: _ads),
+        ChangeNotifierProvider.value(value: _partners),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, theme, _) {

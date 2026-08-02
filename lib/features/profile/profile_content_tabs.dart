@@ -101,49 +101,36 @@ class _ProfileContentTabsState extends State<ProfileContentTabs> {
       );
     }
 
-    final screenW = MediaQuery.sizeOf(context).width;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Kenar boşluğunu kır — Instagram gibi full-bleed sekmeler.
-        Transform.translate(
-          offset: const Offset(-16, 0),
-          child: SizedBox(
-            width: screenW,
-            child: Column(
-              children: [
-                _TabStrip(
-                  kind: _kind,
-                  onSelect: _select,
-                  postCount: _mediaPosts.length,
-                  textCount: _textPosts.length,
-                  reelCount: _reels.length,
-                ),
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onHorizontalDragEnd: _onSwipe,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOut,
-                    switchOutCurve: Curves.easeIn,
-                    child: KeyedSubtree(
-                      key: ValueKey(_kind),
-                      child: switch (_kind) {
-                        _ProfileContentKind.posts => _MediaGrid(
-                            posts: _mediaPosts,
-                          ),
-                        _ProfileContentKind.text => _TextFeed(
-                            posts: _textPosts,
-                          ),
-                        _ProfileContentKind.reels => _ReelsGrid(
-                            reels: _reels,
-                          ),
-                      },
-                    ),
+        _TabStrip(
+          kind: _kind,
+          onSelect: _select,
+          postCount: _mediaPosts.length,
+          textCount: _textPosts.length,
+          reelCount: _reels.length,
+        ),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragEnd: _onSwipe,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            child: KeyedSubtree(
+              key: ValueKey(_kind),
+              child: switch (_kind) {
+                _ProfileContentKind.posts => _MediaGrid(
+                    posts: _mediaPosts,
                   ),
-                ),
-              ],
+                _ProfileContentKind.text => _TextFeed(
+                    posts: _textPosts,
+                  ),
+                _ProfileContentKind.reels => _ReelsGrid(
+                    reels: _reels,
+                  ),
+              },
             ),
           ),
         ),
@@ -451,7 +438,7 @@ class _TextFeed extends StatelessWidget {
     return ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
       itemCount: posts.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, i) {

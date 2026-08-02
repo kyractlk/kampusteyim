@@ -4,6 +4,7 @@ import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_info.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_circle_logo.dart';
+import '../partners/partners_about_section.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -34,6 +35,7 @@ class AboutScreen extends StatelessWidget {
           _row('İmza', AppInfo.author),
           _row('Destek', AppInfo.supportEmail),
           _row('Sürüm', AppInfo.versionLabel),
+          const PartnersAboutSection(),
           const SizedBox(height: 28),
           Opacity(
             opacity: 0.5,

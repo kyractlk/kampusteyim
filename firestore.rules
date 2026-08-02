@@ -280,6 +280,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    /// İş ortakları — herkes okur; yazma yalnızca admin.
+    match /partners/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     /// Çalışma odaları — üye okur/yazar; mesajlar ve event logları kalır.
     match /study_rooms/{roomId} {
       allow read: if signedIn();

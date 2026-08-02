@@ -12,9 +12,11 @@ import '../../core/widgets/liquid_glass.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../core/widgets/web_safe_image.dart';
 import '../auth/data/auth_provider.dart';
+import '../feed/feed_provider.dart';
 import '../profile/follow_requests_screen.dart';
+import '../reels/reels_provider.dart';
 
-/// Instagram tarzı yatay "Önerilenler" rayı — fotoğraflar disk cache + prefetch.
+/// Instagram tarzı yatay "Önerilenler" rayı — kompakt + etkileşim algoritması.
 class SuggestedPeopleRail extends StatefulWidget {
   const SuggestedPeopleRail({super.key});
 
@@ -25,6 +27,7 @@ class SuggestedPeopleRail extends StatefulWidget {
 class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
   List<SuggestedPerson> _items = const [];
   String _fingerprint = '';
+  int _shuffleSeed = 0;
 
   @override
   void didChangeDependencies() {
@@ -32,8 +35,10 @@ class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
     _rebuildIfNeeded();
   }
 
-  void _rebuildIfNeeded() {
+  void _rebuildIfNeeded({bool forceShuffle = false}) {
     final auth = context.read<AuthProvider>();
+    final feed = context.read<FeedProvider>();
+    final reels = context.read<ReelsProvider>();
     final me = auth.user;
     if (me == null) {
       if (_items.isNotEmpty) {
@@ -45,16 +50,50 @@ class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
       return;
     }
 
-    // Dizin / takip / dismiss değişince yeniden hesapla.
+    final likedPostN = feed.posts.where((p) => p.isLiked).length;
+    final likedReelN =
+        reels.items.where((r) => r.likedByUser(me.id)).length;
     final fp =
         '${me.id}|${me.following.length}|${auth.dismissedSuggestions.length}|'
-        '${auth.directory.length}|${me.outgoingFollowRequests.length}';
-    if (fp == _fingerprint && _items.isNotEmpty) return;
+        '${auth.directory.length}|${me.outgoingFollowRequests.length}|'
+        '$likedPostN|$likedReelN|${feed.posts.length}|${reels.items.length}';
+    if (fp == _fingerprint && _items.isNotEmpty && !forceShuffle) return;
+
+    if (fp != _fingerprint || _shuffleSeed == 0) {
+      _shuffleSeed = DateTime.now().microsecondsSinceEpoch;
+    }
+
+    final signals = EngagementSignals.fromContent(
+      auth: auth,
+      viewerId: me.id,
+      posts: feed.posts,
+      reels: reels.items,
+    );
+
+    final authorTags = <String, List<String>>{};
+    void addTags(String authorId, Iterable<String> tags) {
+      if (tags.isEmpty) return;
+      final list = authorTags.putIfAbsent(authorId, () => <String>[]);
+      for (final t in tags) {
+        final n = t.trim().toLowerCase();
+        if (n.isNotEmpty && !list.contains(n)) list.add(n);
+      }
+    }
+
+    for (final p in feed.posts) {
+      addTags(p.authorId, p.hashtags);
+    }
+    for (final r in reels.items) {
+      addTags(r.authorId, r.hashtags);
+    }
 
     final next = PeopleSuggestions.build(
       auth: auth,
       dismissed: auth.dismissedSuggestions,
       limit: 20,
+      signals: signals,
+      authorTags: authorTags,
+      shuffleSeed: _shuffleSeed,
     );
     _fingerprint = fp;
     _items = next;
@@ -70,16 +109,18 @@ class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
         .toList(growable: false);
     if (urls.isEmpty) return;
     MediaDiskCache.instance.prefetchAll(urls, concurrency: 6, front: true);
-    // Image cache'e de erken bas.
     for (final url in urls.take(12)) {
-      unawaited(precacheImage(webSafeImageProvider(url), context).catchError((_) {}));
+      unawaited(
+        precacheImage(webSafeImageProvider(url), context).catchError((_) {}),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Takip durumu güncellensin diye auth'u dinle; liste fingerprint ile korunur.
     context.watch<AuthProvider>();
+    context.watch<FeedProvider>();
+    context.watch<ReelsProvider>();
     _rebuildIfNeeded();
 
     if (_items.isEmpty) return const SizedBox.shrink();
@@ -88,7 +129,7 @@ class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 12, 6),
+          padding: const EdgeInsets.fromLTRB(16, 6, 12, 4),
           child: Row(
             children: [
               const Expanded(
@@ -96,16 +137,38 @@ class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
                   'Önerilenler',
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
-                    fontSize: 15,
+                    fontSize: 14.5,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  _shuffleSeed = DateTime.now().microsecondsSinceEpoch;
+                  _rebuildIfNeeded(forceShuffle: true);
+                },
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: Text(
+                  'Karıştır',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.navy.withValues(alpha: 0.7),
                   ),
                 ),
               ),
               TextButton(
                 onPressed: () => context.push('/search'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
                 child: Text(
                   'Tümünü gör',
                   style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: AppColors.navy.withValues(alpha: 0.75),
                   ),
@@ -114,19 +177,21 @@ class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
             ],
           ),
         ),
-        SizedBox(
-          height: 210,
-          child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            scrollDirection: Axis.horizontal,
-            itemCount: _items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, i) {
-              final item = _items[i];
-              return _SuggestCard(item: item);
-            },
+        ClipRect(
+          child: SizedBox(
+            height: 156,
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+              scrollDirection: Axis.horizontal,
+              itemCount: _items.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                return _SuggestCard(item: _items[i]);
+              },
+            ),
           ),
         ),
+        const SizedBox(height: 6),
       ],
     );
   }
@@ -144,7 +209,7 @@ class _SuggestCard extends StatelessWidget {
     final following = auth.follows(u.id);
     final label = followActionLabel(auth, u);
     final liquid = LiquidGlass.enabled(context);
-    final radius = liquid ? 20.0 : 14.0;
+    final radius = liquid ? 16.0 : 12.0;
 
     final content = Material(
       color: liquid ? Colors.transparent : AppColors.surface,
@@ -160,16 +225,16 @@ class _SuggestCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(radius),
             onTap: () => context.push('/user/${u.id}'),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 28, 10, 10),
+              padding: const EdgeInsets.fromLTRB(8, 22, 8, 8),
               child: Column(
                 children: [
                   UserAvatar(
                     name: u.fullName,
                     photoUrl: u.communityLogoUrl ?? u.photoUrl,
-                    radius: 34,
+                    radius: 24,
                     isCommunity: u.isCommunity,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     u.fullName,
                     maxLines: 1,
@@ -177,10 +242,10 @@ class _SuggestCard extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 13,
+                      fontSize: 12,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     item.reason ??
                         (u.isPrivateAccount ? 'Gizli hesap' : u.handle),
@@ -188,7 +253,7 @@ class _SuggestCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                      fontSize: 11,
+                      fontSize: 10,
                       color: AppColors.textSecondary,
                     ),
                   ),
@@ -204,23 +269,25 @@ class _SuggestCard extends StatelessWidget {
                       style: liquid
                           ? liquidFilledButtonStyle(
                               dark: false,
-                              minimumSize: const Size.fromHeight(34),
+                              minimumSize: const Size.fromHeight(30),
                             )
                           : FilledButton.styleFrom(
                               padding:
-                                  const EdgeInsets.symmetric(vertical: 8),
+                                  const EdgeInsets.symmetric(vertical: 6),
                               visualDensity: VisualDensity.compact,
                               textStyle: const TextStyle(
-                                fontSize: 12.5,
+                                fontSize: 11.5,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                       child: Text(
                         following
-                            ? 'Takip ediliyor'
+                            ? 'Takip'
                             : pending
-                                ? 'İstek gönderildi'
+                                ? 'İstek'
                                 : (label.isNotEmpty ? label : 'Takip et'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ),
@@ -229,16 +296,18 @@ class _SuggestCard extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: 2,
-            right: 2,
+            top: 0,
+            right: 0,
             child: IconButton(
               tooltip: 'Kapat',
               visualDensity: VisualDensity.compact,
-              iconSize: 18,
+              iconSize: 16,
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               onPressed: () => auth.dismissSuggestion(u.id),
               icon: Icon(
                 Icons.close,
-                size: 18,
+                size: 16,
                 color: liquid
                     ? AppColors.textSecondary.withValues(alpha: 0.85)
                     : null,
@@ -250,13 +319,13 @@ class _SuggestCard extends StatelessWidget {
     );
 
     return SizedBox(
-      width: 148,
+      width: 118,
       child: liquid
           ? LiquidGlass(
               borderRadius: radius,
-              blur: 24,
-              intensity: 1.1,
-              borderOpacity: 0.7,
+              blur: 14,
+              intensity: 0.85,
+              borderOpacity: 0.55,
               child: content,
             )
           : content,

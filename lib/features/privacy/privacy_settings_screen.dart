@@ -105,7 +105,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
             contentPadding: EdgeInsets.zero,
             title: const Text('Gizli hesap'),
             subtitle: const Text(
-              'Instagram gibi: Gizli hesapta yeni takipçiler onayını bekler. '
+              'Gizli hesapta yeni takipçiler onayını bekler. '
               'Onaylanmadan gönderi, reels, hikâye, yorum, takipçi ve takip '
               'listeleri görünmez. Herkese açık hesaplarda içerik herkese '
               'açıktır. Mevcut takipçiler etkilenmez.',

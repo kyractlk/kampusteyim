@@ -8,9 +8,12 @@ import 'package:video_player/video_player.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/utils/mention_utils.dart';
+import '../../core/widgets/double_tap_like.dart';
 import '../../core/widgets/liquid_glass.dart';
+import '../../core/widgets/media_load_pulse.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
+import '../../core/icons/mt_icons.dart';
 import '../../models/models.dart';
 import '../ads/ads_provider.dart';
 import '../auth/data/auth_provider.dart';
@@ -126,7 +129,10 @@ class _ReelsScreenState extends State<ReelsScreen> {
         children: [
           if (reels.isLoading && feed.isEmpty)
             const Center(
-              child: CircularProgressIndicator(color: AppColors.cyan),
+              child: MediaLoadPulse(
+                kind: MediaLoadKind.reel,
+                size: 88,
+              ),
             )
           else if (feed.isEmpty)
             Center(
@@ -135,8 +141,11 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.movie_filter_outlined,
-                        size: 56, color: Colors.white54),
+                    const MtIcon(
+                      MtIcons.reel,
+                      size: 56,
+                      color: Colors.white54,
+                    ),
                     const SizedBox(height: 12),
                     const Text(
                       'Henüz Kampüs Reels yok.\nİlk klip senin olsun!',
@@ -266,13 +275,11 @@ class _ReelsScreenState extends State<ReelsScreen> {
               left: 0,
               right: 0,
               child: const Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.2,
-                    color: AppColors.cyan,
-                  ),
+                child: MediaLoadPulse(
+                  kind: MediaLoadKind.reel,
+                  size: 40,
+                  compact: true,
+                  label: '',
                 ),
               ),
             ),
@@ -569,12 +576,34 @@ class _ReelPageState extends State<_ReelPage> {
         (glass ? kGlassNavBarHeight + 10 : kReelsBottomNavHeight) +
         22;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _togglePause,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
+    return DoubleTapLike(
+      onLike: () {
+        if (me == null) {
+          AuthGate.requireAuth(context);
+          return;
+        }
+        if (liked) return;
+        unawaited(() async {
+          await context.read<ReelsProvider>().toggleLike(reel.id, me.id);
+          if (reel.authorId != me.id && context.mounted) {
+            context.read<NotificationProvider>().pushSocial(
+                  toUserId: reel.authorId,
+                  title: 'Reels beğenisi',
+                  body: '${me.fullName} Reels’ini beğendi',
+                  emoji: 'LIKE',
+                  type: 'reel_like',
+                  actorId: me.id,
+                  targetId: reel.id,
+                );
+          }
+        }());
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _togglePause,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
           if (reel.mediaType == ReelMediaType.video)
             _ready && _vc != null
                 ? FittedBox(
@@ -588,18 +617,25 @@ class _ReelPageState extends State<_ReelPage> {
                 : const ColoredBox(
                     color: Colors.black,
                     child: Center(
-                      child: SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.cyan,
-                        ),
+                      child: MediaLoadPulse(
+                        kind: MediaLoadKind.reel,
+                        size: 76,
+                        compact: true,
                       ),
                     ),
                   )
           else
-            SafeNetworkImage(url: reel.mediaUrl, fit: BoxFit.cover),
+            SafeNetworkImage(
+              url: reel.mediaUrl,
+              fit: BoxFit.cover,
+              placeholder: const Center(
+                child: MediaLoadPulse(
+                  kind: MediaLoadKind.reel,
+                  size: 76,
+                  compact: true,
+                ),
+              ),
+            ),
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -813,6 +849,7 @@ class _ReelPageState extends State<_ReelPage> {
           ),
         ],
       ),
+    ),
     );
   }
 }
