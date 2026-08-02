@@ -13,18 +13,20 @@ import '../../core/theme/theme_provider.dart';
 import '../../core/utils/app_share.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/widgets/app_circle_logo.dart';
+import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
-import '../feed/feed_screen.dart';
+import '../home/home_shell.dart'
+    show kGlassNavBarHeight, shellBottomNavInset;
 import '../jobs/jobs_provider.dart';
 import '../moderation/moderation_models.dart';
 import '../moderation/report_sheet.dart';
 import '../notifications/notification_provider.dart';
 import '../plus/plus_widgets.dart';
-import '../reels/reel_models.dart';
 import '../reels/reels_provider.dart';
+import 'profile_content_tabs.dart';
 
 Future<void> openThemePicker(BuildContext context) async {
   final theme = context.read<ThemeProvider>();
@@ -126,45 +128,6 @@ class _UserProfileViewState extends State<UserProfileView> {
     });
   }
 
-  /// Gönderiler + Reels (bağlı post yoksa sentetik kart).
-  List<Post> _profilePosts({
-    required List<Post> feedPosts,
-    required List<CampusReel> reels,
-  }) {
-    final out = List<Post>.from(feedPosts);
-    final known = out.map((p) => p.id).toSet();
-    for (final r in reels) {
-      final linked = r.sourcePostId;
-      if (linked != null && linked.isNotEmpty && known.contains(linked)) {
-        continue;
-      }
-      final syntheticId = linked?.isNotEmpty == true ? linked! : 'reel_${r.id}';
-      if (known.contains(syntheticId)) continue;
-      known.add(syntheticId);
-      out.add(
-        Post(
-          id: syntheticId,
-          authorId: r.authorId,
-          authorName: r.authorName,
-          authorHandle: r.authorHandle,
-          content: r.caption.isEmpty ? 'Kampüs Reels' : r.caption,
-          createdAt: r.createdAt,
-          media: [
-            MediaItem(
-              url: r.mediaUrl,
-              type: r.mediaType == ReelMediaType.video
-                  ? MediaType.video
-                  : MediaType.image,
-            ),
-          ],
-          hashtags: r.hashtags,
-        ),
-      );
-    }
-    out.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return out;
-  }
-
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -183,13 +146,22 @@ class _UserProfileViewState extends State<UserProfileView> {
     }
 
     final authorIds = auth.idsFor(widget.userId);
-    final posts = _profilePosts(
-      feedPosts: feed.postsByAuthors(authorIds),
-      reels: reelsProv.reelsByAuthors(authorIds),
-    );
+    final feedPosts = feed.postsByAuthors(authorIds);
+    final userReels = reelsProv.reelsByAuthors(authorIds);
+    final contentCount = feedPosts
+            .where((p) => !p.isStudyRoomInvite)
+            .length +
+        userReels.length;
     final me = auth.user;
     final following = me != null && auth.follows(user.id);
     final isSelf = widget.isSelf || me?.id == user.id;
+    final canSeeContent = auth.canViewPrivateContent(user);
+    final incomingFromThem =
+        me != null && !isSelf && auth.hasIncomingFollowRequest(user.id);
+    final pendingOutgoing =
+        me != null && auth.hasOutgoingFollowRequest(user.id);
+    final followsMe = me != null && auth.isFollowedBy(user.id);
+    final incomingCount = me?.incomingFollowRequests.length ?? 0;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -280,6 +252,15 @@ class _UserProfileViewState extends State<UserProfileView> {
               },
             ),
           if (isSelf) ...[
+            IconButton(
+              tooltip: 'Ayarlar',
+              onPressed: () => context.push('/profile/settings'),
+              icon: Badge(
+                isLabelVisible: incomingCount > 0,
+                label: Text('$incomingCount'),
+                child: const Icon(Icons.menu_rounded),
+              ),
+            ),
             if (user.isAdmin)
               IconButton(
                 tooltip: 'Ana Admin',
@@ -301,31 +282,21 @@ class _UserProfileViewState extends State<UserProfileView> {
                 },
                 icon: const Icon(Icons.business_center_outlined, size: 22),
               ),
-            if (!user.isCompany)
-              IconButton(
-                tooltip: 'CV-AI',
-                onPressed: () => context.push('/cv-ai'),
-                icon: const Icon(Icons.description_outlined),
-              ),
             IconButton(
               tooltip: 'Düzenle',
               onPressed: () => context.push('/profile/edit'),
               icon: const Icon(Icons.edit_outlined),
             ),
-            IconButton(
-              tooltip: 'Çıkış',
-              onPressed: () async {
-                context.read<JobsProvider>().companyLogout();
-                await auth.signOut();
-                if (context.mounted) context.go('/home');
-              },
-              icon: const Icon(Icons.logout_rounded),
-            ),
           ],
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          28 + kGlassNavBarHeight + shellBottomNavInset(context),
+        ),
         children: [
           Container(
             padding: const EdgeInsets.all(20),
@@ -449,21 +420,137 @@ class _UserProfileViewState extends State<UserProfileView> {
                   children: [
                     _Stat(
                       label: 'Takipçi',
-                      value: '${user.followers.length}',
-                      onTap: () =>
-                          context.push('/user/${user.id}/followers'),
+                      value: canSeeContent
+                          ? '${user.followers.length}'
+                          : '—',
+                      onTap: canSeeContent
+                          ? () => context.push('/user/${user.id}/followers')
+                          : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Bu hesap gizli. Takipçi listesini görmek için takip etmelisin.',
+                                  ),
+                                ),
+                              );
+                            },
                     ),
                     _Stat(
                       label: 'Takip',
-                      value: '${user.following.length}',
-                      onTap: () =>
-                          context.push('/user/${user.id}/following'),
+                      value: canSeeContent
+                          ? '${user.following.length}'
+                          : '—',
+                      onTap: canSeeContent
+                          ? () => context.push('/user/${user.id}/following')
+                          : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Bu hesap gizli. Takip listesini görmek için takip etmelisin.',
+                                  ),
+                                ),
+                              );
+                            },
                     ),
-                    _Stat(label: 'Gönderi', value: '${posts.length}'),
+                    _Stat(
+                      label: 'Gönderi',
+                      value: canSeeContent ? '$contentCount' : '—',
+                    ),
                   ],
                 ),
+                if (user.isPrivateAccount && !canSeeContent && !isSelf) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.lock_outline, color: Colors.white70, size: 18),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Bu hesap gizli. Gönderileri görmek için takip isteği gönder.',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (!isSelf) ...[
                   const SizedBox(height: 14),
+                  if (incomingFromThem) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: AppColors.navy,
+                            ),
+                            onPressed: () async {
+                              final self = me;
+                              final ok =
+                                  await auth.acceptFollowRequest(user.id);
+                              if (!context.mounted || !ok) return;
+                              context
+                                  .read<NotificationProvider>()
+                                  .pushSocial(
+                                    toUserId: user.id,
+                                    title: 'İstek kabul edildi',
+                                    body:
+                                        '${self.fullName} takip isteğini kabul etti',
+                                    emoji: '✨',
+                                    type: 'follow_accepted',
+                                    actorId: self.id,
+                                    targetId: self.id,
+                                  );
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Takip isteği kabul edildi'),
+                                ),
+                              );
+                            },
+                            child: const Text('Kabul et'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white54),
+                            ),
+                            onPressed: () async {
+                              await auth.rejectFollowRequest(user.id);
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('İstek silindi'),
+                                ),
+                              );
+                            },
+                            child: const Text('Sil'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton(
@@ -479,15 +566,41 @@ class _UserProfileViewState extends State<UserProfileView> {
                           return;
                         }
                         final already = following;
-                        final pending = me != null &&
-                            auth.hasOutgoingFollowRequest(user.id);
                         if (already) {
-                          await auth.toggleFollow(user.id);
+                          final leave = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Takipten çık'),
+                              content: Text(
+                                '${user.fullName} hesabını takipten çıkarmak istiyor musun?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Vazgeç'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('Takipten çık'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (leave == true) {
+                            await auth.toggleFollow(user.id);
+                          }
                           return;
                         }
                         if (user.isPrivateAccount) {
-                          if (pending) {
+                          if (pendingOutgoing) {
                             await auth.cancelFollowRequest(user.id);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Takip isteği iptal edildi'),
+                                ),
+                              );
+                            }
                           } else {
                             await auth.requestFollow(user.id);
                             if (context.mounted && me != null) {
@@ -527,13 +640,14 @@ class _UserProfileViewState extends State<UserProfileView> {
                       },
                       child: Text(
                         following
-                            ? 'Takipten çık'
-                            : (me != null &&
-                                    auth.hasOutgoingFollowRequest(user.id))
+                            ? 'Takip ediliyor'
+                            : pendingOutgoing
                                 ? 'İstek gönderildi'
-                                : (user.isPrivateAccount
-                                    ? 'İstek gönder'
-                                    : 'Takip et'),
+                                : followsMe
+                                    ? 'Geri takip'
+                                    : (user.isPrivateAccount
+                                        ? 'İstek gönder'
+                                        : 'Takip et'),
                       ),
                     ),
                   ),
@@ -541,54 +655,76 @@ class _UserProfileViewState extends State<UserProfileView> {
               ],
             ),
           ).animate().fadeIn().slideY(begin: 0.06),
-          if (isSelf) ...[
+          if (user.links.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const PlusPrivilegesCard(),
-            const SizedBox(height: 8),
-            ListTile(
-              leading: const Icon(Icons.confirmation_number_outlined),
-              title: const Text('Biletlerim'),
-              subtitle: const Text('Satın alınan etkinlik biletleri'),
-              onTap: () => context.push('/tickets'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: user.links.map((l) {
+                final svg = BrandSvgs.forLabel(l.label);
+                final href = BrandLinkUtils.href(
+                      kind: 'website',
+                      raw: l.url,
+                    ) ??
+                    (l.url.startsWith('http') ? l.url : null);
+                return ActionChip(
+                  avatar: BrandSvgIcon(svg, size: 16),
+                  label: Text(l.label),
+                  onPressed: href == null
+                      ? null
+                      : () async {
+                          final uri = Uri.tryParse(href);
+                          if (uri != null) {
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          }
+                        },
+                );
+              }).toList(),
             ),
-            if (user.panelAccess && (user.panelOrgId ?? '').isNotEmpty) ...[
-              const SizedBox(height: 4),
+          ],
+          if (isSelf) ...[
+            if (incomingCount > 0) ...[
+              const SizedBox(height: 12),
               ListTile(
-                leading: const Icon(Icons.dashboard_customize_outlined),
-                title: Text('${user.panelOrgName ?? 'Organizasyon'} paneli'),
-                subtitle: const Text('Kadro erişimin var'),
-                onTap: () {
-                  if (user.panelOrgType == 'community') {
-                    context.push('/community');
-                  } else {
-                    context.push('/firma/dashboard');
-                  }
-                },
+                dense: true,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: AppColors.border),
+                ),
+                leading: Badge(
+                  label: Text('$incomingCount'),
+                  child: const Icon(Icons.person_add_alt_1_rounded),
+                ),
+                title: const Text('Gelen istekler'),
+                subtitle: Text('$incomingCount bekleyen'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => context.push('/follow-requests'),
               ),
             ],
-            if (user.isCompany) ...[
+            if (!user.isCompany) ...[
               const SizedBox(height: 12),
               Material(
-                color: AppColors.gold,
+                color: AppColors.navy,
                 borderRadius: BorderRadius.circular(16),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
-                  onTap: () async {
-                    await context.read<JobsProvider>().bindCompanyFromUser(user);
-                    if (context.mounted) context.push('/firma/dashboard');
-                  },
+                  onTap: () => context.push('/cv-ai'),
                   child: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     child: Row(
                       children: [
-                        Icon(Icons.business_center_outlined, color: Colors.white),
+                        Icon(Icons.auto_awesome, color: Colors.white),
                         SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Firma paneli',
+                                'CV-AI',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w800,
@@ -596,8 +732,11 @@ class _UserProfileViewState extends State<UserProfileView> {
                                 ),
                               ),
                               Text(
-                                'İlan yayınla, başvuruları incele, öğrencilere teklif gönder',
-                                style: TextStyle(color: Colors.white70, fontSize: 12),
+                                'ATS uyumlu profesyonel CV',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
                               ),
                             ],
                           ),
@@ -608,48 +747,6 @@ class _UserProfileViewState extends State<UserProfileView> {
                   ),
                 ),
               ),
-            ],
-            if (!user.isCompany) ...[
-            const SizedBox(height: 12),
-            Material(
-              color: AppColors.navy,
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => context.push('/cv-ai'),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  child: Row(
-                    children: [
-                      Icon(Icons.auto_awesome, color: Colors.white),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'CV-AI',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 16,
-                              ),
-                            ),
-                            Text(
-                              'ATS uyumlu profesyonel CV · tüm dünya dilleri',
-                              style: TextStyle(color: Colors.white70, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.chevron_right, color: Colors.white),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            ],
-            if (!user.isCompany) ...[
               const SizedBox(height: 10),
               Material(
                 color: AppColors.cyan,
@@ -677,7 +774,10 @@ class _UserProfileViewState extends State<UserProfileView> {
                               ),
                               Text(
                                 'Firma ilanları, teklifler ve başvurular',
-                                style: TextStyle(color: Colors.white70, fontSize: 12),
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
                               ),
                             ],
                           ),
@@ -689,138 +789,13 @@ class _UserProfileViewState extends State<UserProfileView> {
                 ),
               ),
             ],
-            const SizedBox(height: 10),
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: AppColors.border),
-              ),
-              leading: const Icon(Icons.timer_outlined),
-              title: const Text('Çalışma odası'),
-              subtitle: const Text('Oda aç, katıl, chat + sayaç'),
-              onTap: () => context.push('/profile/study-timer'),
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: AppColors.border),
-              ),
-              leading: const Icon(Icons.feedback_outlined),
-              title: const Text('Geri bildirim bırak'),
-              subtitle: const Text('Öneri / hata · admin paneline düşer'),
-              onTap: () => context.push('/profile/feedback'),
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: AppColors.border),
-              ),
-              leading: const Icon(Icons.palette_outlined),
-              title: const Text('Tema'),
-              subtitle: Text(context.watch<ThemeProvider>().style.label),
-              onTap: () => openThemePicker(context),
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: AppColors.border),
-              ),
-              leading: const Icon(Icons.notifications_active_outlined),
-              title: const Text('Bildirim izinleri'),
-              subtitle: const Text('Push, ilan, beğeni ve daha fazlası'),
-              onTap: () => context.push('/profile/notifications'),
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: AppColors.border),
-              ),
-              leading: const Icon(Icons.lock_outline),
-              title: const Text('Gizlilik'),
-              subtitle: const Text(
-                'Arama, gizli hesap, izleyici modu, engeller',
-              ),
-              onTap: () => context.push('/privacy'),
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: AppColors.border),
-              ),
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Uygulama bilgisi'),
-              subtitle: const Text('AYS Tech · Kayra Çatalkaya'),
-              onTap: () => context.push('/about'),
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: AppColors.crimson),
-              ),
-              leading: const Icon(Icons.delete_forever_outlined,
-                  color: AppColors.crimson),
-              title: const Text('Hesabımı sil'),
-              subtitle: const Text('E-posta kodu ile çift onay'),
-              onTap: () => context.push('/profile/delete-account'),
-            ),
           ],
-          if (user.links.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: user.links.map((l) {
-                final svg = BrandSvgs.forLabel(l.label);
-                final href = BrandLinkUtils.href(
-                      kind: 'website',
-                      raw: l.url,
-                    ) ??
-                    (l.url.startsWith('http') ? l.url : null);
-                return ActionChip(
-                  avatar: BrandSvgIcon(svg, size: 16),
-                  label: Text(l.label),
-                  onPressed: href == null
-                      ? null
-                      : () async {
-                          final uri = Uri.tryParse(href);
-                          if (uri != null) {
-                            await launchUrl(
-                              uri,
-                              mode: LaunchMode.externalApplication,
-                            );
-                          }
-                        },
-                );
-              }).toList(),
-            ),
-          ],
-          const SizedBox(height: 16),
-          Text(
-            'Gönderiler',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w800),
+          const SizedBox(height: 14),
+          ProfileContentTabs(
+            canSee: canSeeContent,
+            feedPosts: feedPosts,
+            reels: userReels,
           ),
-          const SizedBox(height: 8),
-          if (posts.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Text('Henüz gönderi yok.'),
-            )
-          else
-            ...posts.map(
-              (p) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: PostCard(post: p),
-              ),
-            ),
           if (isSelf) ...[
             const SizedBox(height: 20),
             Opacity(
@@ -835,7 +810,11 @@ class _UserProfileViewState extends State<UserProfileView> {
                         ),
                   ),
                   const SizedBox(width: 8),
-                  const AppCircleLogo(logo: AppLogo.ays, size: 28, showBorder: false),
+                  const AppCircleLogo(
+                    logo: AppLogo.ays,
+                    size: 28,
+                    showBorder: false,
+                  ),
                 ],
               ),
             ),
@@ -969,14 +948,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 Stack(
                   alignment: Alignment.bottomRight,
                   children: [
-                    CircleAvatar(
-                      radius: 48,
-                      backgroundImage: (_photoUrl ?? '').isNotEmpty
-                          ? NetworkImage(_photoUrl!)
-                          : null,
-                      child: (_photoUrl ?? '').isEmpty
-                          ? const Icon(Icons.person, size: 44)
-                          : null,
+                    ClipOval(
+                      child: SizedBox(
+                        width: 96,
+                        height: 96,
+                        child: (_photoUrl ?? '').isNotEmpty
+                            ? SafeNetworkImage(
+                                url: _photoUrl!,
+                                fit: BoxFit.cover,
+                                width: 96,
+                                height: 96,
+                                cacheWidth: 192,
+                              )
+                            : const ColoredBox(
+                                color: Color(0xFFE8EEF5),
+                                child: Icon(Icons.person, size: 44),
+                              ),
+                      ),
                     ),
                     IconButton.filled(
                       onPressed: _uploading ? null : _pickPhoto,

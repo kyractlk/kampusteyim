@@ -157,10 +157,28 @@ class PushService {
     }
   }
 
+  bool _loggedPermissionBlock = false;
+
   Future<bool> _pushAllowed() async {
     final s = await _messaging.getNotificationSettings();
     return s.authorizationStatus == AuthorizationStatus.authorized ||
         s.authorizationStatus == AuthorizationStatus.provisional;
+  }
+
+  /// Token denemeye değer mi? (web/iOS izin yoksa false)
+  Future<bool> canRequestToken() async {
+    final isApple = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS);
+    if (!(kIsWeb || isApple)) return true;
+    if (!await _pushAllowed()) {
+      if (kDebugMode && !_loggedPermissionBlock) {
+        _loggedPermissionBlock = true;
+        debugPrint('[push] bildirim izni yok — token alınmayacak');
+      }
+      return false;
+    }
+    return true;
   }
 
   /// Android’de token izin olmadan da alınır; iOS/Web’de izin gerekir.
@@ -170,8 +188,7 @@ class PushService {
           (defaultTargetPlatform == TargetPlatform.iOS ||
               defaultTargetPlatform == TargetPlatform.macOS);
       if (kIsWeb || isApple) {
-        if (!await _pushAllowed()) {
-          debugPrint('[push] getToken blocked — permission');
+        if (!await canRequestToken()) {
           return null;
         }
       }
@@ -186,14 +203,14 @@ class PushService {
           );
         }
         if (apns == null) {
-          debugPrint('[push] APNs token henüz yok — retry sonra');
+          if (kDebugMode) {
+            debugPrint('[push] APNs token henüz yok');
+          }
           return null;
         }
       }
       final token = await _messaging.getToken();
-      if (token == null) {
-        debugPrint('[push] getToken null');
-      } else {
+      if (token != null && kDebugMode) {
         debugPrint('[push] token ok ${token.substring(0, 12)}…');
       }
       return token;
@@ -202,10 +219,12 @@ class PushService {
       if (msg.contains('permission-blocked') ||
           msg.contains('permission-denied') ||
           msg.contains('messaging/permission-blocked')) {
-        debugPrint('[push] getToken permission: $e');
+        _loggedPermissionBlock = true;
         return null;
       }
-      debugPrint('[push] getToken: $e');
+      if (kDebugMode) {
+        debugPrint('[push] getToken: $e');
+      }
       return null;
     }
   }

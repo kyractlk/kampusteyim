@@ -117,6 +117,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
   late final AdsProvider _ads;
   late final ThemeProvider _theme;
   late final router = createRouter(_auth);
+  String? _boundNotifyUid;
 
   @override
   void initState() {
@@ -145,7 +146,10 @@ class _MtMobilAppState extends State<MtMobilApp> {
   }
 
   void _onAuth() {
-    _notifications.bindUser(_auth.user?.id, profile: _auth.user);
+    final uid = _auth.authUid ?? _auth.user?.id;
+    if (uid == _boundNotifyUid) return;
+    _boundNotifyUid = uid;
+    unawaited(_notifications.bindUser(uid, profile: _auth.user));
     final u = _auth.user;
     if (u != null) {
       unawaited(_admin.loadRolesFromFirestore());

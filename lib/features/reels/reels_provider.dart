@@ -29,12 +29,29 @@ class ReelsProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   bool _tabActive = false;
+  String? _focusReelId;
 
   /// Alt bar Reels sekmesi görünür mü — ses/oynatma kapısı.
   bool get tabActive => _tabActive;
   bool get isLoading => _loading;
   String? get error => _error;
   List<CampusReel> get items => List.unmodifiable(_items);
+
+  /// Profil grid’den Reels sekmesine odaklanılacak id.
+  String? get focusReelId => _focusReelId;
+
+  void requestFocusReel(String reelId) {
+    final id = reelId.trim();
+    if (id.isEmpty) return;
+    _focusReelId = id;
+    notifyListeners();
+  }
+
+  String? takeFocusReelId() {
+    final id = _focusReelId;
+    _focusReelId = null;
+    return id;
+  }
 
   void setTabActive(bool active) {
     if (_tabActive == active) return;
@@ -130,11 +147,20 @@ class ReelsProvider extends ChangeNotifier {
   }
 
   /// Profil / gönderi sayacı — yazarın silinmemiş reels’leri.
-  List<CampusReel> reelsByAuthors(Iterable<String> authorIds) {
+  /// [onlyVisibleToViewer] true ise gizli hesap filtresi uygulanır.
+  List<CampusReel> reelsByAuthors(
+    Iterable<String> authorIds, {
+    bool onlyVisibleToViewer = false,
+  }) {
     final ids = authorIds.toSet();
     if (ids.isEmpty) return const [];
+    final viewerId = _auth?.user?.id;
     final list = _items
-        .where((r) => !r.isDeleted && ids.contains(r.authorId))
+        .where((r) {
+          if (r.isDeleted || !ids.contains(r.authorId)) return false;
+          if (onlyVisibleToViewer && !_canSeeReel(r, viewerId)) return false;
+          return true;
+        })
         .toList();
     list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return list;
@@ -220,15 +246,13 @@ class ReelsProvider extends ChangeNotifier {
   }
 
   bool _canSeeReel(CampusReel r, String? viewerId) {
+    final auth = _auth;
     if (viewerId != null &&
-        (_auth?.idsFor(r.authorId).contains(viewerId) ?? false)) {
+        (auth?.idsFor(r.authorId).contains(viewerId) ?? false)) {
       return true;
     }
-    final author = _auth?.findUser(r.authorId);
-    if (author == null) return true;
-    if (!author.isPrivateAccount) return true;
-    if (viewerId == null || viewerId.isEmpty) return false;
-    return _auth?.follows(r.authorId) == true;
+    if (auth == null) return true;
+    return auth.canViewAuthorContent(r.authorId);
   }
 
   /// İzlenmemişler + aynı üniversite affinity; gizli hesap reels’leri takipçilere özel.

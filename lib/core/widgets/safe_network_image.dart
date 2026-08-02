@@ -152,9 +152,13 @@ class _SafeNetworkImageState extends State<SafeNetworkImage> {
       cacheHeight: widget.cacheHeight,
       gaplessPlayback: true,
       filterQuality: FilterQuality.low,
+      // Web’de HTML <img> CORS/304 sorunlarını azaltır.
       webHtmlElementStrategy: kIsWeb
           ? WebHtmlElementStrategy.prefer
           : WebHtmlElementStrategy.never,
+      headers: kIsWeb
+          ? const {'Accept': 'image/*,*/*;q=0.8'}
+          : null,
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
         if (wasSynchronouslyLoaded || frame != null) return child;
         return _placeholder();

@@ -105,9 +105,10 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
             contentPadding: EdgeInsets.zero,
             title: const Text('Gizli hesap'),
             subtitle: const Text(
-              'Instagram kuralları: Gizli hesapta yeni takipçiler önce '
-              'onayını bekler. Onaylamadan gönderilerini, takipçi ve '
-              'takip listelerini göremezler. Mevcut takipçilerin etkilenmez.',
+              'Instagram gibi: Gizli hesapta yeni takipçiler onayını bekler. '
+              'Onaylanmadan gönderi, reels, hikâye, yorum, takipçi ve takip '
+              'listeleri görünmez. Herkese açık hesaplarda içerik herkese '
+              'açıktır. Mevcut takipçiler etkilenmez.',
             ),
             value: user.isPrivateAccount,
             activeThumbColor: AppColors.cyan,

@@ -34,6 +34,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _replyToId;
   String? _replyToName;
   bool _loading = false;
+  bool _checkingAccess = true;
+  bool _allowed = true;
 
   @override
   void initState() {
@@ -43,10 +45,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _ensure() async {
     final feed = context.read<FeedProvider>();
-    if (feed.postById(widget.postId) != null) return;
-    setState(() => _loading = true);
-    await feed.ensurePostLoaded(widget.postId);
-    if (mounted) setState(() => _loading = false);
+    final auth = context.read<AuthProvider>();
+    setState(() {
+      _loading = feed.postById(widget.postId) == null;
+      _checkingAccess = true;
+    });
+    if (feed.postById(widget.postId) == null) {
+      await feed.ensurePostLoaded(widget.postId);
+    }
+    final post = feed.postById(widget.postId);
+    if (post != null) {
+      await auth.ensureUserLoaded(post.authorId);
+    }
+    if (!mounted) return;
+    final latest = feed.postById(widget.postId);
+    final ok = latest != null && auth.canViewPost(latest);
+    setState(() {
+      _loading = false;
+      _checkingAccess = false;
+      _allowed = ok;
+    });
   }
 
   @override
@@ -60,7 +78,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final feed = context.watch<FeedProvider>();
     final auth = context.watch<AuthProvider>();
     final post = feed.postById(widget.postId);
-    if (post == null) {
+    if (_loading || _checkingAccess) {
       return Scaffold(
         appBar: AppBar(
           leading: IconButton(
@@ -68,10 +86,59 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             onPressed: () => AppNav.back(context),
           ),
         ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (post == null || !_allowed || !auth.canViewPost(post)) {
+      final author = post != null ? auth.findUser(post.authorId) : null;
+      final isPrivate = author?.isPrivateAccount == true;
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () => AppNav.back(context),
+          ),
+          title: Text(isPrivate ? 'Gizli hesap' : 'Gönderi'),
+        ),
         body: Center(
-          child: _loading
-              ? const CircularProgressIndicator()
-              : const Text('Bu içerik bulunamadı'),
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isPrivate ? Icons.lock_outline_rounded : Icons.hide_source,
+                  size: 44,
+                  color: AppColors.textSecondary,
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  isPrivate
+                      ? 'Bu hesap gizli'
+                      : 'Bu içerik bulunamadı',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  isPrivate
+                      ? 'Gönderiyi ve yorumları görmek için bu hesabı takip etmen ve isteğinin kabul edilmesi gerekir.'
+                      : 'Gönderi silinmiş olabilir veya erişimin yok.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.textSecondary),
+                ),
+                if (isPrivate && post != null) ...[
+                  const SizedBox(height: 18),
+                  FilledButton(
+                    onPressed: () => AppNav.openUser(context, post.authorId),
+                    child: const Text('Profile git'),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       );
     }

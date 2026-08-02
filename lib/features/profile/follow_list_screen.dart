@@ -10,6 +10,7 @@ import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
+import 'follow_requests_screen.dart';
 
 enum FollowListMode { followers, following }
 
@@ -47,7 +48,7 @@ class _FollowListScreenState extends State<FollowListScreen>
     final auth = context.read<AuthProvider>();
     setState(() => _loading = true);
     final user = await auth.ensureUserLoaded(widget.userId);
-    if (user != null) {
+    if (user != null && auth.canViewPrivateContent(user)) {
       final ids = {...user.followers, ...user.following};
       for (final id in ids) {
         await auth.ensureUserLoaded(id);
@@ -88,8 +89,7 @@ class _FollowListScreenState extends State<FollowListScreen>
     }
 
     if (target.isPrivateAccount && !auth.follows(target.id)) {
-      final pending = me.outgoingFollowRequests
-          .any((id) => auth.idsFor(target.id).contains(id));
+      final pending = auth.hasOutgoingFollowRequest(target.id);
       if (pending) {
         await auth.cancelFollowRequest(target.id);
       } else {
@@ -125,14 +125,7 @@ class _FollowListScreenState extends State<FollowListScreen>
   }
 
   String _followLabel(AuthProvider auth, AppUser target) {
-    final me = auth.user;
-    if (me == null || me.id == target.id) return '';
-    if (auth.follows(target.id)) return 'Takipten çık';
-    final pending = me.outgoingFollowRequests
-        .any((id) => auth.idsFor(target.id).contains(id));
-    if (pending) return 'İstek gönderildi';
-    if (target.isPrivateAccount) return 'İstek gönder';
-    return 'Takip et';
+    return followActionLabel(auth, target);
   }
 
   Widget _list(List<AppUser> users) {
@@ -268,10 +261,13 @@ class _FollowListScreenState extends State<FollowListScreen>
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.findUser(widget.userId);
-    final followers =
-        user == null ? const <AppUser>[] : _resolve(auth, user.followers);
-    final following =
-        user == null ? const <AppUser>[] : _resolve(auth, user.following);
+    final canSee = user == null || auth.canViewPrivateContent(user);
+    final followers = !canSee || user == null
+        ? const <AppUser>[]
+        : _resolve(auth, user.followers);
+    final following = !canSee || user == null
+        ? const <AppUser>[]
+        : _resolve(auth, user.following);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -282,23 +278,51 @@ class _FollowListScreenState extends State<FollowListScreen>
             fallback: user?.fullName ?? 'Takip',
           ),
         ),
-        bottom: TabBar(
-          controller: _tabs,
-          labelColor: AppColors.navy,
-          indicatorColor: AppColors.cyan,
-          tabs: [
-            Tab(text: 'Takipçi (${followers.length})'),
-            Tab(text: 'Takip (${following.length})'),
-          ],
-        ),
+        bottom: canSee
+            ? TabBar(
+                controller: _tabs,
+                labelColor: AppColors.navy,
+                indicatorColor: AppColors.cyan,
+                tabs: [
+                  Tab(text: 'Takipçi (${followers.length})'),
+                  Tab(text: 'Takip (${following.length})'),
+                ],
+              )
+            : null,
       ),
-      body: TabBarView(
-        controller: _tabs,
-        children: [
-          _list(followers),
-          _list(following),
-        ],
-      ),
+      body: !canSee
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lock_outline_rounded, size: 40),
+                    SizedBox(height: 12),
+                    Text(
+                      'Bu hesap gizli',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Takipçi ve takip listelerini görmek için önce takip isteğinin kabul edilmesi gerekir.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : TabBarView(
+              controller: _tabs,
+              children: [
+                _list(followers),
+                _list(following),
+              ],
+            ),
     );
   }
 }

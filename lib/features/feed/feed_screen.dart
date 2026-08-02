@@ -49,20 +49,12 @@ class FeedScreen extends StatelessWidget {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
     final scope = feed.scope;
-    final posts = user == null
-        ? allPosts
-        : () {
+    final posts = () {
             final filtered = allPosts.where((p) {
-              if (user.blocks(p.authorId)) return false;
-              final author = auth.findUser(p.authorId);
-              if (author?.blocks(user.id) ?? false) return false;
-              if (author != null &&
-                  author.isPrivateAccount &&
-                  !auth.idsFor(p.authorId).contains(user.id) &&
-                  !auth.follows(p.authorId)) {
-                return false;
-              }
+              if (!auth.canViewPost(p)) return false;
+              if (user == null) return scope == FeedScope.all;
               // Şehir / üniversite kapsamı — yazar profiline göre.
+              final author = auth.findUser(p.authorId);
               if (scope == FeedScope.city) {
                 final myCity = user.city.trim().toLowerCase();
                 if (myCity.isEmpty) return false;
@@ -76,6 +68,10 @@ class FeedScreen extends StatelessWidget {
               }
               return true;
             }).toList();
+            if (user == null) {
+              filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+              return filtered;
+            }
             filtered.sort((a, b) {
               final authorA = auth.findUser(a.authorId);
               final authorB = auth.findUser(b.authorId);

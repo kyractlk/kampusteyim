@@ -46,7 +46,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final feed = context.watch<FeedProvider>();
     final q = _ctrl.text.trim();
     final people = auth.searchPeople(q);
-    final posts = _searchPosts(feed.posts, q);
+    final posts = _searchPosts(feed.posts, q, auth);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -132,11 +132,12 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  List<Post> _searchPosts(List<Post> all, String query) {
+  List<Post> _searchPosts(List<Post> all, String query, AuthProvider auth) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return const [];
     final tag = q.startsWith('#') ? q.substring(1) : q;
     return all.where((p) {
+      if (!auth.canViewPost(p)) return false;
       return p.content.toLowerCase().contains(q) ||
           p.authorName.toLowerCase().contains(q) ||
           p.authorHandle.toLowerCase().contains(q) ||

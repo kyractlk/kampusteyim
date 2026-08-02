@@ -100,7 +100,7 @@ class NotificationsScreen extends StatelessWidget {
     hubMarkRead(context, n.id);
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Takip isteği reddedildi')));
+    ).showSnackBar(const SnackBar(content: Text('Takip isteği silindi')));
   }
 
   void hubMarkRead(BuildContext context, String id) {
@@ -112,6 +112,7 @@ class NotificationsScreen extends StatelessWidget {
     final hub = context.watch<NotificationProvider>();
     final auth = context.watch<AuthProvider>();
     final pendingIds = auth.user?.incomingFollowRequests ?? const <String>[];
+    final pendingCount = pendingIds.length;
 
     return Scaffold(
       appBar: AppBar(
@@ -123,13 +124,36 @@ class NotificationsScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: hub.items.isEmpty && pendingIds.isEmpty
+      body: hub.items.isEmpty && pendingCount == 0
           ? const Center(child: Text('Henüz bildirim yok'))
           : ListView.separated(
-              itemCount: hub.items.length,
+              itemCount: hub.items.length + (pendingCount > 0 ? 1 : 0),
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, i) {
-                final n = hub.items[i];
+                if (pendingCount > 0 && i == 0) {
+                  return Material(
+                    color: AppColors.cyan.withValues(alpha: 0.08),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: AppColors.navy.withValues(alpha: 0.12),
+                        child: const Icon(
+                          Icons.person_add_alt_1_rounded,
+                          color: AppColors.navy,
+                        ),
+                      ),
+                      title: Text(
+                        'Gelen takip istekleri ($pendingCount)',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: const Text(
+                        'Kabul et veya sil · Instagram tarzı liste',
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => context.push('/follow-requests'),
+                    ),
+                  );
+                }
+                final n = hub.items[i - (pendingCount > 0 ? 1 : 0)];
                 final isRequest = n.type == 'follow_request';
                 final requesterId = n.actorId ?? n.targetId;
                 final stillPending =
@@ -165,7 +189,7 @@ class NotificationsScreen extends StatelessWidget {
                             const SizedBox(width: 8),
                             OutlinedButton(
                               onPressed: () => _rejectRequest(context, n),
-                              child: const Text('Reddet'),
+                              child: const Text('Sil'),
                             ),
                           ],
                         ),

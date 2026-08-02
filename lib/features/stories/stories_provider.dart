@@ -126,8 +126,13 @@ class StoriesProvider extends ChangeNotifier {
     if (me == null) return false;
     if (authorId == me) return true;
     final auth = _auth;
+    // Instagram: hikâye yalnız takip edenlere (gizli/açık hesap fark etmez).
+    // Gizli hesapta zaten takip isteği olmadan following olmaz.
     if (auth != null) {
-      return auth.follows(authorId) || _followingIds.contains(authorId);
+      if (auth.follows(authorId) || _followingIds.contains(authorId)) {
+        return true;
+      }
+      return false;
     }
     return _followingIds.contains(authorId);
   }

@@ -11,6 +11,7 @@ import '../../core/utils/campus_affinity.dart';
 import '../../core/widgets/liquid_glass.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../auth/data/auth_provider.dart';
+import '../profile/follow_requests_screen.dart';
 
 /// Instagram tarzı yatay "Önerilenler" rayı — fotoğraflar disk cache + prefetch.
 class SuggestedPeopleRail extends StatefulWidget {
@@ -140,6 +141,7 @@ class _SuggestCard extends StatelessWidget {
     final u = item.user;
     final pending = auth.hasOutgoingFollowRequest(u.id);
     final following = auth.follows(u.id);
+    final label = followActionLabel(auth, u);
     final liquid = LiquidGlass.enabled(context);
     final radius = liquid ? 20.0 : 14.0;
 
@@ -214,12 +216,10 @@ class _SuggestCard extends StatelessWidget {
                             ),
                       child: Text(
                         following
-                            ? 'Takip'
+                            ? 'Takip ediliyor'
                             : pending
-                                ? 'İstek'
-                                : u.isPrivateAccount
-                                    ? 'İstek'
-                                    : 'Takip et',
+                                ? 'İstek gönderildi'
+                                : (label.isNotEmpty ? label : 'Takip et'),
                       ),
                     ),
                   ),

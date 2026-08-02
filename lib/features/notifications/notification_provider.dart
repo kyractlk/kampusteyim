@@ -11,14 +11,19 @@ import 'push_service.dart';
 class NotificationProvider extends ChangeNotifier {
   final List<AppNotification> _items = [];
   String? _userId;
+  bool _retrying = false;
 
   List<AppNotification> get items => List.unmodifiable(_items);
   int get unreadCount => _items.where((n) => !n.read).length;
 
-  /// [userId] AppUser.id olabilir; FCM token her zaman Auth UID dokümanına yazılır.
+  /// [userId] tercihen Firebase Auth UID; FCM token Auth UID dokümanına yazılır.
   Future<void> bindUser(String? userId, {AppUser? profile}) async {
     final authUid = fa.FirebaseAuth.instance.currentUser?.uid;
     final docId = (authUid != null && authUid.isNotEmpty) ? authUid : userId;
+    if (docId == _userId && docId != null) {
+      // Aynı kullanıcı — push’u tekrar spam’leme.
+      return;
+    }
     _userId = docId;
     _items.clear();
     if (docId == null) {
@@ -30,12 +35,9 @@ class NotificationProvider extends ChangeNotifier {
     PushService.instance.onTokenRefresh = (token) async {
       await _saveToken(docId, token, profile: profile);
     };
-    final token = await PushService.instance.getToken();
-    if (token != null) {
-      await _saveToken(docId, token, profile: profile);
-    } else {
-      debugPrint('[push] bindUser: token yok — APNs / izin gecikmesi; retry başlıyor');
-      // Profil alanlarını yine de senkronla
+
+    // İzin yoksa (web/iOS) token deneme + retry yok.
+    if (!await PushService.instance.canRequestToken()) {
       try {
         await FirebaseFirestore.instance.collection('users').doc(docId).set({
           'updatedAt': DateTime.now().toIso8601String(),
@@ -53,7 +55,15 @@ class NotificationProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint('[push] bindUser profile sync: $e');
       }
-      // iOS: APNs token gecikebilir — arka planda birkaç kez daha dene.
+      await refresh();
+      return;
+    }
+
+    final token = await PushService.instance.getToken();
+    if (token != null) {
+      await _saveToken(docId, token, profile: profile);
+    } else if (!kIsWeb) {
+      // Yalnızca native’de APNs gecikmesi için retry.
       unawaited(_retryToken(docId, profile: profile));
     }
     await refresh();
@@ -61,17 +71,28 @@ class NotificationProvider extends ChangeNotifier {
 
   /// iOS APNs gecikmesi için tekrarlı FCM token denemesi.
   Future<void> _retryToken(String docId, {AppUser? profile}) async {
-    for (var i = 0; i < 8; i++) {
-      await Future<void>.delayed(Duration(seconds: 2 + i));
-      if (_userId != docId) return;
-      final token = await PushService.instance.getToken();
-      if (token != null) {
-        await _saveToken(docId, token, profile: profile);
-        debugPrint('[push] retryToken ok (attempt ${i + 1})');
-        return;
+    if (_retrying) return;
+    _retrying = true;
+    try {
+      for (var i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration(seconds: 2 + i));
+        if (_userId != docId) return;
+        if (!await PushService.instance.canRequestToken()) return;
+        final token = await PushService.instance.getToken();
+        if (token != null) {
+          await _saveToken(docId, token, profile: profile);
+          if (kDebugMode) {
+            debugPrint('[push] retryToken ok (attempt ${i + 1})');
+          }
+          return;
+        }
       }
+      if (kDebugMode) {
+        debugPrint('[push] retryToken: token alınamadı');
+      }
+    } finally {
+      _retrying = false;
     }
-    debugPrint('[push] retryToken: APNs/FCM alınamadı');
   }
 
   Future<void> _saveToken(
@@ -95,7 +116,9 @@ class NotificationProvider extends ChangeNotifier {
           'stableId': profile.id,
         },
       }, SetOptions(merge: true));
-      debugPrint('[push] token saved → users/$docId');
+      if (kDebugMode) {
+        debugPrint('[push] token saved → users/$docId');
+      }
     } catch (e) {
       debugPrint('[push] token save failed: $e');
     }

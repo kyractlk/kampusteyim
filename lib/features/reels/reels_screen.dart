@@ -18,6 +18,7 @@ import '../home/home_shell.dart'
     show kGlassNavBarHeight, kReelsBottomNavHeight, shellBottomNavInset;
 import '../notifications/notification_provider.dart';
 import '../plus/plus_widgets.dart';
+import '../profile/follow_requests_screen.dart';
 import '../stories/campus_camera_screen.dart';
 import 'reel_models.dart';
 import 'reels_provider.dart';
@@ -67,6 +68,26 @@ class _ReelsScreenState extends State<ReelsScreen> {
     final feed = reels.feedFor(me?.id);
     final tabOn = reels.tabActive;
     final topPad = MediaQuery.paddingOf(context).top;
+
+    final focusId = reels.focusReelId;
+    if (focusId != null && feed.isNotEmpty) {
+      final i = feed.indexWhere((r) => r.id == focusId);
+      if (i >= 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          context.read<ReelsProvider>().takeFocusReelId();
+          setState(() => _index = i);
+          if (_page.hasClients) {
+            _page.jumpToPage(i);
+          }
+        });
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          context.read<ReelsProvider>().takeFocusReelId();
+        });
+      }
+    }
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -354,7 +375,20 @@ class _ReelPageState extends State<_ReelPage> {
     if (me == null || author == null) return;
     if (me.id == author.id) return;
     final already = auth.follows(author.id);
-    if (author.isPrivateAccount && !already) {
+    if (already) {
+      await auth.toggleFollow(author.id);
+      return;
+    }
+    if (author.isPrivateAccount) {
+      if (auth.hasOutgoingFollowRequest(author.id)) {
+        await auth.cancelFollowRequest(author.id);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Takip isteği iptal edildi')),
+          );
+        }
+        return;
+      }
       await auth.requestFollow(author.id);
       if (!mounted) return;
       context.read<NotificationProvider>().pushSocial(
@@ -373,17 +407,15 @@ class _ReelPageState extends State<_ReelPage> {
     }
     await auth.toggleFollow(author.id);
     if (!mounted) return;
-    if (!already) {
-      context.read<NotificationProvider>().pushSocial(
-            toUserId: author.id,
-            title: 'Yeni takipçi',
-            body: '${me.fullName} seni takip etmeye başladı',
-            emoji: 'FOLLOW',
-            type: 'follow',
-            actorId: me.id,
-            targetId: me.id,
-          );
-    }
+    context.read<NotificationProvider>().pushSocial(
+          toUserId: author.id,
+          title: 'Yeni takipçi',
+          body: '${me.fullName} seni takip etmeye başladı',
+          emoji: 'FOLLOW',
+          type: 'follow',
+          actorId: me.id,
+          targetId: me.id,
+        );
   }
 
   void _openComments() {
@@ -634,9 +666,11 @@ class _ReelPageState extends State<_ReelPage> {
                                 ),
                           onPressed: () => _toggleFollow(author),
                           child: Text(
-                            author?.isPrivateAccount == true
-                                ? 'İstek'
-                                : 'Takip et',
+                            author == null
+                                ? 'Takip et'
+                                : followActionLabel(auth, author).isEmpty
+                                    ? 'Takip et'
+                                    : followActionLabel(auth, author),
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 11,

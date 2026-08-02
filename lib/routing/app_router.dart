@@ -32,7 +32,9 @@ import '../features/notifications/notification_settings_screen.dart';
 import '../features/notifications/notifications_screen.dart';
 import '../features/privacy/privacy_settings_screen.dart';
 import '../features/profile/follow_list_screen.dart';
+import '../features/profile/follow_requests_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/profile/profile_settings_screen.dart';
 import '../features/search/search_screen.dart';
 import '../features/stories/story_viewer_screen.dart';
 import '../features/study/study_lobby_screen.dart';
@@ -163,6 +165,11 @@ GoRouter createRouter(AuthProvider auth) {
         builder: (context, state) => const NotificationsScreen(),
       ),
       GoRoute(
+        path: '/follow-requests',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (context, state) => const FollowRequestsScreen(),
+      ),
+      GoRoute(
         path: '/about',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (context, state) => const AboutScreen(),
@@ -267,6 +274,11 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/profile/edit',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (context, state) => const EditProfileScreen(),
+      ),
+      GoRoute(
+        path: '/profile/settings',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (context, state) => const ProfileSettingsScreen(),
       ),
       GoRoute(
         path: '/profile/notifications',

@@ -21,6 +21,9 @@ class AuthProvider extends ChangeNotifier {
   Timer? _refreshTimer;
   bool _restoring = false;
   bool _directorySyncing = false;
+  bool _intentionalAuth = false;
+  String? _boundAuthUid;
+  fa.User? _pendingAuthUser;
 
   AppUser? _user;
   bool _busy = false;
@@ -278,6 +281,10 @@ class AuthProvider extends ChangeNotifier {
     return '/home';
   }
 
+  /// Firebase Auth UID (stableId değil) — push / oturum kilidi için.
+  String? get authUid =>
+      _boundAuthUid ?? fa.FirebaseAuth.instance.currentUser?.uid;
+
   Future<bool> signIn({required String email, required String password}) async {
     _busy = true;
     _error = null;
@@ -292,13 +299,23 @@ class AuthProvider extends ChangeNotifier {
       return false;
     }
     if (pass.length < 6) {
-      _error = 'Şifre en az 6 karakter olmalı (ör. 123456).';
+      _error = 'Şifre en az 6 karakter olmalı.';
       _busy = false;
       notifyListeners();
       return false;
     }
 
+    _intentionalAuth = true;
     try {
+      // Farklı hesap açıksa önce temizle — karışık oturum olmasın.
+      final existing = fa.FirebaseAuth.instance.currentUser;
+      if (existing != null &&
+          (existing.email ?? '').toLowerCase() != mail.toLowerCase()) {
+        await fa.FirebaseAuth.instance.signOut();
+        await SecureSession.clear();
+        _user = null;
+        _boundAuthUid = null;
+      }
       final cred = await fa.FirebaseAuth.instance.signInWithEmailAndPassword(
         email: mail,
         password: pass,
@@ -317,6 +334,8 @@ class AuthProvider extends ChangeNotifier {
       _busy = false;
       notifyListeners();
       return false;
+    } finally {
+      _intentionalAuth = false;
     }
   }
 
@@ -347,6 +366,7 @@ class AuthProvider extends ChangeNotifier {
       await _syncProfileToFirestore(mapped, authUid: fb.uid, privileged: false);
     }
     _user = mapped;
+    _boundAuthUid = fb.uid;
     _upsert(mapped);
     await SecureSession.saveMeta(uid: fb.uid, email: email);
     unawaited(syncDirectoryFromFirestore());
@@ -362,48 +382,98 @@ class AuthProvider extends ChangeNotifier {
     _restoring = true;
     try {
       await SecureSession.ensureAuthPersistence();
-      final fb = fa.FirebaseAuth.instance.currentUser;
+
+      // Web IndexedDB hydrate gecikebilir — currentUser hemen null gelebilir.
+      fa.User? fb = fa.FirebaseAuth.instance.currentUser;
       if (fb == null) {
+        try {
+          fb = await fa.FirebaseAuth.instance
+              .authStateChanges()
+              .first
+              .timeout(const Duration(seconds: 4));
+        } catch (_) {
+          fb = fa.FirebaseAuth.instance.currentUser;
+        }
+      }
+
+      if (fb == null) {
+        // Auth boş; eski meta’yı temizle (yanlış hesaba yapışmasın).
         await SecureSession.clear();
         return;
       }
-      if (!await SecureSession.isIntegrityOk(fb.uid)) {
-        debugPrint('[auth] session integrity mismatch — sign out');
+
+      final integrity = await SecureSession.checkIntegrity(fb.uid);
+      if (integrity == false) {
+        debugPrint('[auth] session integrity mismatch — clean logout');
         await fa.FirebaseAuth.instance.signOut();
         await SecureSession.clear();
         _user = null;
+        _boundAuthUid = null;
         notifyListeners();
         return;
       }
-      // Sessizce token yenile (değer okunmaz / saklanmaz)
+
       await SecureSession.silentRefresh();
       await _finishFirebaseUser(fb, fb.email ?? '');
     } catch (e) {
       debugPrint('[auth] restore: $e');
     } finally {
       _restoring = false;
+      final pending = _pendingAuthUser;
+      _pendingAuthUser = null;
+      if (pending != null) {
+        unawaited(_onAuthChanged(pending));
+      }
     }
   }
 
   Future<void> _onAuthChanged(fa.User? u) async {
+    if (_restoring) {
+      _pendingAuthUser = u;
+      return;
+    }
+
     if (u == null) {
       _refreshTimer?.cancel();
-      if (_user != null && !_user!.id.startsWith('mock:')) {
+      if (_user != null || _boundAuthUid != null) {
         _user = null;
+        _boundAuthUid = null;
         await SecureSession.clear();
         notifyListeners();
       }
       return;
     }
-    if (_restoring) return;
-    // Aynı oturum zaten yüklü
-    final mail = (u.email ?? '').toLowerCase();
-    if (_user != null &&
-        !_user!.id.startsWith('mock:') &&
-        _user!.email.toLowerCase() == mail &&
-        mail.isNotEmpty) {
+
+    // Aynı Firebase Auth UID zaten bağlı
+    if (_boundAuthUid == u.uid && _user != null) {
       return;
     }
+
+    // Bu sekmede başka hesap açıkken dışarıdan (eski LOCAL senkronu vb.)
+    // farklı UID gelirse: kasıtlı giriş değilse reddet / temizle.
+    if (_boundAuthUid != null &&
+        _boundAuthUid != u.uid &&
+        !_intentionalAuth) {
+      final metaUid = await SecureSession.boundUid();
+      if (metaUid != null && metaUid == _boundAuthUid) {
+        debugPrint(
+          '[auth] foreign auth uid=${u.uid} ignored — keeping $_boundAuthUid',
+        );
+        // Firebase’i bizim meta ile hizala: yabancı oturumu düşür.
+        try {
+          await fa.FirebaseAuth.instance.signOut();
+        } catch (_) {}
+        // signOut null event gelecek; kendi meta’mızı korumak için yeniden giriş yok —
+        // kullanıcıyı güvenli şekilde çıkar.
+        _user = null;
+        _boundAuthUid = null;
+        await SecureSession.clear();
+        _error = 'Oturum çakışması algılandı. Lütfen tekrar giriş yap.';
+        notifyListeners();
+        return;
+      }
+    }
+
     try {
       await _finishFirebaseUser(u, u.email ?? '');
     } catch (e) {
@@ -632,6 +702,7 @@ class AuthProvider extends ChangeNotifier {
       return false;
     }
 
+    _intentionalAuth = true;
     try {
       final pre = await FirebaseFirestore.instance
           .collection('handles')
@@ -776,6 +847,8 @@ class AuthProvider extends ChangeNotifier {
       _busy = false;
       notifyListeners();
       return false;
+    } finally {
+      _intentionalAuth = false;
     }
   }
 
@@ -1040,6 +1113,66 @@ class AuthProvider extends ChangeNotifier {
     return me.following.any(ids.contains);
   }
 
+  /// Karşı taraf beni takip ediyor mu?
+  bool isFollowedBy(String otherId) {
+    final me = _user;
+    if (me == null || otherId.trim().isEmpty) return false;
+    final otherIds = idsFor(otherId);
+    if (me.followers.any(otherIds.contains)) return true;
+    final other = findUser(otherId);
+    if (other == null) return false;
+    return other.following.any(idsFor(me.id).contains);
+  }
+
+  bool hasOutgoingFollowRequest(String targetId) {
+    final me = _user;
+    if (me == null) return false;
+    final ids = idsFor(targetId);
+    return me.outgoingFollowRequests.any(ids.contains);
+  }
+
+  /// Bana gelen bekleyen takip isteği var mı?
+  bool hasIncomingFollowRequest(String fromId) {
+    final me = _user;
+    if (me == null || fromId.trim().isEmpty) return false;
+    final ids = idsFor(fromId);
+    return me.incomingFollowRequests.any(ids.contains);
+  }
+
+  /// Gizli hesap içeriği (gönderi / takipçi listesi) görülebilir mi?
+  bool canViewPrivateContent(AppUser profile) {
+    if (!profile.isPrivateAccount) return true;
+    final me = _user;
+    if (me == null) return false;
+    if (me.id == profile.id || idsFor(profile.id).contains(me.id)) return true;
+    return follows(profile.id);
+  }
+
+  /// Yazarın post / reels / yorum içeriği bu izleyiciye açık mı? (Instagram)
+  /// Cache'te yazar yoksa şimdilik true — [ensureUserLoaded] sonrası yeniden hesaplanır.
+  bool canViewAuthorContent(String authorId) {
+    final id = authorId.trim();
+    if (id.isEmpty) return false;
+    final me = _user;
+    if (me != null && (me.id == id || idsFor(id).contains(me.id))) {
+      return true;
+    }
+    final author = findUser(id);
+    if (author == null) return true;
+    return canViewPrivateContent(author);
+  }
+
+  /// Tek post görünürlüğü — engel + gizli hesap.
+  bool canViewPost(Post post) {
+    final me = _user;
+    if (me != null) {
+      if (me.blocks(post.authorId)) return false;
+      final author = findUser(post.authorId);
+      if (author != null && author.blocks(me.id)) return false;
+    }
+    return canViewAuthorContent(post.authorId);
+  }
+
   /// Önerilenler kartını kapat — yalnızca bu oturum; sonra tekrar çıkabilir.
   Future<void> dismissSuggestion(String userId) async {
     final id = userId.trim();
@@ -1228,13 +1361,6 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[auth] unblock: $e');
     }
-  }
-
-  bool hasOutgoingFollowRequest(String targetId) {
-    final me = _user;
-    if (me == null) return false;
-    final ids = idsFor(targetId);
-    return me.outgoingFollowRequests.any(ids.contains);
   }
 
   /// Gizli hesap: takip isteği gönder.
@@ -1549,12 +1675,16 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> signOut() async {
     _refreshTimer?.cancel();
+    _intentionalAuth = true;
     try {
       await fa.FirebaseAuth.instance.signOut();
     } catch (_) {}
     await SecureSession.clear();
     _user = null;
+    _boundAuthUid = null;
+    _pendingAuthUser = null;
     _dismissedSuggestions.clear();
+    _intentionalAuth = false;
     notifyListeners();
   }
 
