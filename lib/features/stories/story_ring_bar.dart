@@ -66,10 +66,12 @@ class StoryRingBar extends StatelessWidget {
           }
           final ring = rings[index - 1 - extra];
           final isSelf = ring.authorId == me.id;
+          final seen = stories.isRingSeen(ring);
           return _StoryRingTile(
             name: isSelf ? 'Hikâyen' : ring.authorName.split(' ').first,
             photoUrl: ring.authorPhotoUrl,
             isSelf: isSelf,
+            seen: seen,
             onTap: () {
               if (isSelf) {
                 _onSelfTap(context, hasOwn: true);
@@ -135,16 +137,40 @@ class _StoryRingTile extends StatelessWidget {
     required this.name,
     required this.photoUrl,
     required this.isSelf,
+    required this.seen,
     required this.onTap,
   });
 
   final String name;
   final String? photoUrl;
   final bool isSelf;
+  final bool seen;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    // Instagram: görülmemiş = renkli gradient; görülmüş = gri halka.
+    final Decoration ring;
+    if (seen && !isSelf) {
+      ring = BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFFC7C7CC), width: 2.2),
+      );
+    } else {
+      ring = const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [
+            AppColors.cyan,
+            AppColors.crimson,
+            AppColors.gold,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      );
+    }
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(40),
@@ -153,29 +179,8 @@ class _StoryRingTile extends StatelessWidget {
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(2.5),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: isSelf
-                    ? const LinearGradient(
-                        colors: [
-                          AppColors.cyan,
-                          AppColors.crimson,
-                          AppColors.gold,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                    : const LinearGradient(
-                        colors: [
-                          AppColors.cyan,
-                          AppColors.crimson,
-                          AppColors.gold,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-              ),
+              padding: EdgeInsets.all(seen && !isSelf ? 2 : 2.5),
+              decoration: ring,
               child: Container(
                 padding: const EdgeInsets.all(2),
                 decoration: const BoxDecoration(
@@ -194,7 +199,13 @@ class _StoryRingTile extends StatelessWidget {
               name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: seen && !isSelf
+                    ? AppColors.textSecondary
+                    : AppColors.textPrimary,
+              ),
             ),
           ],
         ),

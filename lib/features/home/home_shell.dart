@@ -470,8 +470,10 @@ class _DesktopRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final unread = context.watch<NotificationProvider>().unreadCount;
+    final hubUnread = context.watch<NotificationProvider>().unreadCount;
     final user = context.watch<AuthProvider>().user;
+    final unread =
+        hubUnread + (user?.incomingFollowRequests.length ?? 0);
 
     return Material(
       color: AppColors.surface,
@@ -872,7 +874,10 @@ class FeedAppBarActions extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final loggedIn = context.watch<AuthProvider>().isAuthenticated;
-    final unread = context.watch<NotificationProvider>().unreadCount;
+    final hubUnread = context.watch<NotificationProvider>().unreadCount;
+    final pending =
+        context.watch<AuthProvider>().user?.incomingFollowRequests.length ?? 0;
+    final unread = hubUnread + pending;
     return Row(
       children: [
         IconButton(

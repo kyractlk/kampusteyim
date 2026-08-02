@@ -1,11 +1,12 @@
-import 'dart:io';
+import 'dart:io' show File;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../storage/media_disk_cache.dart';
+import 'web_safe_image.dart';
 
-/// Ağ görseli — önce disk cache, yoksa network; yüklenirken placeholder.
+/// Ağ görseli — native: disk cache; web: HTML &lt;img&gt; (CDN stream, CORS-XHR yok).
 class SafeNetworkImage extends StatefulWidget {
   const SafeNetworkImage({
     super.key,
@@ -66,25 +67,30 @@ class _SafeNetworkImageState extends State<SafeNetworkImage> {
       return;
     }
 
-    if (!kIsWeb) {
-      try {
-        final existing = await MediaDiskCache.instance.fileFor(url);
-        if (!mounted || !identical(_loadToken, token)) return;
-        if (existing != null) {
-          setState(() {
-            _file = existing;
-            _ready = true;
-          });
-          return;
-        }
-      } catch (_) {}
+    // Web: disk yok — hemen network/HTML img.
+    if (kIsWeb) {
+      if (mounted && identical(_loadToken, token)) {
+        setState(() => _ready = true);
+      }
+      return;
     }
+
+    try {
+      final existing = await MediaDiskCache.instance.fileFor(url);
+      if (!mounted || !identical(_loadToken, token)) return;
+      if (existing != null) {
+        setState(() {
+          _file = existing;
+          _ready = true;
+        });
+        return;
+      }
+    } catch (_) {}
 
     if (mounted && identical(_loadToken, token)) {
       setState(() => _ready = true);
     }
 
-    if (kIsWeb) return;
     try {
       final f = await MediaDiskCache.instance.ensure(
         url,
@@ -124,7 +130,7 @@ class _SafeNetworkImageState extends State<SafeNetworkImage> {
     final w = widget.width;
     final h = widget.height;
 
-    if (_file != null) {
+    if (!kIsWeb && _file != null) {
       return Image.file(
         _file!,
         fit: widget.fit,
@@ -143,27 +149,18 @@ class _SafeNetworkImageState extends State<SafeNetworkImage> {
     final url = widget.url.trim();
     if (url.isEmpty || !url.startsWith('http')) return _error();
 
-    return Image.network(
+    return webSafeNetworkImage(
       url,
       fit: widget.fit,
       width: w,
       height: h,
       cacheWidth: widget.cacheWidth,
       cacheHeight: widget.cacheHeight,
-      gaplessPlayback: true,
-      filterQuality: FilterQuality.low,
-      // Web’de HTML <img> CORS/304 sorunlarını azaltır.
-      webHtmlElementStrategy: kIsWeb
-          ? WebHtmlElementStrategy.prefer
-          : WebHtmlElementStrategy.never,
-      headers: kIsWeb
-          ? const {'Accept': 'image/*,*/*;q=0.8'}
-          : null,
-      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-        if (wasSynchronouslyLoaded || frame != null) return child;
+      errorBuilder: widget.errorBuilder ?? (c, e, s) => _error(),
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
         return _placeholder();
       },
-      errorBuilder: widget.errorBuilder ?? (c, e, s) => _error(),
     );
   }
 }

@@ -10,6 +10,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/campus_affinity.dart';
 import '../../core/widgets/liquid_glass.dart';
 import '../../core/widgets/social_widgets.dart';
+import '../../core/widgets/web_safe_image.dart';
 import '../auth/data/auth_provider.dart';
 import '../profile/follow_requests_screen.dart';
 
@@ -71,7 +72,7 @@ class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
     MediaDiskCache.instance.prefetchAll(urls, concurrency: 6, front: true);
     // Image cache'e de erken bas.
     for (final url in urls.take(12)) {
-      unawaited(precacheImage(NetworkImage(url), context).catchError((_) {}));
+      unawaited(precacheImage(webSafeImageProvider(url), context).catchError((_) {}));
     }
   }
 

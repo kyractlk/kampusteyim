@@ -117,6 +117,88 @@ class MtIcons {
   <path d="M14.5 3.5V8H19" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
   <path d="M9.5 12h5M9.5 15h5M9.5 18h3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
 </svg>''';
+
+  static const megaphone = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M4.5 14.5v-5l12-3.5v12L4.5 14.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+  <path d="M16.5 9.2c1.6.6 2.8 2.1 2.8 3.8s-1.2 3.2-2.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M4.5 12.8h2.2c.9 2.1 1.6 3.5 1.6 3.5H6.2S5.2 14.6 4.5 12.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+</svg>''';
+
+  static const mention = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.7"/>
+  <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.7"/>
+  <path d="M15.2 12v1.1a2.2 2.2 0 0 0 4.1.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+</svg>''';
+
+  static const check = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.7"/>
+  <path d="M8.2 12.2 10.8 14.7 15.8 9.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>''';
+
+  static const reel = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="4" y="3.5" width="16" height="17" rx="3" stroke="currentColor" stroke-width="1.7"/>
+  <path d="M4 8h16" stroke="currentColor" stroke-width="1.7"/>
+  <circle cx="7.5" cy="5.8" r="0.9" fill="currentColor"/>
+  <circle cx="10.5" cy="5.8" r="0.9" fill="currentColor"/>
+  <path d="M10.2 12.2 15 14.8l-4.8 2.6v-5.2Z" fill="currentColor"/>
+</svg>''';
+
+  static const story = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.7" stroke-dasharray="3.2 2.4"/>
+  <circle cx="12" cy="12" r="5.2" stroke="currentColor" stroke-width="1.6"/>
+  <circle cx="12" cy="12" r="2" fill="currentColor"/>
+</svg>''';
+
+  static const offer = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 3.8 14.2 8.6l5.2.5-3.9 3.5 1.1 5.1L12 15.6 7.4 17.7l1.1-5.1-3.9-3.5 5.2-.5L12 3.8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+</svg>''';
+
+  static const inbox = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M4.5 8.5 12 3.8l7.5 4.7v9.2a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2V8.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+  <path d="M4.8 9.2 12 13.6l7.2-4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+</svg>''';
+
+  /// Bildirim tipine göre SVG + renk.
+  static (String svg, Color color) forNotificationType(String type) {
+    final t = type.toLowerCase().trim();
+    if (t.contains('like') || t == 'story_like' || t == 'reel_like') {
+      return (likeFilled, const Color(0xFFE11D48));
+    }
+    if (t.contains('comment') || t.contains('reply')) {
+      return (comment, const Color(0xFF0EA5E9));
+    }
+    if (t == 'follow_request') {
+      return (follow, const Color(0xFF7C3AED));
+    }
+    if (t == 'follow_accepted' || t.contains('accept') || t.contains('approved')) {
+      return (check, const Color(0xFF16A34A));
+    }
+    if (t == 'follow' || t.contains('follow')) {
+      return (follow, AppColors.navy);
+    }
+    if (t.contains('repost')) return (repost, const Color(0xFF059669));
+    if (t.contains('mention')) return (mention, const Color(0xFF2563EB));
+    if (t.contains('reel')) return (reel, const Color(0xFFDB2777));
+    if (t.contains('story')) return (story, const Color(0xFFF59E0B));
+    if (t.contains('job') || t.contains('application') || t.contains('event')) {
+      return (job, const Color(0xFF0F766E));
+    }
+    if (t.contains('offer')) return (offer, const Color(0xFFD97706));
+    if (t.contains('promo') || t.contains('community') || t.contains('admin')) {
+      return (megaphone, const Color(0xFFEA580C));
+    }
+    if (t.contains('registration') || t.contains('pending') || t.contains('cv')) {
+      return (cv, AppColors.navy);
+    }
+    return (bell, AppColors.cyan);
+  }
 }
 
 class MtIcon extends StatelessWidget {

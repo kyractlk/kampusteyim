@@ -9,7 +9,9 @@ import 'package:video_player/video_player.dart';
 
 import '../../core/storage/media_disk_cache.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
+import '../../core/widgets/web_safe_image.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
@@ -86,18 +88,20 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       _onMediaReady(story);
       return;
     }
-    // Görsel: disk cache + Image precache
+    // Görsel: native disk; web CDN stream
     File? file;
-    try {
-      file = await MediaDiskCache.instance.ensure(item.mediaUrl);
-    } catch (_) {}
+    if (!kIsWeb) {
+      try {
+        file = await MediaDiskCache.instance.ensure(item.mediaUrl);
+      } catch (_) {}
+    }
     if (!mounted || story.items[_index.clamp(0, story.items.length - 1)].id != itemId) {
       return;
     }
     try {
-      final provider = file != null
+      final provider = (!kIsWeb && file != null)
           ? FileImage(file) as ImageProvider
-          : NetworkImage(item.mediaUrl);
+          : webSafeImageProvider(item.mediaUrl);
       await precacheImage(provider, context);
     } catch (_) {}
     if (!mounted || story.items[_index.clamp(0, story.items.length - 1)].id != itemId) {
@@ -112,7 +116,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     }
     _disposeVideo();
     try {
-      final file = await MediaDiskCache.instance.ensure(item.mediaUrl);
+      File? file;
+      if (!kIsWeb) {
+        file = await MediaDiskCache.instance.ensure(item.mediaUrl);
+      }
       VideoPlayerController c;
       if (file != null) {
         c = VideoPlayerController.file(file);
@@ -151,6 +158,32 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     if (v != null && !_holdPaused && v.value.isInitialized) {
       unawaited(v.play());
     }
+    // Sonraki item’ı ısıt (Instagram).
+    unawaited(_prefetchAdjacent(story));
+  }
+
+  Future<void> _prefetchAdjacent(Story story) async {
+    final next = _index + 1;
+    if (next >= story.items.length) return;
+    final item = story.items[next];
+    if (item.mediaUrl.isEmpty) return;
+    try {
+      if (item.mediaType == MediaType.video) {
+        if (kIsWeb) {
+          final c = VideoPlayerController.networkUrl(Uri.parse(item.mediaUrl));
+          await c.initialize();
+          await c.dispose();
+        } else {
+          await MediaDiskCache.instance.ensure(item.mediaUrl, highPriority: true);
+        }
+      } else {
+        if (!kIsWeb) {
+          await MediaDiskCache.instance.ensure(item.mediaUrl, highPriority: true);
+        } else if (mounted) {
+          await precacheImage(webSafeImageProvider(item.mediaUrl), context);
+        }
+      }
+    } catch (_) {}
   }
 
   void _ensureTicker(Story story) {
@@ -336,8 +369,17 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
     final key = '${story.authorId}:${story.items.map((e) => e.id).join(',')}';
     if (!_started || _boundStoryKey != key) {
+      final firstOpen = !_started;
       _boundStoryKey = key;
       _started = true;
+      if (firstOpen) {
+        // Instagram: ilk görülmemiş item’den başla.
+        final myIds = auth.idsFor(me.id);
+        final unseen = story.items.indexWhere(
+          (it) => !it.viewedBy.any(myIds.contains) && it.authorId != me.id,
+        );
+        _index = unseen >= 0 ? unseen : 0;
+      }
       if (_index >= story.items.length) _index = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _armItem(story);
@@ -373,36 +415,24 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         );
       }
     } else {
-      media = FutureBuilder<File?>(
-        future: MediaDiskCache.instance.fileFor(item.mediaUrl),
-        builder: (context, snap) {
-          final f = snap.data;
-          if (f != null) {
-            return Image.file(f, fit: BoxFit.contain);
-          }
-          return Image.network(
-            item.mediaUrl,
-            fit: BoxFit.contain,
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return const Center(
-                child: SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: CircularProgressIndicator(
-                    color: Colors.white70,
-                    strokeWidth: 2.5,
-                  ),
-                ),
-              );
-            },
-            errorBuilder: (_, __, ___) => const Icon(
-              Icons.broken_image_outlined,
-              color: Colors.white54,
-              size: 48,
+      media = SafeNetworkImage(
+        url: item.mediaUrl,
+        fit: BoxFit.contain,
+        placeholder: const Center(
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: CircularProgressIndicator(
+              color: Colors.white70,
+              strokeWidth: 2.5,
             ),
-          );
-        },
+          ),
+        ),
+        errorBuilder: (_, __, ___) => const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white54,
+          size: 48,
+        ),
       );
     }
 

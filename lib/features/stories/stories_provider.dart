@@ -194,7 +194,7 @@ class StoriesProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Halka çubuğu: yazar bazında gruplanmış aktif hikâyeler (en yeni üste).
+  /// Halka çubuğu: kendi → görülmemiş (renkli) → görülmüş (gri, sonda).
   List<Story> storyRings() {
     final visible = visibleItemsForViewer();
     final byAuthor = <String, List<StoryItem>>{};
@@ -217,15 +217,36 @@ class StoriesProvider extends ChangeNotifier {
         ),
       );
     }
+    final me = _viewerId;
+    final myIds = me == null
+        ? <String>{}
+        : (_auth?.idsFor(me) ?? <String>{me});
+
     rings.sort((a, b) {
-      final me = _viewerId;
       if (me != null) {
         if (a.authorId == me && b.authorId != me) return -1;
         if (b.authorId == me && a.authorId != me) return 1;
       }
+      final aSeen = me != null &&
+          a.authorId != me &&
+          a.isFullySeenBy(myIds);
+      final bSeen = me != null &&
+          b.authorId != me &&
+          b.isFullySeenBy(myIds);
+      // Görülmemişler önde, görülmüşler sonda.
+      if (aSeen != bSeen) return aSeen ? 1 : -1;
       return b.latestAt.compareTo(a.latestAt);
     });
     return rings;
+  }
+
+  /// Halka rengi için: bu yazarın hikâyesi tamamen görüldü mü?
+  bool isRingSeen(Story ring) {
+    final me = _viewerId;
+    if (me == null) return false;
+    if (ring.authorId == me) return false;
+    final ids = _auth?.idsFor(me) ?? <String>{me};
+    return ring.isFullySeenBy(ids);
   }
 
   Story? storyForUser(String userId) {
@@ -315,8 +336,10 @@ class StoriesProvider extends ChangeNotifier {
     final i = _items.indexWhere((s) => s.id == storyId);
     if (i < 0) return;
     final item = _items[i];
-    if (item.authorId == viewerId) return;
-    if (item.viewedBy.contains(viewerId)) return;
+    final myIds = _auth?.idsFor(viewerId) ?? <String>{viewerId};
+    if (myIds.contains(item.authorId) || item.authorId == viewerId) return;
+    if (item.viewedBy.any(myIds.contains)) return;
+    // Canonical olarak viewerId yaz; UI eşlemesi idsFor ile yapılır.
     final viewed = List<String>.from(item.viewedBy)..add(viewerId);
     _items[i] = item.copyWith(viewedBy: viewed);
     notifyListeners();

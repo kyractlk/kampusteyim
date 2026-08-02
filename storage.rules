@@ -11,6 +11,18 @@ service firebase.storage {
       return request.resource.contentType.matches('image/.*')
         || request.resource.contentType.matches('video/.*');
     }
+    // Plus ders notu / PDF / Ofis dosyaları
+    function isDocument() {
+      return request.resource.contentType == 'application/pdf'
+        || request.resource.contentType == 'application/msword'
+        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        || request.resource.contentType == 'application/vnd.ms-powerpoint'
+        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        || request.resource.contentType == 'application/vnd.ms-excel'
+        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        || request.resource.contentType == 'text/plain'
+        || request.resource.contentType == 'application/octet-stream';
+    }
 
     match /users/{userId}/{allPaths=**} {
       allow read: if true;
@@ -25,7 +37,7 @@ service firebase.storage {
       allow write: if signedIn()
         && request.auth.uid == userId
         && underSize()
-        && isMedia();
+        && (isMedia() || isDocument());
     }
 
     match /cv/{userId}/{allPaths=**} {
@@ -33,7 +45,10 @@ service firebase.storage {
       allow write: if signedIn()
         && request.auth.uid == userId
         && underSize()
-        && request.resource.contentType.matches('image/.*');
+        && (
+          request.resource.contentType.matches('image/.*')
+          || request.resource.contentType == 'application/pdf'
+        );
     }
 
     // Öğrenci belgesi — kayıt auth öncesi; getDownloadURL için read şart.

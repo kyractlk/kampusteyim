@@ -11,6 +11,9 @@ import 'package:provider/provider.dart';
 
 import 'core/auth/secure_session.dart';
 import 'core/constants/app_info.dart';
+import 'core/media/video_player_web_stub.dart'
+    if (dart.library.html) 'core/media/video_player_web_register.dart'
+    as video_web;
 import 'core/permissions/app_permissions.dart';
 import 'core/storage/media_warm_helper.dart';
 import 'core/theme/app_theme.dart';
@@ -35,6 +38,8 @@ import 'package:go_router/go_router.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Web’de video_player_web bazen registrant’tan düşüyor → zorla kaydet.
+  video_web.ensureVideoPlayerWebRegistered();
   if (kIsWeb) {
     usePathUrlStrategy();
   } else {

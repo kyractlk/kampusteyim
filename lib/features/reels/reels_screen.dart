@@ -31,15 +31,45 @@ class ReelsScreen extends StatefulWidget {
   State<ReelsScreen> createState() => _ReelsScreenState();
 }
 
+/// Instagram tarzı dikey snap — hızlı flicksnaps, az sürtünme.
+class _ReelsPagePhysics extends PageScrollPhysics {
+  const _ReelsPagePhysics({super.parent});
+
+  @override
+  _ReelsPagePhysics applyTo(ScrollPhysics? ancestor) {
+    return _ReelsPagePhysics(parent: buildParent(ancestor));
+  }
+
+  @override
+  SpringDescription get spring => const SpringDescription(
+        mass: 0.5,
+        stiffness: 420,
+        damping: 32,
+      );
+}
+
 class _ReelsScreenState extends State<ReelsScreen> {
   final _page = PageController();
   int _index = 0;
   bool _refreshing = false;
+  bool _didWarm = false;
 
   @override
   void dispose() {
     _page.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didWarm) return;
+    final reels = context.read<ReelsProvider>();
+    final me = context.read<AuthProvider>().user;
+    final feed = reels.feedFor(me?.id);
+    if (feed.isEmpty) return;
+    _didWarm = true;
+    unawaited(reels.prefetchAround(feed, _index));
   }
 
   Future<void> _onRefresh() async {
@@ -145,6 +175,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 child: PageView.builder(
                   controller: _page,
                   scrollDirection: Axis.vertical,
+                  allowImplicitScrolling: true,
+                  physics: const _ReelsPagePhysics(),
                   itemCount: feed.length,
                   onPageChanged: (i) {
                     setState(() => _index = i);

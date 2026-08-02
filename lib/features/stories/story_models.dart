@@ -150,4 +150,12 @@ class Story {
   DateTime get latestAt => items.isEmpty
       ? DateTime.fromMillisecondsSinceEpoch(0)
       : items.map((e) => e.createdAt).reduce((a, b) => a.isAfter(b) ? a : b);
+
+  /// Instagram: tüm item’lar izlendiyse halka “görüldü”.
+  bool isFullySeenBy(Iterable<String> viewerIds) {
+    if (items.isEmpty) return true;
+    final ids = viewerIds.toSet();
+    if (ids.isEmpty) return false;
+    return items.every((it) => it.viewedBy.any(ids.contains));
+  }
 }

@@ -1,10 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+// dart:io yalnızca native — web stub File kullanmaz; kIsWeb guard zorunlu.
+import 'dart:io';
+
 /// Hikâye / Reels medyasını diske indirir — LRU + TTL + paralel kuyruk.
+/// Web’de no-op (tarayıcı CDN stream kullanır).
 class MediaDiskCache {
   MediaDiskCache._();
   static final instance = MediaDiskCache._();
@@ -19,6 +21,9 @@ class MediaDiskCache {
   Directory? _dir;
 
   Future<Directory> _base() async {
+    if (kIsWeb) {
+      throw UnsupportedError('MediaDiskCache is native-only');
+    }
     if (_dir != null) return _dir!;
     final tmp = await getTemporaryDirectory();
     final d = Directory('${tmp.path}/kampus_media_cache_v2');
@@ -128,6 +133,7 @@ class MediaDiskCache {
   }
 
   void unawaitedDrain({int concurrency = 5}) {
+    if (kIsWeb) return;
     if (_drainRunning) return;
     _drainRunning = true;
     () async {
@@ -152,6 +158,7 @@ class MediaDiskCache {
   }
 
   Future<void> _enforceBudget() async {
+    if (kIsWeb) return;
     try {
       final dir = await _base();
       final files = await dir

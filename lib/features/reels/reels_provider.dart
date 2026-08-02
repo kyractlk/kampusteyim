@@ -126,14 +126,22 @@ class ReelsProvider extends ChangeNotifier {
 
   Future<void> prefetchAround(List<CampusReel> feed, int index) async {
     if (feed.isEmpty) return;
-    final start = (index - 3).clamp(0, feed.length);
-    final end = (index + 8).clamp(0, feed.length);
-    final slice = feed.sublist(start, end);
-    await ReelsVideoCache.instance.prefetch(slice, count: slice.length);
-    // Tüm feed’i de kuyruğa koy — kaydırırken hazır olsun.
-    unawaited(
-      ReelsVideoCache.instance.prefetch(feed, count: 12, keepWarm: true),
+    await ReelsVideoCache.instance.warmWindow(
+      feed,
+      index,
+      behind: 1,
+      ahead: kIsWeb ? 2 : 3,
     );
+    // Uzak medyayı da disk kuyruğuna al (native).
+    if (!kIsWeb) {
+      final start = (index - 3).clamp(0, feed.length);
+      final end = (index + 10).clamp(0, feed.length);
+      MediaDiskCache.instance.prefetchAll(
+        feed.sublist(start, end).map((r) => r.mediaUrl),
+        concurrency: 4,
+        front: true,
+      );
+    }
   }
 
   void attachAuth(AuthProvider auth) {
