@@ -5,25 +5,24 @@ import 'package:shared_preferences/shared_preferences.dart';
 enum AppVisualStyle {
   classic,
   liquidGlass,
-  dark,
 }
 
 extension AppVisualStyleX on AppVisualStyle {
   String get label => switch (this) {
         AppVisualStyle.classic => 'Klasik',
         AppVisualStyle.liquidGlass => 'Liquid Glass',
-        AppVisualStyle.dark => 'Koyu',
       };
 
   String get subtitle => switch (this) {
         AppVisualStyle.classic => 'Açık kampüs teması',
         AppVisualStyle.liquidGlass => 'Buğulu şeffaf cam · Dynamic Island',
-        AppVisualStyle.dark => 'Koyu gece teması',
       };
 
   String get storageKey => name;
 
   static AppVisualStyle fromKey(String? raw) {
+    // Eski "dark" tercihi kaldırıldı → Liquid’e düş.
+    if (raw == 'dark') return AppVisualStyle.liquidGlass;
     for (final v in AppVisualStyle.values) {
       if (v.name == raw) return v;
     }
@@ -43,16 +42,19 @@ class ThemeProvider extends ChangeNotifier {
 
   AppVisualStyle get style => _style;
   bool get ready => _ready;
-  bool get isDark => _style == AppVisualStyle.dark;
   bool get isLiquidGlass => _style == AppVisualStyle.liquidGlass;
 
-  ThemeMode get themeMode =>
-      _style == AppVisualStyle.dark ? ThemeMode.dark : ThemeMode.light;
+  ThemeMode get themeMode => ThemeMode.light;
 
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _style = AppVisualStyleX.fromKey(prefs.getString(_prefsKey));
+      final raw = prefs.getString(_prefsKey);
+      _style = AppVisualStyleX.fromKey(raw);
+      // Eski koyu tema kaydını temizle.
+      if (raw == 'dark') {
+        await prefs.setString(_prefsKey, _style.storageKey);
+      }
     } catch (e) {
       debugPrint('[theme] load: $e');
     }

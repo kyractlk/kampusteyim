@@ -49,7 +49,6 @@ Future<void> openThemePicker(BuildContext context) async {
                   switch (s) {
                     AppVisualStyle.classic => Icons.wb_sunny_outlined,
                     AppVisualStyle.liquidGlass => Icons.blur_on_rounded,
-                    AppVisualStyle.dark => Icons.dark_mode_outlined,
                   },
                 ),
                 title: Text(s.label),

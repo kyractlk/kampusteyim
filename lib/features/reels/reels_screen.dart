@@ -8,13 +8,14 @@ import 'package:video_player/video_player.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/utils/mention_utils.dart';
+import '../../core/widgets/liquid_glass.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../ads/ads_provider.dart';
 import '../auth/data/auth_provider.dart';
 import '../home/home_shell.dart'
-    show kReelsBottomNavHeight, shellBottomNavInset;
+    show kGlassNavBarHeight, kReelsBottomNavHeight, shellBottomNavInset;
 import '../notifications/notification_provider.dart';
 import '../plus/plus_widgets.dart';
 import '../stories/campus_camera_screen.dart';
@@ -498,9 +499,11 @@ class _ReelPageState extends State<_ReelPage> {
     final following = me != null && auth.follows(reel.authorId);
     final isSelf = me != null && auth.idsFor(reel.authorId).contains(me.id);
     final photo = author?.photoUrl ?? reel.authorPhotoUrl;
-    // Nav ile aynı %30 kısaltılmış inset + bar yüksekliği + Ses/handle payı.
-    final bottomClear =
-        shellBottomNavInset(context) + kReelsBottomNavHeight + 22;
+    // Floating glass bar için ekstra pay (Reels’te cam daha yüksek).
+    final glass = LiquidGlass.enabled(context);
+    final bottomClear = shellBottomNavInset(context) +
+        (glass ? kGlassNavBarHeight + 10 : kReelsBottomNavHeight) +
+        22;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -608,14 +611,27 @@ class _ReelPageState extends State<_ReelPage> {
                       const SizedBox(width: 8),
                       if (!following)
                         OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white70),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 0),
-                            minimumSize: const Size(0, 28),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
+                          style: LiquidGlass.enabled(context)
+                              ? liquidOutlinedButtonStyle(
+                                  dark: true,
+                                  minimumSize: const Size(0, 30),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 0,
+                                  ),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                )
+                              : OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side:
+                                      const BorderSide(color: Colors.white70),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 0),
+                                  minimumSize: const Size(0, 28),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
                           onPressed: () => _toggleFollow(author),
                           child: Text(
                             author?.isPrivateAccount == true
@@ -679,7 +695,7 @@ class _ReelPageState extends State<_ReelPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _SideBtn(
+                LiquidGlassIconButton(
                   icon: liked ? Icons.favorite : Icons.favorite_border,
                   color: liked ? Colors.redAccent : Colors.white,
                   label: '${reel.likedBy.length}',
@@ -707,8 +723,8 @@ class _ReelPageState extends State<_ReelPage> {
                           }());
                         },
                 ),
-                const SizedBox(height: 8),
-                _SideBtn(
+                const SizedBox(height: 10),
+                LiquidGlassIconButton(
                   icon: Icons.chat_bubble_outline_rounded,
                   label: '${reel.commentCount}',
                   onTap: () {
@@ -716,8 +732,8 @@ class _ReelPageState extends State<_ReelPage> {
                     _openComments();
                   },
                 ),
-                const SizedBox(height: 8),
-                _SideBtn(
+                const SizedBox(height: 10),
+                LiquidGlassIconButton(
                   icon: _muted
                       ? Icons.volume_off_rounded
                       : Icons.volume_up_rounded,
@@ -770,43 +786,6 @@ class _ReelCaptionText extends StatelessWidget {
       TextSpan(children: spans.isEmpty ? [TextSpan(text: caption, style: base)] : spans),
       maxLines: 3,
       overflow: TextOverflow.ellipsis,
-    );
-  }
-}
-
-class _SideBtn extends StatelessWidget {
-  const _SideBtn({
-    required this.icon,
-    required this.label,
-    this.onTap,
-    this.color = Colors.white,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          onPressed: onTap,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
-          icon: Icon(icon, color: color, size: 26),
-        ),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 11,
-            height: 1.05,
-          ),
-        ),
-      ],
     );
   }
 }

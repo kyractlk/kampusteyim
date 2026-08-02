@@ -19,6 +19,7 @@ import '../../core/utils/breakpoints.dart';
 import '../../core/utils/campus_affinity.dart';
 import '../../core/utils/hashtag_utils.dart';
 import '../../core/utils/mention_utils.dart';
+import '../../core/widgets/liquid_glass.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../admin/admin_permissions.dart';
@@ -312,6 +313,7 @@ class _FeedScopeChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final liquid = LiquidGlass.enabled(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
       child: SingleChildScrollView(
@@ -327,51 +329,36 @@ class _FeedScopeChips extends StatelessWidget {
                       : s == FeedScope.university && university.trim().isNotEmpty
                           ? 'Üniversitem'
                           : s.label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: scope == s
+                        ? Colors.white
+                        : AppColors.textPrimary,
+                  ),
                 ),
                 selected: scope == s,
                 onSelected: (_) => onChanged(s),
-                selectedColor: AppColors.navy,
-                labelStyle: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: scope == s ? Colors.white : AppColors.textPrimary,
-                ),
-                backgroundColor: AppColors.surface,
+                selectedColor: liquid
+                    ? AppColors.navy.withValues(alpha: 0.88)
+                    : AppColors.navy,
+                backgroundColor: liquid
+                    ? Colors.white.withValues(alpha: 0.45)
+                    : AppColors.surface,
                 side: BorderSide(
                   color: scope == s
-                      ? AppColors.navy
-                      : AppColors.border.withValues(alpha: 0.9),
+                      ? Colors.white.withValues(alpha: liquid ? 0.4 : 0)
+                      : (liquid
+                          ? Colors.white.withValues(alpha: 0.65)
+                          : AppColors.border.withValues(alpha: 0.9)),
                 ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(22),
+                  borderRadius: BorderRadius.circular(liquid ? 22 : 22),
                 ),
                 showCheckmark: false,
                 visualDensity: VisualDensity.compact,
               ),
             ],
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.lime.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.bolt_rounded, size: 14, color: AppColors.lime),
-                  SizedBox(width: 4),
-                  Text(
-                    'Canlı',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.navySoft,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -617,15 +604,19 @@ class _ComposerCardState extends State<_ComposerCard> {
   Widget build(BuildContext context) {
     final uniqueTags = HashtagUtils.uniqueCount(_controller.text);
     final showMentions = _mentionQuery != null && _mentionHits.isNotEmpty;
+    final liquid = LiquidGlass.enabled(context);
+    final radius = liquid ? 22.0 : 18.0;
 
-    return Material(
-      color: AppColors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: const BorderSide(color: AppColors.border),
-      ),
+    final body = Material(
+      color: liquid ? Colors.transparent : AppColors.surface,
+      shape: liquid
+          ? null
+          : RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(radius),
+              side: const BorderSide(color: AppColors.border),
+            ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(radius),
         onTap: widget.enabled ? null : widget.onTapLocked,
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -786,13 +777,18 @@ class _ComposerCardState extends State<_ComposerCard> {
                   ),
                   const Spacer(),
                   FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.navy,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
+                    style: liquid
+                        ? liquidFilledButtonStyle(
+                            dark: false,
+                            minimumSize: const Size(88, 40),
+                          )
+                        : FilledButton.styleFrom(
+                            backgroundColor: AppColors.navy,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
                     onPressed: _busy ? null : _publish,
                     child: _busy
                         ? const SizedBox(
@@ -811,6 +807,14 @@ class _ComposerCardState extends State<_ComposerCard> {
           ),
         ),
       ),
+    );
+
+    if (!liquid) return body;
+    return LiquidGlass(
+      borderRadius: radius,
+      blur: 26,
+      intensity: 1.08,
+      child: body,
     );
   }
 }
@@ -831,22 +835,31 @@ class PostCard extends StatelessWidget {
     final time = DateFormat('d MMM · HH:mm', 'tr').format(post.createdAt);
     final gold = author?.showGoldBadge == true || post.isCommunity;
     final blue = author?.showBlueBadge == true;
+    final liquid = LiquidGlass.enabled(context);
+    final radius = liquid ? 22.0 : 18.0;
+    final borderColor = post.isStudyRoomInvite
+        ? AppColors.cyan.withValues(alpha: 0.65)
+        : post.isCommunity
+            ? AppColors.cyan.withValues(alpha: 0.45)
+            : (liquid
+                ? Colors.white.withValues(alpha: 0.72)
+                : AppColors.border);
 
-    return Material(
-      color: AppColors.surface,
+    final card = Material(
+      color: liquid
+          ? Colors.white.withValues(alpha: 0.52)
+          : AppColors.surface,
+      elevation: 0,
+      shadowColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(radius),
         side: BorderSide(
-          color: post.isStudyRoomInvite
-              ? AppColors.cyan.withValues(alpha: 0.65)
-              : post.isCommunity
-              ? AppColors.cyan.withValues(alpha: 0.45)
-              : AppColors.border,
-          width: post.isStudyRoomInvite ? 1.4 : 1,
+          color: borderColor,
+          width: post.isStudyRoomInvite ? 1.4 : 1.05,
         ),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(radius),
         onTap: openPostOnTap && !post.isStudyRoomInvite
             ? () => AppNav.openPost(context, post.id)
             : null,
@@ -1263,6 +1276,22 @@ class PostCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+
+    if (!liquid) return card;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+            spreadRadius: -4,
+          ),
+        ],
+      ),
+      child: card,
     );
   }
 }

@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +11,7 @@ import '../../core/theme/theme_provider.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/utils/breakpoints.dart';
 import '../../core/widgets/app_circle_logo.dart';
+import '../../core/widgets/liquid_glass.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
@@ -97,7 +96,6 @@ class HomeShell extends StatelessWidget {
     if (!wide) {
       final reelsMode = index == 1;
       final glass = context.watch<ThemeProvider>().isLiquidGlass;
-      final darkTheme = context.watch<ThemeProvider>().isDark;
       return PopScope(
         canPop: false,
         onPopInvokedWithResult: _onPop,
@@ -106,7 +104,7 @@ class HomeShell extends StatelessWidget {
           extendBody: true,
           backgroundColor: reelsMode ? Colors.black : null,
           body: navigationShell,
-          bottomNavigationBar: glass || darkTheme || reelsMode
+          bottomNavigationBar: glass || reelsMode
               ? _LiquidGlassNavBar(
                   index: index,
                   reelsMode: reelsMode,
@@ -224,7 +222,7 @@ class HomeShell extends StatelessWidget {
       ];
 }
 
-/// Floating Liquid Glass alt bar — buğulu şeffaf Dynamic Island hissi.
+/// Floating Liquid Glass alt bar — Reels dahil daha belirgin cam.
 class _LiquidGlassNavBar extends StatelessWidget {
   const _LiquidGlassNavBar({
     required this.index,
@@ -242,60 +240,43 @@ class _LiquidGlassNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final inset = shellBottomNavInset(context);
     final dark = Theme.of(context).brightness == Brightness.dark || reelsMode;
-    final pillFill = dark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.white.withValues(alpha: 0.55);
-    final pillBorder = dark
-        ? Colors.white.withValues(alpha: 0.22)
-        : Colors.white.withValues(alpha: 0.75);
     final selectedBg = dark
-        ? Colors.white.withValues(alpha: 0.22)
-        : AppColors.navy.withValues(alpha: 0.88);
-    final selectedFg = dark ? Colors.white : Colors.white;
+        ? Colors.white.withValues(alpha: 0.28)
+        : AppColors.navy.withValues(alpha: 0.90);
+    final selectedFg = Colors.white;
     final idleFg = dark
-        ? Colors.white.withValues(alpha: 0.62)
-        : AppColors.textSecondary;
+        ? Colors.white.withValues(alpha: 0.72)
+        : AppColors.textSecondary.withValues(alpha: 0.9);
+    final selectedLabel = dark ? Colors.white : AppColors.navy;
 
     return SafeArea(
       top: false,
       minimum: EdgeInsets.only(bottom: inset > 0 ? 2 : 8),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(14, 0, 14, inset > 0 ? 4 : 10),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(32),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: pillFill,
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(color: pillBorder, width: 1.1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: dark ? 0.35 : 0.12),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
+        padding: EdgeInsets.fromLTRB(12, 0, 12, inset > 0 ? 6 : 12),
+        child: LiquidGlass(
+          dark: dark,
+          blur: reelsMode ? 48 : 36,
+          borderRadius: 36,
+          intensity: reelsMode ? 1.35 : 1.1,
+          borderOpacity: dark ? 0.42 : 0.80,
+          child: SizedBox(
+            height: kGlassNavBarHeight + 2,
+            child: Row(
+              children: [
+                for (var i = 0; i < destinations.length; i++)
+                  Expanded(
+                    child: _GlassNavItem(
+                      destination: destinations[i],
+                      selected: i == index,
+                      selectedBg: selectedBg,
+                      selectedFg: selectedFg,
+                      idleFg: idleFg,
+                      selectedLabel: selectedLabel,
+                      onTap: () => onTap(i),
+                    ),
                   ),
-                ],
-              ),
-              child: SizedBox(
-                height: kGlassNavBarHeight,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < destinations.length; i++)
-                      Expanded(
-                        child: _GlassNavItem(
-                          destination: destinations[i],
-                          selected: i == index,
-                          selectedBg: selectedBg,
-                          selectedFg: selectedFg,
-                          idleFg: idleFg,
-                          onTap: () => onTap(i),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+              ],
             ),
           ),
         ),
@@ -311,6 +292,7 @@ class _GlassNavItem extends StatelessWidget {
     required this.selectedBg,
     required this.selectedFg,
     required this.idleFg,
+    required this.selectedLabel,
     required this.onTap,
   });
 
@@ -319,6 +301,7 @@ class _GlassNavItem extends StatelessWidget {
   final Color selectedBg;
   final Color selectedFg;
   final Color idleFg;
+  final Color selectedLabel;
   final VoidCallback onTap;
 
   @override
@@ -326,44 +309,64 @@ class _GlassNavItem extends StatelessWidget {
     final icon = selected
         ? (destination.selectedIcon ?? destination.icon)
         : destination.icon;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(28),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: selected ? selectedBg : Colors.transparent,
-              shape: BoxShape.circle,
-            ),
-            child: IconTheme(
-              data: IconThemeData(
-                size: 22,
-                color: selected ? selectedFg : idleFg,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(28),
+        splashColor: Colors.white.withValues(alpha: 0.12),
+        highlightColor: Colors.white.withValues(alpha: 0.06),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: selected ? selectedBg : Colors.transparent,
+                shape: BoxShape.circle,
+                border: selected
+                    ? Border.all(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        width: 1,
+                      )
+                    : null,
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: selectedBg.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 3),
+                        ),
+                      ]
+                    : null,
               ),
-              child: icon,
+              child: IconTheme(
+                data: IconThemeData(
+                  size: 22,
+                  color: selected ? selectedFg : idleFg,
+                ),
+                child: icon,
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            destination.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected
-                  ? (Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white
-                      : AppColors.navy)
-                  : idleFg,
+            const SizedBox(height: 2),
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 200),
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                letterSpacing: selected ? 0.1 : 0,
+                color: selected ? selectedLabel : idleFg,
+              ),
+              child: Text(
+                destination.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
