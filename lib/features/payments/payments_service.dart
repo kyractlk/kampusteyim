@@ -63,6 +63,16 @@ class PaymentsPublicConfig {
   double get plusAmount => (raw['plusAmount'] as num?)?.toDouble() ?? 0;
   int get plusDays => (raw['plusDays'] as num?)?.toInt() ?? 30;
   String get currency => '${raw['currency'] ?? 'TL'}';
+  String get marketUrl =>
+      '${raw['marketUrl'] ?? 'https://app.kampusteyim.app/market'}';
+  List<Map<String, dynamic>> get plusPlans {
+    final rawPlans = raw['plusPlans'];
+    if (rawPlans is! List) return const [];
+    return rawPlans
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
   bool get paytrReady => raw['paytrReady'] == true;
   bool get shopierReady => raw['shopierReady'] == true;
   bool get ibanReady => raw['ibanReady'] == true;
@@ -109,17 +119,21 @@ class PaymentsService {
     String product = 'plus',
     String? provider,
     double? amount,
+    int? months,
     String? eventId,
     String? tierLabel,
     String? discountCode,
+    String source = 'app',
   }) async {
     final res = await _fn.httpsCallable('createPaymentOrder').call({
       'product': product,
       if (provider != null) 'provider': provider,
       if (amount != null) 'amount': amount,
+      if (months != null) 'months': months,
       if (eventId != null) 'eventId': eventId,
       if (tierLabel != null) 'tierLabel': tierLabel,
       if (discountCode != null) 'discountCode': discountCode,
+      'source': source,
     });
     return PaymentOrderResult(_map(res.data));
   }

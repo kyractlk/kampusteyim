@@ -39,6 +39,10 @@
       ],
       "rewrites": [
         {
+          "source": "/market",
+          "destination": "/market.html"
+        },
+        {
           "source": "/privacy",
           "destination": "/privacy.html"
         },
@@ -91,6 +95,15 @@
             {
               "key": "Cache-Control",
               "value": "public, max-age=300"
+            }
+          ]
+        },
+        {
+          "source": "/market.html",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
             }
           ]
         },
@@ -166,6 +179,10 @@
         {
           "source": "/indir",
           "destination": "/get.html"
+        },
+        {
+          "source": "/market",
+          "destination": "/market.html"
         },
         {
           "source": "/elcilik",

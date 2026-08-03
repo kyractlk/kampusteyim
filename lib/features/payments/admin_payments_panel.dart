@@ -257,6 +257,43 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
         ),
         const SizedBox(height: 16),
         _section('Plus ürünü'),
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceMuted,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Web market vitrini',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Ödeme firmalarına gösterilecek resmi satış sayfası. '
+                'Aylık tutar buradan güncellenince 1/3/6/12 ay paketleri otomatik çarpılır.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                'https://app.kampusteyim.app/market',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.navy.withValues(alpha: 0.9),
+                ),
+              ),
+            ],
+          ),
+        ),
         TextField(
           controller: _productName,
           decoration: const InputDecoration(

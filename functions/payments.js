@@ -5,8 +5,8 @@
  */
 const crypto = require('crypto');
 
-const DEFAULT_OK = 'https://app.kampusteyim.app/plus?pay=ok';
-const DEFAULT_FAIL = 'https://app.kampusteyim.app/plus?pay=fail';
+const DEFAULT_OK = 'https://app.kampusteyim.app/market?pay=ok';
+const DEFAULT_FAIL = 'https://app.kampusteyim.app/market?pay=fail';
 const DEFAULT_PAYTR_CB =
   'https://europe-west1-ayskampuss.cloudfunctions.net/paytrCallback';
 const DEFAULT_SHOPIER_CB =
@@ -52,6 +52,12 @@ function paymentsModule({
       plusProductName: String(d.plusProductName || 'KampüsteyimPlus').trim(),
       plusAmount: Number(d.plusAmount || 0),
       plusDays: Number(d.plusDays || 30),
+      plusMonthOptions: Array.isArray(d.plusMonthOptions) && d.plusMonthOptions.length
+        ? d.plusMonthOptions
+            .map((x) => Number(x))
+            .filter((n) => Number.isFinite(n) && n >= 1 && n <= 24)
+            .map((n) => Math.floor(n))
+        : [1, 3, 6, 12],
       // Fallback / panel URL’leri — admin düzenler
       okUrl: String(d.okUrl || DEFAULT_OK).trim() || DEFAULT_OK,
       failUrl: String(d.failUrl || DEFAULT_FAIL).trim() || DEFAULT_FAIL,
@@ -114,6 +120,27 @@ function paymentsModule({
     return data;
   }
 
+  function buildPlusPlans(cfg) {
+    const months = (cfg.plusMonthOptions || [1, 3, 6, 12]).filter(
+      (n, i, a) => a.indexOf(n) === i,
+    );
+    const unit = Number(cfg.plusAmount) || 0;
+    const unitDays = Number(cfg.plusDays) || 30;
+    return months.map((m) => ({
+      months: m,
+      label: m === 1 ? '1 Ay' : `${m} Ay`,
+      amount: Math.round(unit * m * 100) / 100,
+      days: unitDays * m,
+      popular: m === 3,
+    }));
+  }
+
+  function daysForPlusOrder(order, cfg) {
+    const fromMeta = Number(order?.meta?.plusDays);
+    if (Number.isFinite(fromMeta) && fromMeta > 0) return Math.floor(fromMeta);
+    return Number(cfg.plusDays) > 0 ? Number(cfg.plusDays) : 30;
+  }
+
   async function activatePlusFromOrder(order, days) {
     if (!order?.uid) return;
     const exp = new Date();
@@ -130,10 +157,16 @@ function paymentsModule({
     );
   }
 
-  async function fulfillPaidOrder(order, plusDays) {
+  async function fulfillPaidOrder(order, cfgOrDays) {
     if (!order) return;
     if (order.product === 'plus') {
-      await activatePlusFromOrder(order, plusDays);
+      const days =
+        typeof cfgOrDays === 'object' && cfgOrDays
+          ? daysForPlusOrder(order, cfgOrDays)
+          : Number(cfgOrDays) > 0
+            ? Number(cfgOrDays)
+            : daysForPlusOrder(order, { plusDays: 30 });
+      await activatePlusFromOrder(order, days);
       return;
     }
     if (order.product === 'event' && typeof fulfillEventOrder === 'function') {
@@ -184,6 +217,13 @@ function paymentsModule({
       }
       if (data.plusAmount != null) pub.plusAmount = Number(data.plusAmount) || 0;
       if (data.plusDays != null) pub.plusDays = Number(data.plusDays) || 30;
+      if (Array.isArray(data.plusMonthOptions)) {
+        pub.plusMonthOptions = data.plusMonthOptions
+          .map((x) => Number(x))
+          .filter((n) => Number.isFinite(n) && n >= 1 && n <= 24)
+          .map((n) => Math.floor(n));
+        if (!pub.plusMonthOptions.length) pub.plusMonthOptions = [1, 3, 6, 12];
+      }
 
       if (pub.activeProvider && !['paytr', 'shopier', 'iban'].includes(pub.activeProvider)) {
         throw new HttpsError('invalid-argument', 'Geçersiz provider');
@@ -259,6 +299,9 @@ function paymentsModule({
         plusProductName: cfg.plusProductName,
         plusAmount: cfg.plusAmount,
         plusDays: cfg.plusDays,
+        plusMonthOptions: cfg.plusMonthOptions || [1, 3, 6, 12],
+        plusPlans: buildPlusPlans(cfg),
+        marketUrl: 'https://app.kampusteyim.app/market',
         currency: cfg.currency,
         okUrl: cfg.okUrl,
         failUrl: cfg.failUrl,
@@ -296,6 +339,20 @@ function paymentsModule({
 
       let amount =
         Number.isFinite(amountIn) && amountIn > 0 ? amountIn : cfg.plusAmount;
+      const monthsRaw = Number(request.data?.months);
+      const months =
+        product === 'plus' &&
+        Number.isFinite(monthsRaw) &&
+        monthsRaw >= 1 &&
+        monthsRaw <= 24
+          ? Math.floor(monthsRaw)
+          : 1;
+      const plusDaysForOrder =
+        product === 'plus' ? (Number(cfg.plusDays) || 30) * months : null;
+      if (product === 'plus') {
+        // Sunucu fiyatı — istemci tutarı ezemez (tek kaynak: plusAmount × ay).
+        amount = Math.round((Number(cfg.plusAmount) || 0) * months * 100) / 100;
+      }
       const eventId = sanitizePlainText(request.data?.eventId || '', 80);
       const tierLabel = sanitizePlainText(request.data?.tierLabel || '', 80);
       const discountCode = sanitizePlainText(
@@ -363,6 +420,9 @@ function paymentsModule({
           discountCode: discountCode || null,
           attendeeUid: uid,
           userName,
+          months: product === 'plus' ? months : null,
+          plusDays: plusDaysForOrder,
+          source: sanitizePlainText(request.data?.source || 'app', 40) || 'app',
         },
       });
 
@@ -663,7 +723,7 @@ ${fields}
           { merge: true },
         );
         if (product === 'plus' || product === 'event' || product === 'ad') {
-          await fulfillPaidOrder(order, cfg.plusDays);
+          await fulfillPaidOrder(order, cfg);
         }
       } else {
         await ref.set(
@@ -715,7 +775,7 @@ ${fields}
               { merge: true },
             );
             if (order.product === 'plus' || order.product === 'event' || order.product === 'ad') {
-              await fulfillPaidOrder(order, cfg.plusDays);
+              await fulfillPaidOrder(order, cfg);
             }
           } else {
             await doc.ref.set(
@@ -782,7 +842,7 @@ ${fields}
             { merge: true },
           );
           if (order.product === 'plus' || order.product === 'event' || order.product === 'ad') {
-            await fulfillPaidOrder(order, cfg.plusDays);
+            await fulfillPaidOrder(order, cfg);
           }
           res.redirect(302, cfg.okUrl);
         } else {

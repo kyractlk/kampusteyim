@@ -163,6 +163,37 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
           'Kart / Shopier / IBAN ödemesi aşağıda yapılandırılır.',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
         ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+            color: AppColors.surfaceMuted,
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Market vitrini',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              SizedBox(height: 4),
+              SelectableText(
+                'https://app.kampusteyim.app/market',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Web satış + uygulama ödemeleri aynı API. Aylık tutar ödeme panelinden güncellenir.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 16),
         TextField(
           controller: _trialDays,
