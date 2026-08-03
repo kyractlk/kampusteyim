@@ -75,9 +75,12 @@ class AuthProvider extends ChangeNotifier {
     return out;
   }
 
-  Future<AppUser?> ensureUserLoaded(String id) async {
+  Future<AppUser?> ensureUserLoaded(
+    String id, {
+    bool forceRemote = false,
+  }) async {
     final local = findUser(id);
-    if (local != null) return local;
+    if (local != null && !forceRemote) return local;
     final key = id.trim().replaceFirst(RegExp(r'^@'), '');
     try {
       // 1) users/{uid}
@@ -127,65 +130,12 @@ class AuthProvider extends ChangeNotifier {
       }
       if (!doc.exists || doc.data() == null) return null;
       final m = doc.data()!;
-      if (m['deleted'] == true) return null;
-      final roleName = '${m['role'] ?? 'student'}';
-      final role = UserRole.values.firstWhere(
-        (r) => r.name == roleName,
-        orElse: () => UserRole.student,
-      );
-      final prefsRaw = m['notificationPrefs'];
-      final stable = '${m['stableId'] ?? doc.id}';
-      final user = AppUser(
-        id: stable.isNotEmpty ? stable : doc.id,
-        email: '${m['email'] ?? ''}',
-        studentNo: '${m['studentNo'] ?? ''}',
-        firstName: '${m['firstName'] ?? ''}',
-        lastName: '${m['lastName'] ?? ''}',
-        phone: '${m['phone'] ?? ''}',
-        city: '${m['city'] ?? ''}',
-        university: '${m['university'] ?? ''}',
-        bio: '${m['bio'] ?? ''}',
-        photoUrl: m['photoUrl'] as String?,
-        role: role,
-        isCommunity: m['isCommunity'] == true,
-        isSuperAdmin: m['isSuperAdmin'] == true,
-        hasGoldBadge: m['hasGoldBadge'] == true,
-        hasBlueBadge: m['hasBlueBadge'] == true,
-        badgeTitle: '${m['badgeTitle'] ?? ''}',
-        isCampusAmbassador: m['isCampusAmbassador'] == true,
-        embassyId: m['embassyId'] as String?,
-        isEventOrganizer: m['isEventOrganizer'] == true,
-        plusActive: m['plusActive'] == true,
-        plusSource: '${m['plusSource'] ?? ''}',
-        plusStartsAt: DateTime.tryParse('${m['plusStartsAt'] ?? ''}'),
-        plusExpiresAt: DateTime.tryParse('${m['plusExpiresAt'] ?? ''}'),
-        plusTrialUsed: m['plusTrialUsed'] == true,
-        isBot: m['isBot'] == true,
-        staffRoleId: m['staffRoleId'] as String?,
-        communityLogoUrl: m['communityLogoUrl'] as String?,
-        affiliatedCommunityId: m['affiliatedCommunityId'] as String?,
-        affiliatedCommunityName: m['affiliatedCommunityName'] as String?,
-        affiliatedOrgLogoUrl: m['affiliatedOrgLogoUrl'] as String?,
-        affiliatedCompanyId: m['affiliatedCompanyId'] as String?,
-        affiliatedCompanyName: m['affiliatedCompanyName'] as String?,
-        panelOrgId: m['panelOrgId'] as String?,
-        panelOrgType: m['panelOrgType'] as String?,
-        panelOrgName: m['panelOrgName'] as String?,
-        panelAccess: m['panelAccess'] == true,
-        restrictionType: '${m['restrictionType'] ?? 'none'}',
-        restrictionReason: '${m['restrictionReason'] ?? ''}',
-        restrictionUntil: DateTime.tryParse('${m['restrictionUntil'] ?? ''}'),
-        username: m['username'] as String?,
-        usernameStatus: '${m['usernameStatus'] ?? 'ok'}',
-        allowMentions: m['allowMentions'] != false,
-        kvkkAcceptedAt: DateTime.tryParse('${m['kvkkAcceptedAt'] ?? ''}'),
-        marketingConsent: m['marketingConsent'] == true,
-        marketingAcceptedAt:
-            DateTime.tryParse('${m['marketingAcceptedAt'] ?? ''}'),
-        notificationPrefs: prefsRaw is Map
-            ? NotificationPrefs.fromJson(Map<String, dynamic>.from(prefsRaw))
-            : NotificationPrefs.defaults,
-      );
+      if (m['deleted'] == true ||
+          '${m['usernameStatus'] ?? ''}' == 'deleted' ||
+          '${m['email'] ?? ''}'.contains('@invalid.local')) {
+        return null;
+      }
+      final user = _appUserFromFirestore(doc.id, m);
       if (doc.id != user.id) {
         _idAliases[doc.id] = user.id;
         _idAliases[user.id] = doc.id;
@@ -210,15 +160,45 @@ class AuthProvider extends ChangeNotifier {
     try {
       final doc =
           await FirebaseFirestore.instance.collection('users').doc(fb.uid).get();
-      if (!doc.exists || doc.data() == null) return;
+      if (!doc.exists || doc.data() == null) {
+        await _forceSignOutDeleted('Profil bulunamadı');
+        return;
+      }
       final data = doc.data()!;
+      if (data['deleted'] == true ||
+          '${data['usernameStatus'] ?? ''}' == 'deleted' ||
+          '${data['email'] ?? ''}'.contains('@invalid.local')) {
+        await _forceSignOutDeleted('Bu hesap silinmiş');
+        return;
+      }
       final user = _appUserFromFirestore(doc.id, data);
       _user = user;
+      _boundAuthUid = fb.uid;
       _upsert(user);
+      if (doc.id != user.id) {
+        _idAliases[doc.id] = user.id;
+        _idAliases[user.id] = doc.id;
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('[auth] refreshCurrentUser: $e');
     }
+  }
+
+  Future<void> _forceSignOutDeleted(String reason) async {
+    debugPrint('[auth] force signOut: $reason');
+    try {
+      await fa.FirebaseAuth.instance.signOut();
+    } catch (_) {}
+    await SecureSession.clear();
+    _user = null;
+    _boundAuthUid = null;
+    _pendingAuthUser = null;
+    _dismissedSuggestions.clear();
+    _intentionalAuth = false;
+    _busy = false;
+    _error = reason;
+    notifyListeners();
   }
 
   List<AppUser> searchUsers(String query) {
@@ -321,7 +301,7 @@ class AuthProvider extends ChangeNotifier {
         password: pass,
       );
       await _finishFirebaseUser(cred.user!, mail);
-      return true;
+      return _user != null;
     } on fa.FirebaseAuthException catch (e) {
       debugPrint('[auth] signIn ${e.code}: ${e.message}');
       _error = _friendlyAuthError(e);
@@ -359,16 +339,20 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _finishFirebaseUser(fa.User fb, String email) async {
-    // Firestore profili kaynak doğruluk — login ezmesin.
-    final remote = await ensureUserLoaded(fb.uid);
-    final mapped = remote ?? _mapFirebaseUser(fb, email);
+    // Firestore profili kaynak doğruluk — silinmiş / yoksa hesabı YENİDEN YARATMA.
+    final remote = await ensureUserLoaded(fb.uid, forceRemote: true);
     if (remote == null) {
-      await _syncProfileToFirestore(mapped, authUid: fb.uid, privileged: false);
+      await _forceSignOutDeleted(
+        'Bu hesap silinmiş veya profil bulunamadı. Lütfen yeniden kayıt olun.',
+      );
+      return;
     }
-    _user = mapped;
+    _user = remote;
     _boundAuthUid = fb.uid;
-    _upsert(mapped);
+    _upsert(remote);
     await SecureSession.saveMeta(uid: fb.uid, email: email);
+    // Takip / gizlilik alanlarını taze oku; dizin senkronunda _user güncellensin.
+    unawaited(refreshCurrentUser());
     unawaited(syncDirectoryFromFirestore());
     _scheduleSilentRefresh();
     _busy = false;
@@ -496,25 +480,6 @@ class AuthProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  AppUser _mapFirebaseUser(fa.User fb, String email) {
-    final name = (fb.displayName ?? email.split('@').first).trim();
-    final parts = name.split(RegExp(r'\s+'));
-    return AppUser(
-      id: fb.uid,
-      email: email,
-      studentNo: '',
-      firstName: parts.isNotEmpty && parts.first.isNotEmpty
-          ? parts.first
-          : 'Öğrenci',
-      lastName: parts.length > 1 ? parts.sublist(1).join(' ') : '',
-      phone: '',
-      city: '',
-      university: '',
-      bio: '',
-      photoUrl: fb.photoURL,
-    );
-  }
-
   Future<void> _syncProfileToFirestore(
     AppUser user, {
     String? authUid,
@@ -532,6 +497,21 @@ class AuthProvider extends ChangeNotifier {
         return;
       }
       final docId = targetDocId;
+      // Silinmiş hesabı merge ile canlandırma.
+      try {
+        final existing = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(docId)
+            .get();
+        if (existing.exists) {
+          final em = existing.data() ?? {};
+          if (em['deleted'] == true ||
+              '${em['usernameStatus'] ?? ''}' == 'deleted') {
+            debugPrint('[auth] sync skipped — deleted profile $docId');
+            return;
+          }
+        }
+      } catch (_) {}
       final data = <String, dynamic>{
         'email': user.email,
         'firstName': user.firstName,
@@ -997,6 +977,15 @@ class AuthProvider extends ChangeNotifier {
           final id = stable.isNotEmpty ? stable : doc.id;
           final user = _appUserFromFirestore(id, m);
           _upsert(user);
+          // Oturumdaki kullanıcıyı da taze profille güncelle (following vb.).
+          final me = _user;
+          if (me != null &&
+              (user.id == me.id ||
+                  doc.id == _boundAuthUid ||
+                  doc.id == me.id ||
+                  (stable.isNotEmpty && stable == me.id))) {
+            _user = user;
+          }
           if (stable.isNotEmpty && stable != doc.id) {
             _idAliases[stable] = doc.id;
             _idAliases[doc.id] = stable;

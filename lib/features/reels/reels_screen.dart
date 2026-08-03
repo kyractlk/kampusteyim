@@ -305,6 +305,10 @@ class _ReelPageState extends State<_ReelPage> {
   bool _muted = false;
   bool _showPauseIcon = false;
   bool _ownedLocally = false;
+  bool _loading = false;
+  bool _failed = false;
+  bool _buffering = false;
+  int _loadGen = 0;
 
   @override
   void initState() {
@@ -325,33 +329,88 @@ class _ReelPageState extends State<_ReelPage> {
     }
   }
 
-  Future<void> _initVideo() async {
+  Future<void> _initVideo({bool retry = false}) async {
     if (widget.reel.mediaType != ReelMediaType.video) return;
+    final gen = ++_loadGen;
+    if (retry) {
+      ReelsVideoCache.instance.clearFailure(widget.reel.id);
+    }
+    setState(() {
+      _loading = true;
+      _failed = false;
+      _ready = false;
+    });
+
     final cached = await ReelsVideoCache.instance.obtain(
       reelId: widget.reel.id,
       url: widget.reel.mediaUrl,
     );
-    if (!mounted) return;
-    if (cached != null) {
-      _vc = cached;
-      _ownedLocally = false;
-      setState(() => _ready = true);
-      _syncPlayback();
+    if (!mounted || gen != _loadGen) return;
+
+    if (cached != null && cached.value.isInitialized) {
+      _attachShared(cached);
       return;
     }
-    // Cache başarısızsa yerel fallback.
+
+    // Cache başarısızsa tek seferlik yerel stream fallback.
     try {
-      final c = VideoPlayerController.networkUrl(Uri.parse(widget.reel.mediaUrl));
+      final c = VideoPlayerController.networkUrl(
+        Uri.parse(widget.reel.mediaUrl),
+        videoPlayerOptions: VideoPlayerOptions(
+          mixWithOthers: true,
+          allowBackgroundPlayback: false,
+        ),
+      );
       _vc = c;
       _ownedLocally = true;
-      await c.initialize();
+      await c.initialize().timeout(const Duration(seconds: 20));
+      if (!mounted || gen != _loadGen) {
+        try {
+          await c.dispose();
+        } catch (_) {}
+        return;
+      }
       await c.setLooping(true);
       await c.setVolume(_muted ? 0 : 1);
-      if (!mounted) return;
-      setState(() => _ready = true);
+      c.addListener(_onVcTick);
+      setState(() {
+        _ready = true;
+        _loading = false;
+        _failed = false;
+      });
       _syncPlayback();
     } catch (e) {
       debugPrint('[reels] video: $e');
+      if (!mounted || gen != _loadGen) return;
+      setState(() {
+        _loading = false;
+        _failed = true;
+        _ready = false;
+      });
+    }
+  }
+
+  void _attachShared(VideoPlayerController c) {
+    _vc?.removeListener(_onVcTick);
+    _vc = c;
+    _ownedLocally = false;
+    ReelsVideoCache.instance.retain(widget.reel.id);
+    c.addListener(_onVcTick);
+    setState(() {
+      _ready = true;
+      _loading = false;
+      _failed = false;
+      _buffering = c.value.isBuffering;
+    });
+    _syncPlayback();
+  }
+
+  void _onVcTick() {
+    final c = _vc;
+    if (c == null || !mounted) return;
+    final buffering = c.value.isBuffering && !c.value.isPlaying;
+    if (buffering != _buffering) {
+      setState(() => _buffering = buffering);
     }
   }
 
@@ -368,6 +427,7 @@ class _ReelPageState extends State<_ReelPage> {
 
   void _togglePause() {
     if (widget.reel.mediaType != ReelMediaType.video) return;
+    if (!_ready) return;
     setState(() {
       _paused = !_paused;
       _showPauseIcon = true;
@@ -386,18 +446,25 @@ class _ReelPageState extends State<_ReelPage> {
 
   void _detachVc() {
     final c = _vc;
+    final wasShared = c != null && !_ownedLocally;
+    final id = widget.reel.id;
+    c?.removeListener(_onVcTick);
     _vc = null;
     _ready = false;
+    _loading = false;
+    _buffering = false;
     if (_ownedLocally && c != null) {
       try {
         c.pause();
         c.dispose();
       } catch (_) {}
     } else {
-      // Paylaşımlı cache — sadece pause.
       try {
         c?.pause();
       } catch (_) {}
+    }
+    if (wasShared) {
+      ReelsVideoCache.instance.release(id);
     }
     _ownedLocally = false;
   }
@@ -605,8 +672,11 @@ class _ReelPageState extends State<_ReelPage> {
           fit: StackFit.expand,
           children: [
           if (reel.mediaType == ReelMediaType.video)
-            _ready && _vc != null
-                ? FittedBox(
+            Stack(
+              fit: StackFit.expand,
+              children: [
+                if (_ready && _vc != null)
+                  FittedBox(
                     fit: BoxFit.cover,
                     child: SizedBox(
                       width: _vc!.value.size.width,
@@ -614,16 +684,44 @@ class _ReelPageState extends State<_ReelPage> {
                       child: VideoPlayer(_vc!),
                     ),
                   )
-                : const ColoredBox(
-                    color: Colors.black,
-                    child: Center(
-                      child: MediaLoadPulse(
-                        kind: MediaLoadKind.reel,
-                        size: 76,
-                        compact: true,
-                      ),
+                else
+                  const ColoredBox(color: Colors.black),
+                if (_failed)
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.wifi_tethering_error_rounded,
+                          color: Colors.white70,
+                          size: 40,
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Video yüklenemedi',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.tonal(
+                          onPressed: () => _initVideo(retry: true),
+                          child: const Text('Tekrar dene'),
+                        ),
+                      ],
                     ),
                   )
+                else if (!_ready || _loading || _buffering)
+                  const Center(
+                    child: MediaLoadPulse(
+                      kind: MediaLoadKind.reel,
+                      size: 64,
+                      compact: true,
+                    ),
+                  ),
+              ],
+            )
           else
             SafeNetworkImage(
               url: reel.mediaUrl,

@@ -1745,7 +1745,48 @@ exports._storage = getStorage;
 /**
  * Kullanıcı adı AI moderasyon + uniqueness claim
  */
-exports.claimUsername = onCall({ region: 'europe-west1' }, async (request) => {
+/** Eski gönderi / reel / hikaye authorHandle alanlarını yeni kullanıcı adına taşı. */
+async function propagateAuthorHandle(uid, username) {
+  const handle = String(username || '')
+    .trim()
+    .replace(/^@/, '')
+    .toLowerCase();
+  if (!handle) return { updated: 0 };
+  const display = `@${handle}`;
+  const userSnap = await db.collection('users').doc(uid).get();
+  const data = userSnap.exists ? userSnap.data() || {} : {};
+  const authorIds = new Set([uid]);
+  const stable = String(data.stableId || '').trim();
+  if (stable) authorIds.add(stable);
+
+  let updated = 0;
+  const cols = ['posts', 'reels', 'stories', 'comments'];
+  for (const col of cols) {
+    for (const authorId of authorIds) {
+      let lastDoc = null;
+      for (let page = 0; page < 20; page += 1) {
+        let q = db
+          .collection(col)
+          .where('authorId', '==', authorId)
+          .limit(250);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.docs.forEach((d) => {
+          batch.update(d.ref, { authorHandle: display });
+          updated += 1;
+        });
+        await batch.commit();
+        lastDoc = snap.docs[snap.docs.length - 1];
+        if (snap.size < 250) break;
+      }
+    }
+  }
+  return { updated };
+}
+
+exports.claimUsername = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Giriş gerekli');
   }
@@ -1758,9 +1799,34 @@ exports.claimUsername = onCall({ region: 'europe-west1' }, async (request) => {
   } = request.data || {};
   username = String(username).trim().replace(/^@/, '').toLowerCase();
 
+  // Silinmiş hesabı username claim ile canlandırma.
+  try {
+    const existingUser = await db.collection('users').doc(uid).get();
+    if (existingUser.exists) {
+      const ed = existingUser.data() || {};
+      if (ed.deleted === true || ed.usernameStatus === 'deleted') {
+        throw new HttpsError(
+          'failed-precondition',
+          'Bu hesap silinmiş. Kullanıcı adı atanamaz.',
+        );
+      }
+    }
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+  }
+
   const makeTemp = () => `user_${uid.slice(0, 8)}_${Date.now() % 10000}`;
 
   if (!/^[a-z0-9_]{3,24}$/.test(username)) {
+    // Profil değişikliğinde geçersiz format → temp atama yok, hata dön.
+    if (replaceTemp) {
+      return {
+        allowed: false,
+        status: 'rejected',
+        username: '',
+        message: 'Kullanıcı adı formatı geçersiz (3–24, a-z, 0-9, _).',
+      };
+    }
     const temp = makeTemp();
     await db.collection('handles').doc(temp).set({
       uid,
@@ -1811,6 +1877,16 @@ exports.claimUsername = onCall({ region: 'europe-west1' }, async (request) => {
   }
 
   if (!allowed) {
+    if (replaceTemp) {
+      return {
+        allowed: false,
+        status: 'rejected',
+        username: '',
+        message:
+          reason ||
+          'Bu kullanıcı adı uygun değil. Lütfen başka bir ad dene.',
+      };
+    }
     const temp = makeTemp();
     await db.collection('handles').doc(temp).set({
       uid,
@@ -1834,6 +1910,14 @@ exports.claimUsername = onCall({ region: 'europe-west1' }, async (request) => {
   const handleRef = db.collection('handles').doc(username);
   const existing = await handleRef.get();
   if (existing.exists && existing.data()?.uid !== uid) {
+    if (replaceTemp) {
+      return {
+        allowed: false,
+        status: 'rejected',
+        username: '',
+        message: 'Bu kullanıcı adı başkasına ait.',
+      };
+    }
     const temp = makeTemp();
     await db.collection('handles').doc(temp).set({
       uid,
@@ -1873,11 +1957,20 @@ exports.claimUsername = onCall({ region: 'europe-west1' }, async (request) => {
     { merge: true },
   );
 
+  let propagated = 0;
+  try {
+    const prop = await propagateAuthorHandle(uid, username);
+    propagated = prop.updated || 0;
+  } catch (e) {
+    console.warn('[claimUsername] propagateAuthorHandle', e?.message || e);
+  }
+
   return {
     allowed: true,
     status: 'ok',
     username,
     message: 'Kullanıcı adı kaydedildi',
+    postsUpdated: propagated,
   };
 });
 
@@ -4125,8 +4218,24 @@ async function purgeUserAccount({
 }) {
   const { getAuth } = require('firebase-admin/auth');
   const auth = getAuth();
-  const userRef = db.collection('users').doc(uid);
-  const snap = await userRef.get();
+
+  // Doc id authUid olmayabilir (stableId ile admin seçimi).
+  let userRef = db.collection('users').doc(uid);
+  let snap = await userRef.get();
+  let authUid = uid;
+  if (!snap.exists) {
+    const found = await findUserDocByAnyId(uid);
+    if (found && found.exists) {
+      userRef = found.ref;
+      snap = found;
+      authUid = found.id;
+    }
+  } else {
+    const d0 = snap.data() || {};
+    const linked = String(d0.authUid || '').trim();
+    if (linked) authUid = linked;
+  }
+
   const data = snap.exists ? snap.data() || {} : {};
   const username = String(data.username || '')
     .trim()
@@ -4157,7 +4266,7 @@ async function purgeUserAccount({
       deleted: true,
       deletedAt: new Date().toISOString(),
       deletedBy: actorId,
-      email: `deleted_${uid}@invalid.local`,
+      email: `deleted_${authUid}@invalid.local`,
       firstName: 'Silinmiş',
       lastName: 'Hesap',
       fullName: 'Silinmiş hesap',
@@ -4165,21 +4274,53 @@ async function purgeUserAccount({
       photoUrl: null,
       username: null,
       usernameStatus: 'deleted',
+      following: [],
+      followers: [],
       fcmTokens: [],
       notificationPrefs: {},
     },
     { merge: true },
   );
 
-  try {
-    await auth.deleteUser(uid);
-  } catch (e) {
-    console.warn('[purgeUser] auth delete', e?.message || e);
+  const authIds = new Set([authUid, uid].filter(Boolean));
+  for (const id of authIds) {
+    try {
+      await auth.deleteUser(id);
+    } catch (e) {
+      console.warn('[purgeUser] auth delete', id, e?.message || e);
+      try {
+        await auth.updateUser(id, { disabled: true });
+      } catch (e2) {
+        console.warn('[purgeUser] auth disable', id, e2?.message || e2);
+      }
+    }
+  }
+
+  // E-posta ile Auth kaydı kalmış olabilir
+  const mail = String(email || data.email || '')
+    .trim()
+    .toLowerCase();
+  if (mail.includes('@') && !mail.includes('@invalid.local')) {
+    try {
+      const byEmail = await auth.getUserByEmail(mail);
+      if (byEmail?.uid && !authIds.has(byEmail.uid)) {
+        try {
+          await auth.deleteUser(byEmail.uid);
+        } catch (_) {
+          try {
+            await auth.updateUser(byEmail.uid, { disabled: true });
+          } catch (_) {}
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   await db.collection('account_deletion_logs').add({
-    uid,
-    email: String(email || data.email || '').toLowerCase(),
+    uid: authUid,
+    docId: userRef.id,
+    email: mail,
     username: username || null,
     actorId,
     actorName: actorName || null,
@@ -4187,7 +4328,7 @@ async function purgeUserAccount({
     at: new Date().toISOString(),
   });
 
-  return { ok: true };
+  return { ok: true, authUid, docId: userRef.id };
 }
 
 exports.requestAccountDeletion = onCall(
@@ -4330,15 +4471,25 @@ exports.adminDeleteAccount = onCall(
       throw new HttpsError('permission-denied', 'Yetki yok');
     }
 
-    const targetSnap = await db.collection('users').doc(targetUid).get();
-    const target = targetSnap.data() || {};
-    if (target.isSuperAdmin === true) {
-      throw new HttpsError('permission-denied', 'Süper admin silinemez');
+    let resolvedId = targetUid;
+    const found = await findUserDocByAnyId(targetUid);
+    if (found && found.exists) {
+      resolvedId = found.id;
+      const target = found.data() || {};
+      if (target.isSuperAdmin === true) {
+        throw new HttpsError('permission-denied', 'Süper admin silinemez');
+      }
+    } else {
+      const targetSnap = await db.collection('users').doc(targetUid).get();
+      const target = targetSnap.data() || {};
+      if (target.isSuperAdmin === true) {
+        throw new HttpsError('permission-denied', 'Süper admin silinemez');
+      }
     }
 
     await purgeUserAccount({
-      uid: targetUid,
-      email: email || target.email,
+      uid: resolvedId,
+      email,
       actorId,
       actorName: actor.fullName || actor.email || actorId,
       reason: 'admin',

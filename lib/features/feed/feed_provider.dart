@@ -323,25 +323,62 @@ class FeedProvider extends ChangeNotifier {
 
   void _bindFirestore() {
     final db = FirebaseFirestore.instance;
-    _postsSub = db.collection('posts').snapshots().listen((snap) async {
-      final remote = snap.docs.map((d) => Post.fromMap(d.id, d.data())).toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      if (remote.isEmpty) {
-        _posts = [];
-        notifyListeners();
-        return;
-      }
-      _posts = remote;
+    // Sıralı + limitli snapshot — yeni post saniyeler içinde düşer.
+    _postsSub = db
+        .collection('posts')
+        .orderBy('createdAt', descending: true)
+        .limit(220)
+        .snapshots()
+        .listen((snap) {
+      final remote =
+          snap.docs.map((d) => Post.fromMap(d.id, d.data())).toList();
+      final remoteIds = remote.map((p) => p.id).toSet();
+      // Optimistic yerel postlar (henüz stream’de yok) korunur.
+      final pending = _posts.where((p) {
+        if (remoteIds.contains(p.id)) return false;
+        return DateTime.now().difference(p.createdAt).inMinutes < 3;
+      });
+      final merged = <Post>[...pending, ...remote];
+      final seen = <String>{};
+      _posts = [
+        for (final p in merged)
+          if (seen.add(p.id)) p,
+      ];
       notifyListeners();
-    }, onError: (e) => debugPrint('[feed] posts stream: $e'));
+    }, onError: (e) {
+      debugPrint('[feed] posts stream: $e');
+      // Index / orderBy yoksa düz snapshot’a düş.
+      _postsSub?.cancel();
+      _postsSub = db.collection('posts').limit(220).snapshots().listen((snap) {
+        final remote = snap.docs
+            .map((d) => Post.fromMap(d.id, d.data()))
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        _posts = remote;
+        notifyListeners();
+      }, onError: (e2) => debugPrint('[feed] posts fallback: $e2'));
+    });
 
-    _commentsSub = db.collection('comments').snapshots().listen((snap) {
-      if (snap.docs.isEmpty) return;
+    _commentsSub = db
+        .collection('comments')
+        .orderBy('createdAt', descending: true)
+        .limit(400)
+        .snapshots()
+        .listen((snap) {
       _comments = snap.docs
           .map((d) => Comment.fromMap(d.id, d.data()))
           .toList();
       notifyListeners();
-    }, onError: (e) => debugPrint('[feed] comments stream: $e'));
+    }, onError: (e) {
+      debugPrint('[feed] comments stream: $e');
+      _commentsSub?.cancel();
+      _commentsSub = db.collection('comments').snapshots().listen((snap) {
+        _comments = snap.docs
+            .map((d) => Comment.fromMap(d.id, d.data()))
+            .toList();
+        notifyListeners();
+      });
+    });
 
     _annSub = db.collection('announcements').snapshots().listen((snap) {
       if (snap.docs.isEmpty) return;
@@ -536,6 +573,8 @@ class FeedProvider extends ChangeNotifier {
     bool isCommunity = false,
     List<AppUser> directory = const [],
     bool skipReelMirror = false,
+    String authorCity = '',
+    String authorUniversity = '',
   }) async {
     final text = content.trim();
     if (text.isEmpty && media.isEmpty) return 'Boş gönderi';
@@ -550,6 +589,19 @@ class FeedProvider extends ChangeNotifier {
     if (localBlock != null) return localBlock;
 
     final tags = HashtagUtils.extractUnique(text);
+    AppUser? author;
+    for (final u in directory) {
+      if (u.id == authorId) {
+        author = u;
+        break;
+      }
+    }
+    final city = authorCity.trim().isNotEmpty
+        ? authorCity.trim()
+        : (author?.city ?? '');
+    final uni = authorUniversity.trim().isNotEmpty
+        ? authorUniversity.trim()
+        : (author?.university ?? '');
     final post = Post(
       id: 'p_${DateTime.now().millisecondsSinceEpoch}',
       authorId: authorId,
@@ -560,6 +612,8 @@ class FeedProvider extends ChangeNotifier {
       media: media,
       hashtags: tags,
       isCommunity: isCommunity,
+      authorCity: city,
+      authorUniversity: uni,
     );
 
     // AYS Tech Guard: içerik + link + dosya denetimi

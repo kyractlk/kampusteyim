@@ -42,9 +42,13 @@ class StoriesProvider extends ChangeNotifier {
       if (me != null) ...me.following,
       if (me != null) me.id,
     };
-    if (nextId == _viewerId &&
-        setEquals(nextFollowing, _followingIds) &&
-        _sub != null) {
+    // Aynı kullanıcı: takip listesi değişince stream’i koparma — anında filtrele.
+    if (nextId != null && nextId == _viewerId && _sub != null) {
+      if (!setEquals(nextFollowing, _followingIds)) {
+        _followingIds = nextFollowing;
+        notifyListeners();
+        unawaited(_prefetchVisibleMedia());
+      }
       return;
     }
     _viewerId = nextId;
@@ -52,16 +56,23 @@ class StoriesProvider extends ChangeNotifier {
     _bind();
   }
 
+  int _liveEpoch = 0;
+  bool _hasLiveSnapshot = false;
+
   void _bind() {
     _sub?.cancel();
     _sub = null;
+    _hasLiveSnapshot = false;
     if (_viewerId == null) {
       _items.clear();
       notifyListeners();
       return;
     }
-    _loading = true;
-    notifyListeners();
+    // İlk açılışta loading; yeniden bağlanırken halkayı boşaltma.
+    if (_items.isEmpty) {
+      _loading = true;
+      notifyListeners();
+    }
     unawaited(_hydrateFromCallable());
     _sub = FirebaseFirestore.instance
         .collection('stories')
@@ -70,15 +81,15 @@ class StoriesProvider extends ChangeNotifier {
         .snapshots()
         .listen(
       (snap) {
-        _items
-          ..clear()
-          ..addAll(
-            snap.docs.map((d) => StoryItem.fromFirestore(d.id, d.data())),
-          );
+        _liveEpoch++;
+        _hasLiveSnapshot = true;
+        final next = snap.docs
+            .map((d) => StoryItem.fromFirestore(d.id, d.data()))
+            .toList();
+        _applyLiveItems(next);
         _loading = false;
         _error = null;
         notifyListeners();
-        // Görselleri önbelleğe al (hikâye halkası hızı)
         unawaited(_prefetchVisibleMedia());
       },
       onError: (e) {
@@ -90,9 +101,17 @@ class StoriesProvider extends ChangeNotifier {
     );
   }
 
+  /// Snapshot / callable birleşimi — id bazlı upsert, silinenler düşer.
+  void _applyLiveItems(List<StoryItem> next) {
+    _items
+      ..clear()
+      ..addAll(next);
+  }
+
   Future<void> _hydrateFromCallable() async {
     final me = _auth?.user;
     if (me == null || _viewerId == null) return;
+    final epochAtStart = _liveEpoch;
     try {
       final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
           .httpsCallable('getStoriesFeed');
@@ -100,18 +119,19 @@ class StoriesProvider extends ChangeNotifier {
         'followingIds': me.following,
         'limit': 200,
       });
+      // Canlı snapshot geldiyse callable eski veriyle ezmesin (WS hissi).
+      if (_hasLiveSnapshot || _liveEpoch != epochAtStart) return;
       final map = Map<String, dynamic>.from(res.data as Map? ?? {});
       final raw = (map['items'] as List?) ?? [];
       if (raw.isEmpty) return;
-      _items
-        ..clear()
-        ..addAll(
-          raw.map((e) {
-            final m = Map<String, dynamic>.from(e as Map);
-            final id = '${m.remove('id') ?? ''}';
-            return StoryItem.fromFirestore(id, m);
-          }),
-        );
+      if (_hasLiveSnapshot || _liveEpoch != epochAtStart) return;
+      _applyLiveItems(
+        raw.map((e) {
+          final m = Map<String, dynamic>.from(e as Map);
+          final id = '${m.remove('id') ?? ''}';
+          return StoryItem.fromFirestore(id, m);
+        }).toList(),
+      );
       _loading = false;
       _error = null;
       notifyListeners();
@@ -150,9 +170,13 @@ class StoriesProvider extends ChangeNotifier {
 
   Future<void> _prefetchVisibleMedia() async {
     final urls = warmMediaUrls();
-    // Atıldığı / geldiği an diske yaz — tıklanınca anlık.
-    MediaDiskCache.instance.prefetchAll(urls, concurrency: 5, front: true);
-    for (final url in urls.take(24)) {
+    // Disk ısıtma arka planda — UI’yı bloklamaz (stream-first ile uyumlu).
+    MediaDiskCache.instance.prefetchAll(
+      urls.take(30),
+      concurrency: 3,
+      front: true,
+    );
+    for (final url in urls.take(16)) {
       unawaited(_prefetchUrl(url, isVideo: false));
     }
   }
@@ -168,10 +192,11 @@ class StoriesProvider extends ChangeNotifier {
   Future<void> _prefetchUrl(String url, {required bool isVideo}) async {
     if (!url.startsWith('http')) return;
     try {
-      await MediaDiskCache.instance.ensure(url);
-      if (!isVideo && !kIsWeb) {
-        final file = await MediaDiskCache.instance.fileFor(url);
-        if (file != null) return;
+      // Tam indirmeyi bekleme — görseller için ImageCache, video disk arka plan.
+      if (!isVideo) {
+        if (kIsWeb) return;
+        final existing = await MediaDiskCache.instance.fileFor(url);
+        if (existing != null) return;
         final stream = NetworkImage(url).resolve(ImageConfiguration.empty);
         final completer = Completer<void>();
         late ImageStreamListener listener;
@@ -187,9 +212,12 @@ class StoriesProvider extends ChangeNotifier {
         );
         stream.addListener(listener);
         await completer.future.timeout(
-          const Duration(seconds: 8),
+          const Duration(seconds: 6),
           onTimeout: () {},
         );
+        unawaited(MediaDiskCache.instance.ensure(url, highPriority: false));
+      } else if (!kIsWeb) {
+        unawaited(MediaDiskCache.instance.ensure(url, highPriority: false));
       }
     } catch (_) {}
   }
@@ -293,8 +321,16 @@ class StoriesProvider extends ChangeNotifier {
         expiresAt: now.add(const Duration(hours: 24)),
       );
       await doc.set(item.toFirestore());
-      // Yeni hikâyeyi hemen önbelleğe al.
-      MediaDiskCache.instance.prefetchAll([url], concurrency: 1);
+      // Optimistic — snapshot gelmeden halkada saniyelik görünsün.
+      final existing = _items.indexWhere((s) => s.id == item.id);
+      if (existing >= 0) {
+        _items[existing] = item;
+      } else {
+        _items.insert(0, item);
+      }
+      notifyListeners();
+      // Yeni hikâyeyi arka planda ısıt (stream-first — bloklama yok).
+      MediaDiskCache.instance.prefetchAll([url], concurrency: 1, front: true);
       return null;
     } catch (e) {
       debugPrint('[stories] create: $e');

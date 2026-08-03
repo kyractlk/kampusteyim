@@ -41,14 +41,21 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
   bool _mediaReady = false;
   bool _holdPaused = false;
-  bool _waitingMedia = false;
+  bool _waitingMedia = true;
+  bool _videoFailed = false;
   VideoPlayerController? _video;
   String? _videoForItemId;
+  String? _playingItemId;
+
+  /// Sonraki item için ısıtılmış controller (stream-first).
+  VideoPlayerController? _warmVideo;
+  String? _warmVideoItemId;
 
   @override
   void dispose() {
     _timer?.cancel();
     _disposeVideo();
+    _disposeWarm();
     super.dispose();
   }
 
@@ -62,6 +69,16 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     } catch (_) {}
   }
 
+  void _disposeWarm() {
+    final w = _warmVideo;
+    _warmVideo = null;
+    _warmVideoItemId = null;
+    try {
+      w?.pause();
+      w?.dispose();
+    } catch (_) {}
+  }
+
   void _armItem(Story story) {
     _timer?.cancel();
     if (story.items.isEmpty) return;
@@ -71,8 +88,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     _elapsedMs = 0;
     _mediaReady = false;
     _waitingMedia = true;
+    _videoFailed = false;
     _holdPaused = false;
     final item = story.items[safe];
+    _playingItemId = item.id;
     _totalMs = item.mediaType == MediaType.video ? 15000 : 5000;
     unawaited(_prepareMedia(item, story));
     _ensureTicker(story);
@@ -83,29 +102,39 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     final itemId = item.id;
     if (item.mediaType == MediaType.video) {
       await _prepareVideo(item);
-      if (!mounted || story.items[_index.clamp(0, story.items.length - 1)].id != itemId) {
+      if (!mounted ||
+          story.items[_index.clamp(0, story.items.length - 1)].id != itemId) {
         return;
       }
-      _onMediaReady(story);
+      if (_video?.value.isInitialized == true) {
+        _onMediaReady(story);
+      } else {
+        setState(() {
+          _waitingMedia = false;
+          _videoFailed = true;
+        });
+      }
       return;
     }
-    // Görsel: native disk; web CDN stream
-    File? file;
-    if (!kIsWeb) {
-      try {
-        file = await MediaDiskCache.instance.ensure(item.mediaUrl);
-      } catch (_) {}
-    }
-    if (!mounted || story.items[_index.clamp(0, story.items.length - 1)].id != itemId) {
+    // Görsel: CDN/stream önce — tam disk indirmeyi bekleme.
+    if (!mounted ||
+        story.items[_index.clamp(0, story.items.length - 1)].id != itemId) {
       return;
     }
     try {
-      final provider = (!kIsWeb && file != null)
-          ? FileImage(file) as ImageProvider
-          : webSafeImageProvider(item.mediaUrl);
-      await precacheImage(provider, context);
+      await precacheImage(webSafeImageProvider(item.mediaUrl), context)
+          .timeout(const Duration(seconds: 12));
     } catch (_) {}
-    if (!mounted || story.items[_index.clamp(0, story.items.length - 1)].id != itemId) {
+    if (!kIsWeb) {
+      unawaited(
+        MediaDiskCache.instance.ensure(
+          item.mediaUrl,
+          highPriority: false,
+        ),
+      );
+    }
+    if (!mounted ||
+        story.items[_index.clamp(0, story.items.length - 1)].id != itemId) {
       return;
     }
     _onMediaReady(story);
@@ -115,19 +144,44 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     if (_videoForItemId == item.id && _video?.value.isInitialized == true) {
       return;
     }
+
+    // Isıtılmış sonraki video varsa anında kullan.
+    if (_warmVideoItemId == item.id &&
+        _warmVideo != null &&
+        _warmVideo!.value.isInitialized) {
+      _disposeVideo();
+      _video = _warmVideo;
+      _videoForItemId = item.id;
+      _warmVideo = null;
+      _warmVideoItemId = null;
+      final dur = _video!.value.duration.inMilliseconds;
+      if (dur > 500) {
+        _totalMs = dur.clamp(3000, 30000);
+      }
+      if (!_holdPaused) {
+        await _video!.setVolume(0);
+        await _video!.play();
+      }
+      return;
+    }
+
     _disposeVideo();
     try {
+      // Stream-first: cache’te dosya varsa file, yoksa network — ensure BEKLEME.
       File? file;
       if (!kIsWeb) {
-        file = await MediaDiskCache.instance.ensure(item.mediaUrl);
+        file = await MediaDiskCache.instance.fileFor(item.mediaUrl);
       }
-      VideoPlayerController c;
-      if (file != null) {
-        c = VideoPlayerController.file(file);
-      } else {
-        c = VideoPlayerController.networkUrl(Uri.parse(item.mediaUrl));
-      }
-      await c.initialize();
+      final VideoPlayerController c = (file != null)
+          ? VideoPlayerController.file(file)
+          : VideoPlayerController.networkUrl(
+              Uri.parse(item.mediaUrl),
+              videoPlayerOptions: VideoPlayerOptions(
+                mixWithOthers: true,
+                allowBackgroundPlayback: false,
+              ),
+            );
+      await c.initialize().timeout(const Duration(seconds: 18));
       await c.setLooping(true);
       await c.setVolume(0);
       if (!mounted) {
@@ -143,8 +197,18 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       if (!_holdPaused) {
         await c.play();
       }
+      if (!kIsWeb && file == null) {
+        unawaited(
+          MediaDiskCache.instance.ensure(
+            item.mediaUrl,
+            highPriority: false,
+            timeout: const Duration(seconds: 90),
+          ),
+        );
+      }
     } catch (e) {
       debugPrint('[story] video: $e');
+      _disposeVideo();
     }
   }
 
@@ -153,13 +217,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     setState(() {
       _mediaReady = true;
       _waitingMedia = false;
+      _videoFailed = false;
     });
     _ensureTicker(story);
     final v = _video;
     if (v != null && !_holdPaused && v.value.isInitialized) {
       unawaited(v.play());
     }
-    // Sonraki item’ı ısıt (Instagram).
     unawaited(_prefetchAdjacent(story));
   }
 
@@ -170,21 +234,64 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     if (item.mediaUrl.isEmpty) return;
     try {
       if (item.mediaType == MediaType.video) {
-        if (kIsWeb) {
-          final c = VideoPlayerController.networkUrl(Uri.parse(item.mediaUrl));
-          await c.initialize();
+        if (_warmVideoItemId == item.id &&
+            _warmVideo?.value.isInitialized == true) {
+          return;
+        }
+        _disposeWarm();
+        File? file;
+        if (!kIsWeb) {
+          file = await MediaDiskCache.instance.fileFor(item.mediaUrl);
+        }
+        final c = (file != null)
+            ? VideoPlayerController.file(file)
+            : VideoPlayerController.networkUrl(
+                Uri.parse(item.mediaUrl),
+                videoPlayerOptions: VideoPlayerOptions(
+                  mixWithOthers: true,
+                  allowBackgroundPlayback: false,
+                ),
+              );
+        await c.initialize().timeout(const Duration(seconds: 15));
+        await c.setLooping(true);
+        await c.setVolume(0);
+        await c.pause();
+        if (!mounted) {
           await c.dispose();
-        } else {
-          await MediaDiskCache.instance.ensure(item.mediaUrl, highPriority: true);
+          return;
+        }
+        // Hâlâ aynı sonraki item mı?
+        if (_index + 1 >= story.items.length ||
+            story.items[_index + 1].id != item.id) {
+          await c.dispose();
+          return;
+        }
+        _warmVideo = c;
+        _warmVideoItemId = item.id;
+        if (!kIsWeb && file == null) {
+          unawaited(
+            MediaDiskCache.instance.ensure(
+              item.mediaUrl,
+              highPriority: false,
+            ),
+          );
         }
       } else {
         if (!kIsWeb) {
-          await MediaDiskCache.instance.ensure(item.mediaUrl, highPriority: true);
-        } else if (mounted) {
-          await precacheImage(webSafeImageProvider(item.mediaUrl), context);
+          unawaited(
+            MediaDiskCache.instance.ensure(
+              item.mediaUrl,
+              highPriority: true,
+            ),
+          );
+        }
+        if (mounted) {
+          unawaited(precacheImage(webSafeImageProvider(item.mediaUrl), context));
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      _disposeWarm();
+    }
   }
 
   void _ensureTicker(Story story) {
@@ -369,22 +476,37 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     }
 
     final key = '${story.authorId}:${story.items.map((e) => e.id).join(',')}';
-    if (!_started || _boundStoryKey != key) {
-      final firstOpen = !_started;
+    if (!_started) {
       _boundStoryKey = key;
       _started = true;
-      if (firstOpen) {
-        // Instagram: ilk görülmemiş item’den başla.
-        final myIds = auth.idsFor(me.id);
-        final unseen = story.items.indexWhere(
-          (it) => !it.viewedBy.any(myIds.contains) && it.authorId != me.id,
-        );
-        _index = unseen >= 0 ? unseen : 0;
-      }
+      final myIds = auth.idsFor(me.id);
+      final unseen = story.items.indexWhere(
+        (it) => !it.viewedBy.any(myIds.contains) && it.authorId != me.id,
+      );
+      _index = unseen >= 0 ? unseen : 0;
       if (_index >= story.items.length) _index = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _armItem(story);
       });
+    } else if (_boundStoryKey != key) {
+      // Canlı snapshot (WS hissi): yeni/silinen item — oynayan kareyi kesme.
+      final keepId = _playingItemId;
+      _boundStoryKey = key;
+      if (keepId != null) {
+        final ni = story.items.indexWhere((e) => e.id == keepId);
+        if (ni >= 0) {
+          _index = ni;
+        } else {
+          _index = story.items.isEmpty
+              ? 0
+              : _index.clamp(0, story.items.length - 1);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _armItem(story);
+          });
+        }
+      } else if (_index >= story.items.length) {
+        _index = story.items.isEmpty ? 0 : story.items.length - 1;
+      }
     }
 
     final safeIndex = _index.clamp(0, story.items.length - 1);
@@ -404,6 +526,26 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
             width: _video!.value.size.width,
             height: _video!.value.size.height,
             child: VideoPlayer(_video!),
+          ),
+        );
+      } else if (_videoFailed) {
+        media = Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.wifi_tethering_error_rounded,
+                  color: Colors.white70, size: 36),
+              const SizedBox(height: 10),
+              const Text(
+                'Video yüklenemedi',
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.tonal(
+                onPressed: () => _armItem(story),
+                child: const Text('Tekrar dene'),
+              ),
+            ],
           ),
         );
       } else {

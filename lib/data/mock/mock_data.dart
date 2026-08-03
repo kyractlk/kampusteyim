@@ -10,7 +10,6 @@ class MockData {
   /// Gaziantep’teki tüm üniversiteler (kayıt dropdown).
   static const universities = [
     'Gaziantep Üniversitesi',
-    'Gaziantep Bilim Ve Teknoloji Üniversitesi',
     'Gaziantep İslam Bilim Ve Teknoloji Üniversitesi',
     'Hasan Kalyoncu Üniversitesi',
     'Sanko Üniversitesi',

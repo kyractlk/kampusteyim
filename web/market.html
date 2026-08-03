@@ -145,7 +145,8 @@
 
     .userbar {
       display: flex; align-items: center; justify-content: space-between; gap: .75rem;
-      font-size: .88rem; color: var(--muted);
+      font-size: .88rem; color: var(--muted); margin-bottom: .75rem;
+      padding-bottom: .75rem; border-bottom: 1px solid var(--line);
     }
     .userbar strong { color: var(--navy); }
     .msg {
@@ -161,9 +162,7 @@
     }
     .iban-box code { font-weight: 800; color: var(--navy); }
 
-    .coming {
-      opacity: .72; border-style: dashed;
-    }
+    .coming { opacity: .72; border-style: dashed; }
     .coming h3 { margin: 0 0 .35rem; font-size: 1rem; }
     .coming p { margin: 0; font-size: .88rem; color: var(--muted); }
 
@@ -195,30 +194,19 @@
   <main class="wrap">
     <section class="hero">
       <h1>Kampüsteyim Plus</h1>
-      <p>Resmi satış vitrini · Uygulama hesabınla giriş yap, süreyi seç, öde — Plus anında veya onayla hesabına işlenir.</p>
+      <p>Resmi satış vitrini · Süreyi seç, satın al — ödeme adımında KampüsteyimAPP hesabınla giriş yaparsın.</p>
     </section>
 
     <div id="banner" class="msg info hidden"></div>
 
-    <section class="card" id="authCard">
-      <h2>Hesabınla giriş yap</h2>
-      <p style="margin:0;color:var(--muted);font-size:.9rem">KampüsteyimAPP’te kullandığın e-posta ve şifre.</p>
-      <label for="email">E-posta</label>
-      <input id="email" type="email" autocomplete="username" placeholder="ornek@uni.edu.tr" />
-      <label for="password">Şifre</label>
-      <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
-      <button class="btn" id="loginBtn" type="button">Giriş yap</button>
-      <a class="btn ghost" href="https://app.kampusteyim.app/register">Hesabın yok mu? Kayıt ol</a>
-      <div id="authMsg" class="msg err hidden"></div>
-    </section>
-
-    <section class="card hidden" id="shopCard">
-      <div class="userbar">
+    <!-- Önce vitrin -->
+    <section class="card" id="shopCard">
+      <div class="userbar hidden" id="userbar">
         <div>Giriş: <strong id="userEmail"></strong></div>
         <button class="btn ghost" id="logoutBtn" type="button" style="width:auto;margin:0;padding:.45rem .7rem;font-size:.8rem">Çıkış</button>
       </div>
 
-      <h2 style="margin-top:1rem">Plus süresi</h2>
+      <h2>Plus süresi seç</h2>
       <div class="plans" id="plans" role="listbox" aria-label="Plus süreleri"></div>
       <p style="margin:.25rem 0 0;font-size:.82rem;color:var(--muted)">Kaydırarak seç · fiyat admin panelindeki aylık tutardan hesaplanır.</p>
 
@@ -228,9 +216,23 @@
         <li>Aynı API · uygulama içi satışla senkron</li>
       </ul>
 
-      <button class="btn cyan" id="buyBtn" type="button">Ödemeye geç</button>
+      <button class="btn cyan" id="buyBtn" type="button">Satın al</button>
       <div id="shopMsg" class="msg hidden"></div>
       <div id="ibanBox" class="iban-box hidden"></div>
+    </section>
+
+    <!-- Giriş yalnızca satın alırken -->
+    <section class="card hidden" id="authCard">
+      <h2>Ödeme için giriş yap</h2>
+      <p style="margin:0;color:var(--muted);font-size:.9rem">KampüsteyimAPP’te kullandığın e-posta ve şifre. Girişten sonra seçtiğin paket için ödeme başlar.</p>
+      <label for="email">E-posta</label>
+      <input id="email" type="email" autocomplete="username" placeholder="ornek@uni.edu.tr" />
+      <label for="password">Şifre</label>
+      <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
+      <button class="btn" id="loginBtn" type="button">Giriş yap ve öde</button>
+      <button class="btn ghost" id="authCancel" type="button">Vazgeç</button>
+      <a class="btn ghost" href="https://app.kampusteyim.app/register">Hesabın yok mu? Kayıt ol</a>
+      <div id="authMsg" class="msg err hidden"></div>
     </section>
 
     <section class="card coming">
@@ -259,11 +261,12 @@
     email: null,
     cfg: null,
     selected: null,
+    pendingBuy: false,
   };
 
   var $ = function (id) { return document.getElementById(id); };
   var authCard = $('authCard');
-  var shopCard = $('shopCard');
+  var userbar = $('userbar');
   var plansEl = $('plans');
   var banner = $('banner');
   var authMsg = $('authMsg');
@@ -279,7 +282,10 @@
 
   function money(n, cur) {
     var c = (cur || 'TL').replace('TRY', 'TL');
-    return (Number(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' ' + c;
+    return (Number(n) || 0).toLocaleString('tr-TR', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }) + ' ' + c;
   }
 
   async function callFn(name, data, token) {
@@ -292,8 +298,7 @@
     });
     var json = await res.json();
     if (json.error) {
-      var msg = (json.error.message || json.error.status || 'İstek başarısız');
-      throw new Error(msg);
+      throw new Error(json.error.message || json.error.status || 'İstek başarısız');
     }
     return json.result;
   }
@@ -302,7 +307,11 @@
     var res = await fetch(AUTH + ':signInWithPassword?key=' + API_KEY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email, password: password, returnSecureToken: true }),
+      body: JSON.stringify({
+        email: email,
+        password: password,
+        returnSecureToken: true,
+      }),
     });
     var json = await res.json();
     if (json.error) throw new Error(json.error.message || 'Giriş başarısız');
@@ -316,17 +325,28 @@
       sessionStorage.setItem('kt_market_token', token);
       sessionStorage.setItem('kt_market_email', email);
     } catch (e) {}
+    syncUserbar();
   }
 
   function clearSession() {
     state.idToken = null;
     state.email = null;
+    state.pendingBuy = false;
     try {
       sessionStorage.removeItem('kt_market_token');
       sessionStorage.removeItem('kt_market_email');
     } catch (e) {}
-    authCard.classList.remove('hidden');
-    shopCard.classList.add('hidden');
+    syncUserbar();
+    authCard.classList.add('hidden');
+  }
+
+  function syncUserbar() {
+    if (state.idToken && state.email) {
+      userbar.classList.remove('hidden');
+      $('userEmail').textContent = state.email;
+    } else {
+      userbar.classList.add('hidden');
+    }
   }
 
   function restoreSession() {
@@ -336,7 +356,7 @@
       if (t && e) {
         state.idToken = t;
         state.email = e;
-        enterShop();
+        syncUserbar();
       }
     } catch (e) {}
   }
@@ -344,7 +364,9 @@
   function renderPlans() {
     var plans = (state.cfg && state.cfg.plusPlans) || [];
     if (!plans.length) {
-      plansEl.innerHTML = '<p style="color:var(--muted);font-size:.9rem">Fiyat henüz tanımlı değil. Admin’den Plus tutarını gir.</p>';
+      plansEl.innerHTML =
+        '<p style="color:var(--muted);font-size:.9rem">Fiyat henüz tanımlı değil. Admin’den Plus tutarını gir.</p>';
+      updateBuyLabel();
       return;
     }
     plansEl.innerHTML = '';
@@ -376,80 +398,58 @@
     var p = state.selected;
     var btn = $('buyBtn');
     if (!p) {
-      btn.textContent = 'Ödemeye geç';
+      btn.textContent = 'Satın al';
       btn.disabled = true;
       return;
     }
     btn.disabled = !(Number(p.amount) > 0);
     btn.textContent = Number(p.amount) > 0
-      ? (p.label + ' · ' + money(p.amount, state.cfg.currency) + ' öde')
+      ? (p.label + ' · ' + money(p.amount, state.cfg.currency) + ' · Satın al')
       : 'Fiyat tanımlı değil';
   }
 
-  function enterShop() {
+  function showAuthForCheckout() {
+    state.pendingBuy = true;
+    authCard.classList.remove('hidden');
+    authCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    show(shopMsg, 'info', 'Ödemeye geçmek için hesabına giriş yap.');
+  }
+
+  function hideAuth() {
     authCard.classList.add('hidden');
-    shopCard.classList.remove('hidden');
-    $('userEmail').textContent = state.email || '';
-    renderPlans();
-  }
-
-  async function loadCatalog() {
-    var cfg = await callFn('getPaymentsPublic', {});
-    state.cfg = cfg;
-    if (!(Number(cfg.plusAmount) > 0)) {
-      show(banner, 'info', 'Plus fiyatı henüz admin panelinden girilmemiş. Vitrin hazır; tutar girilince satış açılır.');
-    }
-  }
-
-  $('loginBtn').addEventListener('click', async function () {
-    var email = $('email').value.trim();
-    var password = $('password').value;
+    state.pendingBuy = false;
     show(authMsg, '', '');
-    if (!email || !password) {
-      show(authMsg, 'err', 'E-posta ve şifre gerekli');
-      return;
-    }
-    var btn = $('loginBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span>';
-    try {
-      var auth = await signIn(email, password);
-      persistSession(auth.idToken, auth.email || email);
-      enterShop();
-    } catch (e) {
-      var m = String(e.message || e);
-      if (/INVALID_LOGIN|INVALID_PASSWORD|EMAIL_NOT_FOUND|INVALID_EMAIL/i.test(m)) {
-        m = 'E-posta veya şifre hatalı';
-      } else if (/TOO_MANY_ATTEMPTS/i.test(m)) {
-        m = 'Çok fazla deneme · biraz bekle';
-      }
-      show(authMsg, 'err', m);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Giriş yap';
-    }
-  });
+  }
 
-  $('logoutBtn').addEventListener('click', clearSession);
-
-  $('buyBtn').addEventListener('click', async function () {
+  async function startCheckout() {
     show(shopMsg, '', '');
     ibanBox.classList.add('hidden');
-    if (!state.idToken || !state.selected) return;
+    if (!state.selected) return;
     if (!(Number(state.selected.amount) > 0)) {
       show(shopMsg, 'err', 'Plus tutarı tanımlı değil');
       return;
     }
+    if (!state.idToken) {
+      showAuthForCheckout();
+      return;
+    }
+
     var btn = $('buyBtn');
     btn.disabled = true;
     var prev = btn.textContent;
     btn.innerHTML = '<span class="spin"></span> Sipariş oluşuyor…';
     try {
-      var order = await callFn('createPaymentOrder', {
-        product: 'plus',
-        months: state.selected.months,
-        source: 'market_web',
-      }, state.idToken);
+      var order = await callFn(
+        'createPaymentOrder',
+        {
+          product: 'plus',
+          months: state.selected.months,
+          source: 'market_web',
+        },
+        state.idToken,
+      );
+
+      hideAuth();
 
       if (order.provider === 'paytr' && order.iframeUrl) {
         show(shopMsg, 'info', 'PayTR ödeme sayfasına yönlendiriliyorsun…');
@@ -468,14 +468,30 @@
           '<div style="margin-top:.4rem">IBAN: <code>' + (order.iban || '') + '</code></div>' +
           '<div>Alıcı: <code>' + (order.ibanHolder || '') + '</code></div>' +
           (order.ibanBank ? '<div>Banka: ' + order.ibanBank + '</div>' : '') +
-          '<div style="margin-top:.45rem">Açıklama (zorunlu): <code>' + (order.transferDescription || '') + '</code></div>' +
-          '<div style="margin-top:.45rem;color:var(--muted)">' + (order.note || '') + '</div>' +
+          '<div style="margin-top:.45rem">Açıklama (zorunlu): <code>' +
+            (order.transferDescription || '') +
+            '</code></div>' +
+          '<div style="margin-top:.45rem;color:var(--muted)">' +
+            (order.note || '') +
+            '</div>' +
           '<button class="btn" id="ibanConfirm" type="button" style="margin-top:.75rem">Havale yaptım · bildir</button>';
-        show(shopMsg, 'ok', 'Sipariş oluşturuldu · ' + money(order.amount, state.cfg.currency));
+        show(
+          shopMsg,
+          'ok',
+          'Sipariş oluşturuldu · ' + money(order.amount, state.cfg.currency),
+        );
         $('ibanConfirm').onclick = async function () {
           try {
-            await callFn('confirmIbanTransfer', { orderId: order.orderId }, state.idToken);
-            show(shopMsg, 'ok', 'Bildirim alındı. Admin onayından sonra Plus hesabına işlenir.');
+            await callFn(
+              'confirmIbanTransfer',
+              { orderId: order.orderId },
+              state.idToken,
+            );
+            show(
+              shopMsg,
+              'ok',
+              'Bildirim alındı. Admin onayından sonra Plus hesabına işlenir.',
+            );
           } catch (err) {
             show(shopMsg, 'err', String(err.message || err));
           }
@@ -484,27 +500,89 @@
       }
       show(shopMsg, 'err', 'Ödeme yöntemi hazır değil');
     } catch (e) {
-      show(shopMsg, 'err', String(e.message || e));
+      var msg = String(e.message || e);
+      if (/unauthenticated|Giriş gerekli/i.test(msg)) {
+        clearSession();
+        showAuthForCheckout();
+        return;
+      }
+      show(shopMsg, 'err', msg);
     } finally {
       btn.disabled = false;
       btn.textContent = prev;
       updateBuyLabel();
     }
+  }
+
+  async function loadCatalog() {
+    var cfg = await callFn('getPaymentsPublic', {});
+    state.cfg = cfg;
+    renderPlans();
+    if (!(Number(cfg.plusAmount) > 0)) {
+      show(
+        banner,
+        'info',
+        'Plus fiyatı henüz admin panelinden girilmemiş. Vitrin hazır; tutar girilince satış açılır.',
+      );
+    }
+  }
+
+  $('buyBtn').addEventListener('click', startCheckout);
+  $('authCancel').addEventListener('click', hideAuth);
+  $('logoutBtn').addEventListener('click', clearSession);
+
+  $('loginBtn').addEventListener('click', async function () {
+    var email = $('email').value.trim();
+    var password = $('password').value;
+    show(authMsg, '', '');
+    if (!email || !password) {
+      show(authMsg, 'err', 'E-posta ve şifre gerekli');
+      return;
+    }
+    var btn = $('loginBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>';
+    try {
+      var auth = await signIn(email, password);
+      persistSession(auth.idToken, auth.email || email);
+      hideAuth();
+      if (state.pendingBuy) {
+        state.pendingBuy = false;
+        await startCheckout();
+      }
+    } catch (e) {
+      var m = String(e.message || e);
+      if (/INVALID_LOGIN|INVALID_PASSWORD|EMAIL_NOT_FOUND|INVALID_EMAIL/i.test(m)) {
+        m = 'E-posta veya şifre hatalı';
+      } else if (/TOO_MANY_ATTEMPTS/i.test(m)) {
+        m = 'Çok fazla deneme · biraz bekle';
+      }
+      show(authMsg, 'err', m);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Giriş yap ve öde';
+    }
   });
 
-  // Dönüş parametreleri
   (function () {
     var q = new URLSearchParams(location.search);
     var pay = q.get('pay');
-    if (pay === 'ok') show(banner, 'ok', 'Ödeme alındı. Plus kısa sürede hesabına yansır — uygulamayı yenile.');
-    if (pay === 'fail') show(banner, 'err', 'Ödeme tamamlanamadı. Tekrar deneyebilirsin.');
+    if (pay === 'ok') {
+      show(
+        banner,
+        'ok',
+        'Ödeme alındı. Plus kısa sürede hesabına yansır — uygulamayı yenile.',
+      );
+    }
+    if (pay === 'fail') {
+      show(banner, 'err', 'Ödeme tamamlanamadı. Tekrar deneyebilirsin.');
+    }
   })();
 
-  loadCatalog()
-    .then(restoreSession)
-    .catch(function (e) {
-      show(banner, 'err', 'Katalog yüklenemedi: ' + (e.message || e));
-    });
+  restoreSession();
+  loadCatalog().catch(function (e) {
+    show(banner, 'err', 'Katalog yüklenemedi: ' + (e.message || e));
+  });
 })();
   </script>
 </body>

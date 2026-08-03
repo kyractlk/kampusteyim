@@ -238,7 +238,6 @@ class AppUser {
     if (u.isEmpty) return '';
     const map = {
       'Gaziantep Üniversitesi': 'GAÜN',
-      'Gaziantep Bilim Ve Teknoloji Üniversitesi': 'GBTÜ',
       'Gaziantep İslam Bilim Ve Teknoloji Üniversitesi': 'GİBTÜ',
       'Hasan Kalyoncu Üniversitesi': 'HKÜ',
       'Sanko Üniversitesi': 'Sanko',
@@ -624,6 +623,8 @@ class Post {
     this.ctaUrl,
     this.ctaLabel,
     this.hiddenFromFeed = false,
+    this.authorCity = '',
+    this.authorUniversity = '',
   });
 
   final String id;
@@ -656,6 +657,10 @@ class Post {
   final String? ctaLabel;
   final bool hiddenFromFeed;
 
+  /// Denormalize — şehir/üniversite filtresi için (yazar dizini gecikse bile).
+  final String authorCity;
+  final String authorUniversity;
+
   bool get isStudyRoomInvite {
     if (studyRoomId != null && studyRoomId!.trim().isNotEmpty) return true;
     return content.contains('Çalışma odası açıldı');
@@ -685,6 +690,8 @@ class Post {
     String? ctaUrl,
     String? ctaLabel,
     bool? hiddenFromFeed,
+    String? authorCity,
+    String? authorUniversity,
     bool clearDeleted = false,
   }) {
     return Post(
@@ -715,6 +722,8 @@ class Post {
       ctaUrl: ctaUrl ?? this.ctaUrl,
       ctaLabel: ctaLabel ?? this.ctaLabel,
       hiddenFromFeed: hiddenFromFeed ?? this.hiddenFromFeed,
+      authorCity: authorCity ?? this.authorCity,
+      authorUniversity: authorUniversity ?? this.authorUniversity,
     );
   }
 
@@ -742,6 +751,8 @@ class Post {
     'ctaUrl': ctaUrl,
     'ctaLabel': ctaLabel,
     'hiddenFromFeed': hiddenFromFeed,
+    'authorCity': authorCity,
+    'authorUniversity': authorUniversity,
     'media': media
         .map(
           (m) => {
@@ -833,6 +844,8 @@ class Post {
           ? null
           : '${m['ctaLabel']}',
       hiddenFromFeed: m['hiddenFromFeed'] == true,
+      authorCity: '${m['authorCity'] ?? ''}',
+      authorUniversity: '${m['authorUniversity'] ?? ''}',
     );
   }
 }

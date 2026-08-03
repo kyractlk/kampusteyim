@@ -31,6 +31,10 @@ class ReelsProvider extends ChangeNotifier {
   bool _tabActive = false;
   String? _focusReelId;
 
+  /// Kaydırma oturumu boyunca sıra sabit (IG/TikTok) — markViewed yeniden sort etmesin.
+  List<String>? _sessionFeedIds;
+  String? _sessionViewerId;
+
   /// Alt bar Reels sekmesi görünür mü — ses/oynatma kapısı.
   bool get tabActive => _tabActive;
   bool get isLoading => _loading;
@@ -62,6 +66,8 @@ class ReelsProvider extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
+    _sessionFeedIds = null;
+    _sessionViewerId = null;
     _loading = true;
     notifyListeners();
     final viaApi = await _hydrateFromCallable();
@@ -96,8 +102,8 @@ class ReelsProvider extends ChangeNotifier {
 
   Future<void> _prefetchFeed() async {
     final feed = feedFor(_auth?.user?.id);
-    // Kullanıcı Reels’te olmasa da arka planda ısıtmaya devam.
-    await ReelsVideoCache.instance.prefetch(feed, count: 24, keepWarm: true);
+    // Kullanıcı Reels’te olmasa da sınırlı pencereyi ısıt (decoder kotası).
+    await ReelsVideoCache.instance.prefetch(feed, count: 5, keepWarm: true);
   }
 
   /// MediaWarmHelper için görünür reels medya URL'leri.
@@ -113,13 +119,13 @@ class ReelsProvider extends ChangeNotifier {
     final feed = feedFor(_auth?.user?.id);
     if (feed.isEmpty) return;
     MediaDiskCache.instance.prefetchAll(
-      feed.map((r) => r.mediaUrl),
-      concurrency: 4,
+      feed.take(16).map((r) => r.mediaUrl),
+      concurrency: 2,
       front: true,
     );
     await ReelsVideoCache.instance.prefetch(
       feed,
-      count: forceControllers ? 28 : 20,
+      count: forceControllers ? 6 : 4,
       keepWarm: true,
     );
   }
@@ -130,18 +136,8 @@ class ReelsProvider extends ChangeNotifier {
       feed,
       index,
       behind: 1,
-      ahead: kIsWeb ? 2 : 3,
+      ahead: kIsWeb ? 1 : 2,
     );
-    // Uzak medyayı da disk kuyruğuna al (native).
-    if (!kIsWeb) {
-      final start = (index - 3).clamp(0, feed.length);
-      final end = (index + 10).clamp(0, feed.length);
-      MediaDiskCache.instance.prefetchAll(
-        feed.sublist(start, end).map((r) => r.mediaUrl),
-        concurrency: 4,
-        front: true,
-      );
-    }
   }
 
   void attachAuth(AuthProvider auth) {
@@ -180,6 +176,8 @@ class ReelsProvider extends ChangeNotifier {
       _sub?.cancel();
       _sub = null;
       _items.clear();
+      _sessionFeedIds = null;
+      _sessionViewerId = null;
       notifyListeners();
       return;
     }
@@ -264,9 +262,38 @@ class ReelsProvider extends ChangeNotifier {
   }
 
   /// İzlenmemişler + aynı üniversite affinity; gizli hesap reels’leri takipçilere özel.
+  /// Oturum sırasında sıra kilitlenir — izleme kaydı PageView’i yeniden sıralamaz.
   List<CampusReel> feedFor(String? viewerId) {
-    final list = _items.where((r) => _canSeeReel(r, viewerId)).toList();
-    if (viewerId == null || viewerId.isEmpty) return list;
+    final visible = _items.where((r) => _canSeeReel(r, viewerId)).toList();
+    if (viewerId == null || viewerId.isEmpty) {
+      visible.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return visible;
+    }
+
+    if (_sessionFeedIds == null || _sessionViewerId != viewerId) {
+      final ranked = _rankFeed(visible, viewerId);
+      _sessionViewerId = viewerId;
+      _sessionFeedIds = ranked.map((r) => r.id).toList(growable: true);
+      return ranked;
+    }
+
+    final byId = {for (final r in visible) r.id: r};
+    final out = <CampusReel>[];
+    for (final id in _sessionFeedIds!) {
+      final r = byId.remove(id);
+      if (r != null) out.add(r);
+    }
+    // Ortaya çıkan yeni reels — mevcut sırayı bozmadan sona ekle.
+    if (byId.isNotEmpty) {
+      final newcomers = _rankFeed(byId.values.toList(), viewerId);
+      out.addAll(newcomers);
+      _sessionFeedIds = out.map((r) => r.id).toList(growable: true);
+    }
+    return out;
+  }
+
+  List<CampusReel> _rankFeed(List<CampusReel> list, String viewerId) {
+    final ranked = List<CampusReel>.from(list);
     final viewer = _auth?.user;
     final signals = viewer == null || _auth == null
         ? EngagementSignals.empty
@@ -276,7 +303,7 @@ class ReelsProvider extends ChangeNotifier {
             posts: _feed?.posts ?? const [],
             reels: _items,
           );
-    list.sort((a, b) {
+    ranked.sort((a, b) {
       final authorA = _auth?.findUser(a.authorId);
       final authorB = _auth?.findUser(b.authorId);
       final sa = CampusAffinity.scoreReel(
@@ -319,7 +346,7 @@ class ReelsProvider extends ChangeNotifier {
       if (cmp != 0) return cmp;
       return b.createdAt.compareTo(a.createdAt);
     });
-    return list;
+    return ranked;
   }
 
   Future<String?> createReel({

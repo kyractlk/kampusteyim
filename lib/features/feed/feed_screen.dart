@@ -55,17 +55,25 @@ class FeedScreen extends StatelessWidget {
             final filtered = allPosts.where((p) {
               if (!auth.canViewPost(p)) return false;
               if (user == null) return scope == FeedScope.all;
-              // Şehir / üniversite kapsamı — yazar profiline göre.
+              // Şehir / üniversite — yazar profili VEYA post denormalize alanları.
               final author = auth.findUser(p.authorId);
               if (scope == FeedScope.city) {
                 final myCity = user.city.trim().toLowerCase();
                 if (myCity.isEmpty) return false;
-                final their = (author?.city ?? '').trim().toLowerCase();
+                final their = (author?.city.trim().isNotEmpty == true
+                        ? author!.city
+                        : p.authorCity)
+                    .trim()
+                    .toLowerCase();
                 if (their.isEmpty || their != myCity) return false;
               } else if (scope == FeedScope.university) {
                 final myUni = user.university.trim().toLowerCase();
                 if (myUni.isEmpty) return false;
-                final their = (author?.university ?? '').trim().toLowerCase();
+                final their = (author?.university.trim().isNotEmpty == true
+                        ? author!.university
+                        : p.authorUniversity)
+                    .trim()
+                    .toLowerCase();
                 if (their.isEmpty || their != myUni) return false;
               }
               return true;
@@ -81,45 +89,56 @@ class FeedScreen extends StatelessWidget {
               posts: allPosts,
               reels: reels.items,
             );
+            final now = DateTime.now();
             filtered.sort((a, b) {
-              final authorA = auth.findUser(a.authorId);
-              final authorB = auth.findUser(b.authorId);
-              // Kapsamlı akışlarda yenilik biraz daha önde.
+              // Son 10 dk: saniyelik akış — yenilik önce (filtre kapsamında).
+              final aFresh = now.difference(a.createdAt).inSeconds < 600;
+              final bFresh = now.difference(b.createdAt).inSeconds < 600;
+              if (aFresh || bFresh) {
+                if (aFresh && bFresh) {
+                  return b.createdAt.compareTo(a.createdAt);
+                }
+                return aFresh ? -1 : 1;
+              }
               final recencyBoost = scope == FeedScope.all ? 1.0 : 1.35;
               final sa = CampusAffinity.scorePost(
                     viewer: user,
-                    author: authorA,
+                    author: auth.findUser(a.authorId),
                     createdAt: a.createdAt,
                     likeCount: a.likeCount,
                     replyCount: a.replyCount,
                     repostCount: a.repostCount,
                     followingAuthor: auth.follows(a.authorId),
-                    friendOfFriend:
-                        authorA != null &&
-                        CampusAffinity.isFriendOfFriend(
-                          viewer: user,
-                          candidate: authorA,
-                          auth: auth,
-                        ),
+                    friendOfFriend: () {
+                      final authorA = auth.findUser(a.authorId);
+                      return authorA != null &&
+                          CampusAffinity.isFriendOfFriend(
+                            viewer: user,
+                            candidate: authorA,
+                            auth: auth,
+                          );
+                    }(),
                     hashtags: a.hashtags,
                     signals: signals,
                   ) *
                   recencyBoost;
               final sb = CampusAffinity.scorePost(
                     viewer: user,
-                    author: authorB,
+                    author: auth.findUser(b.authorId),
                     createdAt: b.createdAt,
                     likeCount: b.likeCount,
                     replyCount: b.replyCount,
                     repostCount: b.repostCount,
                     followingAuthor: auth.follows(b.authorId),
-                    friendOfFriend:
-                        authorB != null &&
-                        CampusAffinity.isFriendOfFriend(
-                          viewer: user,
-                          candidate: authorB,
-                          auth: auth,
-                        ),
+                    friendOfFriend: () {
+                      final authorB = auth.findUser(b.authorId);
+                      return authorB != null &&
+                          CampusAffinity.isFriendOfFriend(
+                            viewer: user,
+                            candidate: authorB,
+                            auth: auth,
+                          );
+                    }(),
                     hashtags: b.hashtags,
                     signals: signals,
                   ) *
@@ -255,6 +274,8 @@ class FeedScreen extends StatelessWidget {
                       media: media,
                       isCommunity: u.isCommunity,
                       directory: auth.directory,
+                      authorCity: u.city,
+                      authorUniversity: u.university,
                     );
                     if (!context.mounted) return result;
                     if (result != null) {
