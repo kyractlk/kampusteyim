@@ -93,8 +93,9 @@ class ReelsVideoCache {
             );
 
       _controllers[reelId] = c;
+      // Web’de uzun timeout + ağ/QUIC gecikmesi konsolu şişirir; kısa kes.
       await c.initialize().timeout(
-        kIsWeb ? const Duration(seconds: 25) : const Duration(seconds: 18),
+        kIsWeb ? const Duration(seconds: 12) : const Duration(seconds: 18),
       );
       await c.setLooping(true);
       await c.setVolume(0);
@@ -119,10 +120,13 @@ class ReelsVideoCache {
       }
       return c;
     } catch (e) {
+      final isTimeout = e is TimeoutException;
       debugPrint('[reels-cache] $reelId: $e');
-      final n = (_failCount[reelId] ?? 0) + 1;
+      // Timeout ağ geçici olabilir — kalıcı fail’e daha yavaş düş.
+      final step = isTimeout ? 1 : 2;
+      final n = (_failCount[reelId] ?? 0) + step;
       _failCount[reelId] = n;
-      if (n >= 3) _failed.add(reelId);
+      if (n >= (kIsWeb ? 4 : 3)) _failed.add(reelId);
       final dead = _controllers.remove(reelId);
       try {
         await dead?.dispose();
@@ -148,9 +152,12 @@ class ReelsVideoCache {
     int ahead = 1,
   }) async {
     if (feed.isEmpty) return;
+    // Web decoder kotası düşük — komşuları dar tut.
+    final effectiveBehind = kIsWeb ? behind.clamp(0, 0) : behind;
+    final effectiveAhead = kIsWeb ? ahead.clamp(0, 1) : ahead;
     final videos = <CampusReel>[];
-    final start = (index - behind).clamp(0, feed.length - 1);
-    final end = (index + ahead).clamp(0, feed.length - 1);
+    final start = (index - effectiveBehind).clamp(0, feed.length - 1);
+    final end = (index + effectiveAhead).clamp(0, feed.length - 1);
     for (var i = start; i <= end; i++) {
       final r = feed[i];
       if (r.mediaType == ReelMediaType.video && r.mediaUrl.isNotEmpty) {
@@ -221,12 +228,13 @@ class ReelsVideoCache {
     }
 
     // Decoder: yalnızca ilk birkaç — kotayı doldurma.
-    final take = kIsWeb ? count.clamp(2, 4) : count.clamp(3, 6);
+    // Web: agresif prefetch timeout / MIME gürültüsü yaratır.
+    final take = kIsWeb ? count.clamp(1, 2) : count.clamp(3, 6);
     if (videos.isNotEmpty) {
       await warmWindow(videos, 0, behind: 0, ahead: take - 1);
     }
 
-    if (keepWarm) {
+    if (keepWarm && !kIsWeb) {
       unawaited(_runBackgroundWarm());
     }
   }

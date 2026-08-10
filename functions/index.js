@@ -240,6 +240,194 @@ function brandedEmail({
 </html>`;
 }
 
+/** Firma logosu + Gmail tarzı imza bloğu */
+function buildCompanySignatureHtml(signature = {}, companyName = '', logoUrl = '') {
+  const s = signature || {};
+  const name = escapeHtml(String(s.contactName || companyName || 'Firma').trim());
+  const title = escapeHtml(String(s.jobTitle || '').trim());
+  const phone = escapeHtml(String(s.phone || '').trim());
+  const website = String(s.website || '').trim();
+  const address = escapeHtml(String(s.address || '').trim());
+  const extra = escapeHtml(String(s.extraText || '').trim()).replace(/\n/g, '<br/>');
+  const reply = escapeHtml(String(s.replyEmail || '').trim());
+  const safeLogo = escapeHtml(String(logoUrl || s.logoUrl || '').replace(/[<>"']/g, ''));
+  const safeWebHref = escapeHtml(website.replace(/[<>"']/g, ''));
+  const company = escapeHtml(String(companyName || '').trim());
+
+  const lines = [];
+  if (title) lines.push(`<div style="color:#64748B;font-size:13px;margin-top:2px;">${title}</div>`);
+  if (company) lines.push(`<div style="color:#0B1F3A;font-weight:700;font-size:13px;margin-top:4px;">${company}</div>`);
+  if (reply) lines.push(`<div style="margin-top:6px;"><a href="mailto:${reply}" style="color:#0EA5E9;text-decoration:none;">${reply}</a></div>`);
+  if (phone) lines.push(`<div style="color:#475569;font-size:13px;margin-top:4px;">${phone}</div>`);
+  if (website) {
+    lines.push(
+      `<div style="margin-top:4px;"><a href="${safeWebHref}" style="color:#0EA5E9;text-decoration:none;font-size:13px;">${escapeHtml(website)}</a></div>`,
+    );
+  }
+  if (address) lines.push(`<div style="color:#94A3B8;font-size:12px;margin-top:6px;">${address}</div>`);
+  if (extra) lines.push(`<div style="color:#64748B;font-size:12px;margin-top:10px;line-height:1.5;">${extra}</div>`);
+
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;border-top:1px solid #E2E8F0;padding-top:18px;">
+      <tr>
+        <td width="72" valign="top" style="padding-right:14px;">
+          ${
+            safeLogo
+              ? `<img src="${safeLogo}" alt="${company || name}" width="64" height="64" style="display:block;border-radius:14px;border:1px solid #E2E8F0;object-fit:cover;"/>`
+              : ''
+          }
+        </td>
+        <td valign="top" style="font-size:14px;line-height:1.45;color:#0B1F3A;">
+          <div style="font-weight:800;font-size:15px;">${name}</div>
+          ${lines.join('')}
+        </td>
+      </tr>
+    </table>`;
+}
+
+function companyBrandedEmail({
+  companyName,
+  logoUrl,
+  signature,
+  title,
+  greeting,
+  bodyHtml,
+  ctaLabel,
+  ctaUrl,
+  footerNote,
+}) {
+  const safeTitle = escapeHtml(String(title || companyName || 'KampüsteyimAPP'));
+  const brandName = escapeHtml(String(companyName || 'Firma'));
+  const safeLogo = escapeHtml(
+    String(logoUrl || signature?.logoUrl || BRAND_LOGO).replace(/[<>"']/g, ''),
+  );
+  const safeGreeting = greeting
+    ? `<p style="margin:0 0 16px;font-size:16px;color:#1a2332;">${escapeHtml(greeting)}</p>`
+    : '';
+  const safeCtaLabel = escapeHtml(ctaLabel || '');
+  const safeCtaUrl = escapeHtml(String(ctaUrl || '').replace(/[<>"']/g, ''));
+  const cta =
+    ctaLabel && ctaUrl
+      ? `<p style="margin:28px 0 8px;text-align:center;">
+          <a href="${safeCtaUrl}" style="display:inline-block;background:#0B1F3A;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:12px;font-weight:700;font-size:15px;">
+            ${safeCtaLabel}
+          </a>
+        </p>`
+      : '';
+  const note = footerNote
+    ? `<p style="margin:20px 0 0;font-size:13px;color:#6b7280;line-height:1.5;">${escapeHtml(footerNote)}</p>`
+    : '';
+  const signatureBlock = buildCompanySignatureHtml(
+    signature,
+    companyName,
+    logoUrl || signature?.logoUrl || '',
+  );
+
+  return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>${safeTitle}</title>
+</head>
+<body style="margin:0;padding:0;background:#EEF2F7;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EEF2F7;padding:32px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #E2E8F0;box-shadow:0 8px 28px rgba(11,31,58,0.08);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#0B1F3A 0%,#12355C 100%);padding:28px 28px 22px;text-align:center;">
+              <img src="${safeLogo}" alt="${brandName}" width="72" height="72" style="display:inline-block;border-radius:18px;background:#ffffff;padding:4px;object-fit:cover;"/>
+              <p style="margin:14px 0 0;color:#ffffff;font-size:20px;font-weight:800;">${brandName}</p>
+              <p style="margin:4px 0 0;color:#A8C5E2;font-size:13px;">KampüsteyimAPP üzerinden</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px 28px 8px;">
+              <h1 style="margin:0 0 16px;font-size:20px;line-height:1.35;color:#0B1F3A;">${safeTitle}</h1>
+              ${safeGreeting}
+              <div style="font-size:15px;line-height:1.65;color:#334155;">${bodyHtml || ''}</div>
+              ${cta}
+              ${note}
+              ${signatureBlock}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 28px;">
+              <hr style="border:none;border-top:1px solid #E2E8F0;margin:0 0 16px;"/>
+              <p style="margin:0 0 14px;font-size:12px;color:#94A3B8;line-height:1.5;text-align:center;">
+                Bu e-posta ${brandName} tarafından KampüsteyimAPP altyapısıyla gönderildi.
+              </p>
+              <p style="margin:0;text-align:center;">
+                <a href="${BRAND_HOME}" style="display:inline-block;background:#0EA5E9;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:10px;font-weight:700;font-size:13px;">
+                  ${BRAND_LABEL}’i aç
+                </a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+async function loadCompanyMailBrand(companyId) {
+  const id = String(companyId || '').trim();
+  let companyName = '';
+  let logoUrl = '';
+  let signature = null;
+  if (id) {
+    try {
+      const snap = await db.collection('companies').doc(id).get();
+      if (snap.exists) {
+        const d = snap.data() || {};
+        companyName = String(d.name || '').trim();
+        logoUrl = String(d.logoUrl || '').trim();
+        signature = d.mailSignature || null;
+        if (signature?.logoUrl) logoUrl = String(signature.logoUrl).trim() || logoUrl;
+      }
+    } catch (_) {}
+    try {
+      const user = await findUserDocByAnyId(id);
+      if (user) {
+        const ud = user.data() || {};
+        if (!companyName) {
+          companyName =
+            String(ud.fullName || '').trim() ||
+            `${ud.firstName || ''} ${ud.lastName || ''}`.trim();
+        }
+        if (!logoUrl) {
+          logoUrl = String(ud.communityLogoUrl || ud.photoUrl || '').trim();
+        }
+      }
+    } catch (_) {}
+  }
+  const sig = signature || {};
+  const ready =
+    sig.configured === true &&
+    !!String(logoUrl || sig.logoUrl || '').trim() &&
+    !!String(sig.contactName || '').trim() &&
+    String(sig.replyEmail || '').includes('@');
+  return {
+    companyId: id,
+    companyName: companyName || 'Firma',
+    logoUrl: logoUrl || String(sig.logoUrl || '').trim(),
+    signature: sig,
+    ready,
+  };
+}
+
+function assertCompanyMailSignature(brand) {
+  if (!brand?.ready) {
+    throw new HttpsError(
+      'failed-precondition',
+      'MAIL_SIGNATURE_REQUIRED',
+    );
+  }
+}
+
 function userAllowsPush(userData, type) {
   const prefs = userData?.notificationPrefs || {};
   if (prefs.pushEnabled === false) return false;
@@ -723,6 +911,339 @@ exports.notifyMail = onCall({ region: 'europe-west1' }, async (request) => {
 });
 
 /**
+ * Firma kurumsal HTML mail — logo + imza zorunlu.
+ * kind: mail | offer | job
+ */
+exports.sendCompanyMail = onCall({ region: 'europe-west1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Giriş gerekli');
+  }
+  const uid = request.auth.uid;
+  const {
+    to,
+    subject,
+    bodyText = '',
+    bodyHtml = '',
+    kind = 'mail',
+    studentName = '',
+    ctaLabel,
+    ctaUrl,
+  } = request.data || {};
+  if (!to || !isValidEmail(to)) {
+    throw new HttpsError('invalid-argument', 'Geçerli alıcı e-postası gerekli');
+  }
+  if (!subject || !String(subject).trim()) {
+    throw new HttpsError('invalid-argument', 'subject zorunlu');
+  }
+  let brand = await loadCompanyMailBrand(uid);
+  // Auth uid altında imza yoksa e-posta ile şirket kaydını dene
+  if (!brand.ready) {
+    try {
+      const email = String(request.auth.token.email || '').trim().toLowerCase();
+      if (email) {
+        const q = await db
+          .collection('companies')
+          .where('email', '==', email)
+          .limit(1)
+          .get();
+        if (!q.empty) {
+          brand = await loadCompanyMailBrand(q.docs[0].id);
+          // İmzayı auth uid altına da kopyala ki sonraki çağrılar tutarlı olsun
+          if (brand.ready) {
+            await db.collection('companies').doc(uid).set(
+              {
+                name: brand.companyName,
+                email,
+                logoUrl: brand.logoUrl,
+                mailSignature: brand.signature,
+                role: 'company',
+                authUid: uid,
+                updatedAt: new Date().toISOString(),
+              },
+              { merge: true },
+            );
+            brand = { ...brand, companyId: uid };
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[sendCompanyMail] brand fallback', e?.message || e);
+    }
+  }
+  assertCompanyMailSignature(brand);
+
+  const safeBody =
+    bodyHtml ||
+    `<p>${escapeHtml(String(bodyText || '')).replace(/\n/g, '<br/>')}</p>`;
+  const greeting = studentName
+    ? `Merhaba ${String(studentName).trim()},`
+    : 'Merhaba,';
+  const titleByKind =
+    kind === 'offer'
+      ? `${brand.companyName} · Teklif`
+      : kind === 'job'
+        ? `${brand.companyName} · İlan`
+        : String(subject).trim();
+
+  const html = companyBrandedEmail({
+    companyName: brand.companyName,
+    logoUrl: brand.logoUrl,
+    signature: brand.signature,
+    title: titleByKind,
+    greeting,
+    bodyHtml: safeBody,
+    ctaLabel: ctaLabel || 'KampüsteyimAPP’e git',
+    ctaUrl: ctaUrl || BRAND_HOME,
+    footerNote:
+      kind === 'offer'
+        ? 'Bu teklif KampüsteyimAPP Firma Online üzerinden gönderildi.'
+        : 'Bu e-posta KampüsteyimAPP Firma Online üzerinden gönderildi.',
+  });
+
+  await sendMail({
+    to: String(to).trim().toLowerCase(),
+    subject: String(subject).trim(),
+    html,
+  });
+  return { ok: true, companyName: brand.companyName };
+});
+
+/** Takip grafiği kimlik jetonları (doc id + stableId). */
+function followIdentityTokens(doc) {
+  const tokens = new Set([doc.id]);
+  const d = doc.data() || {};
+  const stable = String(d.stableId || '').trim();
+  if (stable) tokens.add(stable);
+  return [...tokens];
+}
+
+/**
+ * Takip / istek mutasyonu — Admin SDK ile iki taraflı yazım (rules bypass).
+ * action: follow | unfollow | request | cancel_request | accept | reject
+ */
+exports.mutateFollow = onCall({ region: 'europe-west1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Giriş gerekli');
+  }
+  const uid = request.auth.uid;
+  const action = String(request.data?.action || '').trim();
+  const targetId = String(request.data?.targetId || '').trim();
+  if (!targetId) {
+    throw new HttpsError('invalid-argument', 'targetId zorunlu');
+  }
+  const allowed = new Set([
+    'follow',
+    'unfollow',
+    'request',
+    'cancel_request',
+    'accept',
+    'reject',
+  ]);
+  if (!allowed.has(action)) {
+    throw new HttpsError('invalid-argument', 'Geçersiz action');
+  }
+
+  const meDoc = await findUserDocByAnyId(uid);
+  if (!meDoc || !meDoc.exists) {
+    throw new HttpsError('failed-precondition', 'Profil bulunamadı');
+  }
+  const targetDoc = await findUserDocByAnyId(targetId);
+  if (!targetDoc || !targetDoc.exists) {
+    throw new HttpsError('not-found', 'Hedef kullanıcı bulunamadı');
+  }
+  if (meDoc.id === targetDoc.id) {
+    throw new HttpsError('invalid-argument', 'Kendini takip edemezsin');
+  }
+
+  const meData = meDoc.data() || {};
+  const targetData = targetDoc.data() || {};
+  if (meData.deleted === true || targetData.deleted === true) {
+    throw new HttpsError('failed-precondition', 'Hesap silinmiş');
+  }
+
+  const meTokens = followIdentityTokens(meDoc);
+  const targetTokens = followIdentityTokens(targetDoc);
+  const now = new Date().toISOString();
+  const isPrivate = targetData.isPrivateAccount === true;
+
+  if (action === 'follow') {
+    if (isPrivate) {
+      // Public follow değil — istek
+      await meDoc.ref.set(
+        {
+          outgoingFollowRequests: FieldValue.arrayUnion(...targetTokens),
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      await targetDoc.ref.set(
+        {
+          incomingFollowRequests: FieldValue.arrayUnion(...meTokens),
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      return {
+        ok: true,
+        action: 'request',
+        requested: true,
+        following: false,
+        targetId: targetDoc.id,
+      };
+    }
+    await meDoc.ref.set(
+      {
+        following: FieldValue.arrayUnion(...targetTokens),
+        outgoingFollowRequests: FieldValue.arrayRemove(...targetTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    await targetDoc.ref.set(
+      {
+        followers: FieldValue.arrayUnion(...meTokens),
+        incomingFollowRequests: FieldValue.arrayRemove(...meTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    return {
+      ok: true,
+      action: 'follow',
+      following: true,
+      requested: false,
+      targetId: targetDoc.id,
+    };
+  }
+
+  if (action === 'unfollow') {
+    await meDoc.ref.set(
+      {
+        following: FieldValue.arrayRemove(...targetTokens),
+        outgoingFollowRequests: FieldValue.arrayRemove(...targetTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    await targetDoc.ref.set(
+      {
+        followers: FieldValue.arrayRemove(...meTokens),
+        incomingFollowRequests: FieldValue.arrayRemove(...meTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    return {
+      ok: true,
+      action: 'unfollow',
+      following: false,
+      requested: false,
+      targetId: targetDoc.id,
+    };
+  }
+
+  if (action === 'request') {
+    await meDoc.ref.set(
+      {
+        outgoingFollowRequests: FieldValue.arrayUnion(...targetTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    await targetDoc.ref.set(
+      {
+        incomingFollowRequests: FieldValue.arrayUnion(...meTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    return {
+      ok: true,
+      action: 'request',
+      requested: true,
+      following: false,
+      targetId: targetDoc.id,
+    };
+  }
+
+  if (action === 'cancel_request') {
+    await meDoc.ref.set(
+      {
+        outgoingFollowRequests: FieldValue.arrayRemove(...targetTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    await targetDoc.ref.set(
+      {
+        incomingFollowRequests: FieldValue.arrayRemove(...meTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    return {
+      ok: true,
+      action: 'cancel_request',
+      requested: false,
+      following: false,
+      targetId: targetDoc.id,
+    };
+  }
+
+  if (action === 'accept') {
+    // Ben hedefim; targetId = requester
+    await meDoc.ref.set(
+      {
+        incomingFollowRequests: FieldValue.arrayRemove(...targetTokens),
+        followers: FieldValue.arrayUnion(...targetTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    await targetDoc.ref.set(
+      {
+        outgoingFollowRequests: FieldValue.arrayRemove(...meTokens),
+        following: FieldValue.arrayUnion(...meTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    return {
+      ok: true,
+      action: 'accept',
+      following: false,
+      accepted: true,
+      targetId: targetDoc.id,
+    };
+  }
+
+  if (action === 'reject') {
+    await meDoc.ref.set(
+      {
+        incomingFollowRequests: FieldValue.arrayRemove(...targetTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    await targetDoc.ref.set(
+      {
+        outgoingFollowRequests: FieldValue.arrayRemove(...meTokens),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    return {
+      ok: true,
+      action: 'reject',
+      rejected: true,
+      targetId: targetDoc.id,
+    };
+  }
+
+  throw new HttpsError('invalid-argument', 'Geçersiz action');
+});
+
+/**
  * Şikayet alındı onayı — AYS logolu HTML
  */
 exports.notifyReportReceived = onCall({ region: 'europe-west1' }, async (request) => {
@@ -989,6 +1510,8 @@ async function deliverToUserDoc({
   sendEmail = false,
   emailSubject,
   linkPath,
+  companyBrand = null,
+  emailBodyHtml = null,
 }) {
   const u = doc.data() || {};
   if (!userAllowsPush(u, type)) {
@@ -1042,18 +1565,33 @@ async function deliverToUserDoc({
   if (sendEmail && email.includes('@') && !email.includes('@invalid.local')) {
     try {
       const first = String(u.firstName || '').trim();
-      const greeting = first ? `Merhaba ${escapeHtml(first)},` : 'Merhaba,';
+      const greeting = first ? `Merhaba ${first},` : 'Merhaba,';
+      const bodyHtml = emailBodyHtml || `<p>${escapeHtml(body)}</p>`;
+      const html = companyBrand?.ready
+        ? companyBrandedEmail({
+            companyName: companyBrand.companyName,
+            logoUrl: companyBrand.logoUrl,
+            signature: companyBrand.signature,
+            title,
+            greeting,
+            bodyHtml,
+            ctaLabel: 'KampüsteyimAPP’e git',
+            ctaUrl: link,
+            footerNote:
+              'Bu bilgilendirme, takip ettiğin firmanın KampüsteyimAPP üzerinden gönderdiği kurumsal e-postadır.',
+          })
+        : brandedEmail({
+            title,
+            greeting,
+            bodyHtml,
+            ctaLabel: 'KampüsteyimAPP’e git',
+            ctaUrl: link,
+            footerNote: 'Bu bilgilendirme, takip ettiğin hesapların hareketleri içindir.',
+          });
       await sendMail({
         to: email,
         subject: emailSubject || `KampüsteyimAPP · ${title}`,
-        html: brandedEmail({
-          title,
-          greeting,
-          bodyHtml: `<p>${escapeHtml(body)}</p>`,
-          ctaLabel: 'KampüsteyimAPP’e git',
-          ctaUrl: link,
-          footerNote: 'Bu bilgilendirme, takip ettiğin hesapların hareketleri içindir.',
-        }),
+        html,
       });
       mailed = 1;
     } catch (e) {
@@ -1073,6 +1611,8 @@ async function notifyFollowersOfActor({
   sendEmail = false,
   emailSubject,
   linkPath,
+  companyBrand = null,
+  emailBodyHtml = null,
 }) {
   const followers = await collectFollowerDocs(actorId);
   let targeted = 0;
@@ -1090,6 +1630,8 @@ async function notifyFollowersOfActor({
       sendEmail,
       emailSubject,
       linkPath,
+      companyBrand,
+      emailBodyHtml,
     });
     if (!r.skipped) targeted += 1;
     delivered += r.delivered || 0;
@@ -1216,6 +1758,9 @@ async function notifyStudentsOfJob(payload) {
     typeLabel ||
     (type === 'internship' ? 'staj' : type === 'parttime' ? 'yarı zamanlı' : 'iş');
 
+  const companyBrand = await loadCompanyMailBrand(companyId);
+  assertCompanyMailSignature(companyBrand);
+
   const pushTitle = `Yeni ${label} ilanı`;
   const pushBody = `${companyName} yeni bir ${label} ilanı yayınladı: ${title}${
     location ? ` · ${location}` : ''
@@ -1229,8 +1774,17 @@ async function notifyStudentsOfJob(payload) {
     type: 'job',
     targetId: postId,
     sendEmail: true,
-    emailSubject: `KampüsteyimAPP · ${companyName} ${label} ilanı`,
+    emailSubject: `${companyBrand.companyName || companyName} · Yeni ${label} ilanı`,
     linkPath: `/post/${encodeURIComponent(postId)}`,
+    companyBrand,
+    emailBodyHtml: `
+      <p><b>${escapeHtml(companyName)}</b> yeni bir <b>${escapeHtml(label)}</b> ilanı yayınladı.</p>
+      <p style="margin:16px 0;padding:14px 16px;background:#F8FAFC;border-radius:12px;border:1px solid #E2E8F0;">
+        <strong>${escapeHtml(title)}</strong><br/>
+        ${location ? `📍 ${escapeHtml(location)}<br/>` : ''}
+      </p>
+      <p>Detayları KampüsteyimAPP üzerinden inceleyebilirsin.</p>
+    `,
   });
 
   try {

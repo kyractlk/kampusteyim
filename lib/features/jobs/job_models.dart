@@ -4,6 +4,8 @@ enum JobType { internship, fulltime, parttime }
 
 enum JobStatus { open, closed }
 
+enum JobWorkMode { onsite, hybrid, remote }
+
 class JobListing {
   JobListing({
     required this.id,
@@ -15,6 +17,10 @@ class JobListing {
     required this.createdAt,
     this.location = 'Gaziantep',
     this.requirements = '',
+    this.department = '',
+    this.workMode = JobWorkMode.onsite,
+    this.tags = const [],
+    this.deadline,
     this.status = JobStatus.open,
     this.applicantIds = const [],
   });
@@ -26,10 +32,34 @@ class JobListing {
   String description;
   String location;
   String requirements;
+  String department;
+  JobWorkMode workMode;
+  List<String> tags;
+  DateTime? deadline;
   JobType type;
   JobStatus status;
   DateTime createdAt;
   List<String> applicantIds;
+
+  bool get isExpired {
+    final d = deadline;
+    if (d == null) return false;
+    final today = DateTime.now();
+    final end = DateTime(d.year, d.month, d.day, 23, 59, 59);
+    return today.isAfter(end);
+  }
+
+  String get typeLabel => switch (type) {
+        JobType.internship => 'Staj',
+        JobType.fulltime => 'Tam zamanlı',
+        JobType.parttime => 'Part-time',
+      };
+
+  String get workModeLabel => switch (workMode) {
+        JobWorkMode.onsite => 'Ofis',
+        JobWorkMode.hybrid => 'Hibrit',
+        JobWorkMode.remote => 'Uzaktan',
+      };
 
   Map<String, dynamic> toJson() => {
         'companyId': companyId,
@@ -38,6 +68,10 @@ class JobListing {
         'description': description,
         'location': location,
         'requirements': requirements,
+        'department': department,
+        'workMode': workMode.name,
+        'tags': tags,
+        if (deadline != null) 'deadline': deadline!.toIso8601String(),
         'type': type.name,
         'status': status.name,
         'createdAt': createdAt.toIso8601String(),
@@ -53,6 +87,16 @@ class JobListing {
       description: '${json['description']}',
       location: '${json['location'] ?? ''}',
       requirements: '${json['requirements'] ?? ''}',
+      department: '${json['department'] ?? ''}',
+      workMode: JobWorkMode.values.firstWhere(
+        (e) => e.name == json['workMode'],
+        orElse: () => JobWorkMode.onsite,
+      ),
+      tags: ((json['tags'] as List?) ?? [])
+          .map((e) => '$e'.trim())
+          .where((e) => e.isNotEmpty)
+          .toList(),
+      deadline: DateTime.tryParse('${json['deadline'] ?? ''}'),
       type: JobType.values.firstWhere(
         (e) => e.name == json['type'],
         orElse: () => JobType.internship,
@@ -96,6 +140,99 @@ class CompanyOffer {
         'createdAt': createdAt.toIso8601String(),
         'read': read,
       };
+
+  factory CompanyOffer.fromJson(String id, Map<String, dynamic> json) {
+    return CompanyOffer(
+      id: id,
+      companyId: '${json['companyId']}',
+      companyName: '${json['companyName']}',
+      studentId: '${json['studentId']}',
+      message: '${json['message'] ?? ''}',
+      createdAt: DateTime.tryParse('${json['createdAt']}') ?? DateTime.now(),
+      read: json['read'] == true,
+    );
+  }
+}
+
+class CompanyMailSignature {
+  const CompanyMailSignature({
+    this.logoUrl = '',
+    this.contactName = '',
+    this.jobTitle = '',
+    this.replyEmail = '',
+    this.phone = '',
+    this.website = '',
+    this.address = '',
+    this.extraText = '',
+    this.configured = false,
+  });
+
+  final String logoUrl;
+  final String contactName;
+  final String jobTitle;
+  final String replyEmail;
+  final String phone;
+  final String website;
+  final String address;
+  final String extraText;
+  final bool configured;
+
+  bool get isReady =>
+      configured &&
+      logoUrl.trim().isNotEmpty &&
+      contactName.trim().isNotEmpty &&
+      replyEmail.trim().contains('@');
+
+  CompanyMailSignature copyWith({
+    String? logoUrl,
+    String? contactName,
+    String? jobTitle,
+    String? replyEmail,
+    String? phone,
+    String? website,
+    String? address,
+    String? extraText,
+    bool? configured,
+  }) {
+    return CompanyMailSignature(
+      logoUrl: logoUrl ?? this.logoUrl,
+      contactName: contactName ?? this.contactName,
+      jobTitle: jobTitle ?? this.jobTitle,
+      replyEmail: replyEmail ?? this.replyEmail,
+      phone: phone ?? this.phone,
+      website: website ?? this.website,
+      address: address ?? this.address,
+      extraText: extraText ?? this.extraText,
+      configured: configured ?? this.configured,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'logoUrl': logoUrl,
+        'contactName': contactName,
+        'jobTitle': jobTitle,
+        'replyEmail': replyEmail,
+        'phone': phone,
+        'website': website,
+        'address': address,
+        'extraText': extraText,
+        'configured': configured,
+      };
+
+  factory CompanyMailSignature.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const CompanyMailSignature();
+    return CompanyMailSignature(
+      logoUrl: '${json['logoUrl'] ?? ''}',
+      contactName: '${json['contactName'] ?? ''}',
+      jobTitle: '${json['jobTitle'] ?? ''}',
+      replyEmail: '${json['replyEmail'] ?? ''}',
+      phone: '${json['phone'] ?? ''}',
+      website: '${json['website'] ?? ''}',
+      address: '${json['address'] ?? ''}',
+      extraText: '${json['extraText'] ?? ''}',
+      configured: json['configured'] == true,
+    );
+  }
 }
 
 class CompanyAccount {
@@ -104,12 +241,40 @@ class CompanyAccount {
     required this.name,
     required this.email,
     this.sector = 'Teknoloji',
+    this.logoUrl = '',
+    this.mailSignature = const CompanyMailSignature(),
   });
 
   final String id;
   final String name;
   final String email;
   final String sector;
+  final String logoUrl;
+  final CompanyMailSignature mailSignature;
+
+  bool get hasMailSignature => mailSignature.isReady;
+
+  String get displayLogoUrl =>
+      mailSignature.logoUrl.trim().isNotEmpty
+          ? mailSignature.logoUrl
+          : logoUrl;
+
+  CompanyAccount copyWith({
+    String? name,
+    String? email,
+    String? sector,
+    String? logoUrl,
+    CompanyMailSignature? mailSignature,
+  }) {
+    return CompanyAccount(
+      id: id,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      sector: sector ?? this.sector,
+      logoUrl: logoUrl ?? this.logoUrl,
+      mailSignature: mailSignature ?? this.mailSignature,
+    );
+  }
 }
 
 class RankedApplicant {

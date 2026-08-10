@@ -94,9 +94,43 @@ function paymentsModule({
   }
 
   function makeIbanReference(orderId, product) {
-    const prefix = product === 'event' ? 'KEVT' : 'KPLUS';
+    const p = String(product || 'plus').toLowerCase();
+    const prefix =
+      p === 'event' ? 'KEVT' : p === 'merch' ? 'KMERCH' : p === 'ad' ? 'KAD' : 'KPLUS';
     return `${prefix}-${String(orderId).slice(0, 8).toUpperCase()}-${randomCode(4)}`;
   }
+
+  /** Market merch katalogu — tutarlar sunucuda kilitli. */
+  const MERCH_CATALOG = {
+    tshirt: {
+      sku: 'tshirt',
+      name: 'Logo Tişört',
+      amount: 349,
+      sizes: ['S', 'M', 'L', 'XL'],
+      short: 'Beyaz pamuk · göğüs logo baskı · unisex',
+    },
+    hoodie: {
+      sku: 'hoodie',
+      name: 'Campus Hoodie',
+      amount: 799,
+      sizes: ['S', 'M', 'L', 'XL'],
+      short: 'Siyah sweatshirt · büyük logo · kışlık',
+    },
+    cap: {
+      sku: 'cap',
+      name: 'Navy Şapka',
+      amount: 249,
+      sizes: ['Tek beden'],
+      short: 'Lacivert baseball · önde logo · ayarlı',
+    },
+    tote: {
+      sku: 'tote',
+      name: 'Kampüs Tote',
+      amount: 199,
+      sizes: ['Tek beden'],
+      short: 'Bej kanvas · logo baskı · ders / stand',
+    },
+  };
 
   async function createOrderDoc({ uid, email, amount, product, provider, meta }) {
     const ref = db.collection(ORDERS).doc();
@@ -310,6 +344,13 @@ function paymentsModule({
         ),
         shopierReady: Boolean(cfg.shopierApiKey && cfg.shopierApiSecret),
         ibanReady: Boolean(cfg.iban && cfg.ibanHolder),
+        merch: Object.values(MERCH_CATALOG).map((m) => ({
+          sku: m.sku,
+          name: m.name,
+          amount: m.amount,
+          sizes: m.sizes,
+          short: m.short,
+        })),
       };
     },
   );
@@ -322,11 +363,17 @@ function paymentsModule({
       const product = sanitizePlainText(request.data?.product || 'plus', 40) || 'plus';
       const amountIn = Number(request.data?.amount);
       const cfg = await readPaymentsConfig();
-      const provider = sanitizePlainText(
+      let provider = sanitizePlainText(
         request.data?.provider || cfg.activeProvider,
         20,
       ).toLowerCase();
-      if (!cfg.enabledProviders.includes(provider)) {
+      // Merch: şimdilik yalnızca IBAN / havale (kargo + manuel onay).
+      if (product === 'merch') {
+        provider = 'iban';
+        if (!cfg.iban || !cfg.ibanHolder) {
+          throw new HttpsError('failed-precondition', 'IBAN yapılandırılmamış');
+        }
+      } else if (!cfg.enabledProviders.includes(provider)) {
         throw new HttpsError('failed-precondition', 'Bu ödeme yöntemi kapalı');
       }
 
@@ -359,12 +406,31 @@ function paymentsModule({
         request.data?.discountCode || '',
         32,
       ).toUpperCase();
+      const merchSku = sanitizePlainText(
+        request.data?.sku || '',
+        40,
+      ).toLowerCase();
+      const merchSize = sanitizePlainText(request.data?.size || '', 40);
+      const shipCity = sanitizePlainText(request.data?.city || '', 80);
+      const shipName = sanitizePlainText(request.data?.shipName || '', 80);
       const userName = sanitizePlainText(
         `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
           user.username ||
           '',
         80,
       );
+
+      let merchItem = null;
+      if (product === 'merch') {
+        merchItem = MERCH_CATALOG[merchSku] || null;
+        if (!merchItem) {
+          throw new HttpsError('invalid-argument', 'Geçersiz ürün (sku)');
+        }
+        if (!merchItem.sizes.includes(merchSize)) {
+          throw new HttpsError('invalid-argument', 'Geçersiz beden');
+        }
+        amount = Number(merchItem.amount) || 0;
+      }
 
       // Etkinlik: tutar sunucuda doğrulanır; ödeyen = katılımcı
       if (product === 'event') {
@@ -423,6 +489,11 @@ function paymentsModule({
           months: product === 'plus' ? months : null,
           plusDays: plusDaysForOrder,
           source: sanitizePlainText(request.data?.source || 'app', 40) || 'app',
+          sku: merchItem ? merchItem.sku : null,
+          merchName: merchItem ? merchItem.name : null,
+          size: merchItem ? merchSize : null,
+          city: product === 'merch' ? shipCity || null : null,
+          shipName: product === 'merch' ? shipName || userName || null : null,
         },
       });
 
@@ -688,7 +759,9 @@ ${fields}
             ? 'Ödeme bildirimin alındı. Kontrol edilince reklamın yayın onayına geçer.'
             : order.product === 'event'
               ? 'Ödeme bildirimin alındı. Kontrol edilince etkinlik siparişin onaylanır.'
-              : 'Bildirim alındı. Kod eşleşince Plus hesabın aktif edilir.',
+              : order.product === 'merch'
+                ? 'Ödeme tamamlandı olarak bildirildi. Kontrol sonrası kargo hazırlığı başlar.'
+                : 'Bildirim alındı. Kod eşleşince Plus hesabın aktif edilir.',
       };
     },
   );

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -17,37 +20,148 @@ class JobsProvider extends ChangeNotifier {
   final List<CompanyOffer> _offers = [];
   CompanyAccount? company;
   List<RankedApplicant> ranked = [];
+  String? lastRankedJobId;
   bool busy = false;
   String? status;
+  bool jobsReady = false;
+
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _jobsSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _offersSub;
 
   List<JobListing> get openJobs =>
-      _jobs.where((j) => j.status == JobStatus.open).toList();
+      _jobs.where((j) => j.status == JobStatus.open && !j.isExpired).toList();
+
   List<JobListing> get companyJobs {
     if (company == null) return const [];
     final name = company!.name.trim().toLowerCase();
-    return _jobs
+    final list = _jobs
         .where(
           (j) =>
               j.companyId == company!.id ||
               j.companyName.trim().toLowerCase() == name,
         )
         .toList();
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
   }
+
+  int get companyOpenCount =>
+      companyJobs.where((j) => j.status == JobStatus.open).length;
+
+  int get companyClosedCount =>
+      companyJobs.where((j) => j.status == JobStatus.closed).length;
+
+  int get companyApplicantCount =>
+      companyJobs.fold<int>(0, (n, j) => n + j.applicantIds.length);
+
+  int get companyAiReadyCount => companyJobs
+      .where((j) => j.status == JobStatus.open && j.applicantIds.isNotEmpty)
+      .length;
+
   List<CompanyOffer> offersFor(String studentId) =>
       _offers.where((o) => o.studentId == studentId).toList();
 
+  List<JobListing> applicationsFor(String studentId) => _jobs
+      .where((j) => j.applicantIds.contains(studentId))
+      .toList()
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  List<JobListing> filterOpenJobs({
+    JobType? type,
+    JobWorkMode? workMode,
+    String query = '',
+  }) {
+    final q = query.trim().toLowerCase();
+    return openJobs.where((j) {
+      if (type != null && j.type != type) return false;
+      if (workMode != null && j.workMode != workMode) return false;
+      if (q.isEmpty) return true;
+      final hay = [
+        j.title,
+        j.companyName,
+        j.location,
+        j.department,
+        j.requirements,
+        j.description,
+        ...j.tags,
+      ].join(' ').toLowerCase();
+      return hay.contains(q);
+    }).toList();
+  }
+
+  /// CV becerileri ile ilan gereksinimlerinin basit örtüşme skoru (0–100).
+  int matchScore(JobListing job, Iterable<String> skillNames) {
+    final skills = skillNames
+        .map((s) => s.trim().toLowerCase())
+        .where((s) => s.length >= 2)
+        .toSet();
+    if (skills.isEmpty) return 0;
+    final corpus =
+        '${job.requirements} ${job.title} ${job.description} ${job.tags.join(' ')}'
+            .toLowerCase();
+    if (corpus.trim().isEmpty) return 35;
+    var hit = 0;
+    for (final s in skills) {
+      if (corpus.contains(s)) hit++;
+    }
+    final ratio = hit / skills.length;
+    return (28 + ratio * 72).round().clamp(0, 100);
+  }
+
   Future<void> bindJobsFromFirestore() async {
+    await _jobsSub?.cancel();
     try {
-      final snap =
-          await FirebaseFirestore.instance.collection('jobs').limit(200).get();
-      _jobs
-        ..clear()
-        ..addAll(
-          snap.docs.map((d) => JobListing.fromJson(d.id, d.data())),
-        );
-      notifyListeners();
+      _jobsSub = FirebaseFirestore.instance
+          .collection('jobs')
+          .limit(300)
+          .snapshots()
+          .listen(
+        (snap) {
+          _jobs
+            ..clear()
+            ..addAll(
+              snap.docs.map((d) => JobListing.fromJson(d.id, d.data())),
+            );
+          jobsReady = true;
+          notifyListeners();
+        },
+        onError: (e) {
+          debugPrint('[jobs] stream: $e');
+          jobsReady = true;
+          notifyListeners();
+        },
+      );
     } catch (e) {
       debugPrint('[jobs] bindJobs: $e');
+      jobsReady = true;
+      notifyListeners();
+    }
+  }
+
+  Future<void> bindOffersForStudent(String studentId) async {
+    await _offersSub?.cancel();
+    if (studentId.isEmpty) return;
+    try {
+      _offersSub = FirebaseFirestore.instance
+          .collection('offers')
+          .where('studentId', isEqualTo: studentId)
+          .limit(40)
+          .snapshots()
+          .listen(
+        (snap) {
+          final list = snap.docs
+              .map((d) => CompanyOffer.fromJson(d.id, d.data()))
+              .toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _offers
+            ..clear()
+            ..addAll(list);
+          notifyListeners();
+        },
+        onError: (e) => debugPrint('[jobs] offers stream: $e'),
+      );
+    } catch (e) {
+      debugPrint('[jobs] bindOffers: $e');
     }
   }
 
@@ -57,8 +171,12 @@ class JobsProvider extends ChangeNotifier {
     required String companyName,
     String? userId,
   }) async {
+    final authUid = FirebaseAuth.instance.currentUser?.uid;
+    final id = (authUid != null && authUid.isNotEmpty)
+        ? authUid
+        : (userId ?? 'c_${email.hashCode.abs()}');
     company = CompanyAccount(
-      id: userId ?? 'c_${email.hashCode.abs()}',
+      id: id,
       name: companyName.isEmpty ? email.split('@').first : companyName,
       email: email,
     );
@@ -68,12 +186,146 @@ class JobsProvider extends ChangeNotifier {
         'email': company!.email,
         'role': 'company',
         'hasGoldBadge': true,
+        'authUid': id,
+        'updatedAt': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+      // Auth uid ile users doc senkron (teklif / mail CF için)
+      await FirebaseFirestore.instance.collection('users').doc(id).set({
+        'role': 'company',
+        'email': email,
+        'fullName': company!.name,
         'updatedAt': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
     } catch (_) {}
+    await refreshCompanyProfile();
     await bindJobsFromFirestore();
     notifyListeners();
   }
+
+  /// Öğrenci e-posta / adını dizin + Firestore + CV’den çözer.
+  Future<({String email, String name})> resolveStudentContact(
+    String studentId, {
+    AuthProvider? auth,
+    String? fallbackName,
+  }) async {
+    var email = auth?.findUser(studentId)?.email.trim() ?? '';
+    var name = auth?.findUser(studentId)?.fullName.trim() ??
+        (fallbackName ?? '').trim();
+
+    Future<void> readUserDoc(String id) async {
+      try {
+        final doc =
+            await FirebaseFirestore.instance.collection('users').doc(id).get();
+        if (!doc.exists) return;
+        final d = doc.data() ?? {};
+        if (email.isEmpty) email = '${d['email'] ?? ''}'.trim();
+        if (name.isEmpty) {
+          name = '${d['fullName'] ?? ''}'.trim();
+          if (name.isEmpty) {
+            name =
+                '${d['firstName'] ?? ''} ${d['lastName'] ?? ''}'.trim();
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (email.isEmpty || name.isEmpty) await readUserDoc(studentId);
+
+    if (email.isEmpty || name.isEmpty) {
+      try {
+        final q = await FirebaseFirestore.instance
+            .collection('users')
+            .where('stableId', isEqualTo: studentId)
+            .limit(1)
+            .get();
+        if (q.docs.isNotEmpty) {
+          final d = q.docs.first.data();
+          if (email.isEmpty) email = '${d['email'] ?? ''}'.trim();
+          if (name.isEmpty) {
+            name = '${d['fullName'] ?? ''}'.trim();
+            if (name.isEmpty) {
+              name =
+                  '${d['firstName'] ?? ''} ${d['lastName'] ?? ''}'.trim();
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (email.isEmpty || name.isEmpty) {
+      try {
+        final doc =
+            await FirebaseFirestore.instance.collection('cvs').doc(studentId).get();
+        if (doc.exists) {
+          final raw = doc.data()?['cv_data'];
+          if (raw is Map) {
+            final pi = raw['personalInfo'];
+            if (pi is Map) {
+              if (email.isEmpty) email = '${pi['email'] ?? ''}'.trim();
+              if (name.isEmpty) name = '${pi['name'] ?? ''}'.trim();
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return (email: email, name: name.isEmpty ? 'Aday' : name);
+  }
+
+  Future<void> refreshCompanyProfile() async {
+    if (company == null) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('companies')
+          .doc(company!.id)
+          .get();
+      if (!doc.exists) return;
+      final d = doc.data() ?? {};
+      final sig = CompanyMailSignature.fromJson(
+        (d['mailSignature'] as Map?)?.cast<String, dynamic>(),
+      );
+      final logo = '${d['logoUrl'] ?? sig.logoUrl}';
+      company = company!.copyWith(
+        name: '${d['name'] ?? company!.name}',
+        email: '${d['email'] ?? company!.email}',
+        sector: '${d['sector'] ?? company!.sector}',
+        logoUrl: logo,
+        mailSignature: sig.logoUrl.isEmpty && logo.isNotEmpty
+            ? sig.copyWith(logoUrl: logo)
+            : sig,
+      );
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[jobs] refreshCompanyProfile: $e');
+    }
+  }
+
+  Future<void> saveMailSignature(CompanyMailSignature signature) async {
+    if (company == null) return;
+    final ready = signature.copyWith(
+      configured: signature.logoUrl.trim().isNotEmpty &&
+          signature.contactName.trim().isNotEmpty &&
+          signature.replyEmail.trim().contains('@'),
+    );
+    company = company!.copyWith(
+      logoUrl: ready.logoUrl,
+      mailSignature: ready,
+    );
+    notifyListeners();
+    await FirebaseFirestore.instance.collection('companies').doc(company!.id).set({
+      'name': company!.name,
+      'email': company!.email,
+      'logoUrl': ready.logoUrl,
+      'mailSignature': ready.toJson(),
+      'updatedAt': DateTime.now().toIso8601String(),
+    }, SetOptions(merge: true));
+    status = ready.isReady
+        ? 'Mail imzası kaydedildi'
+        : 'Eksik alanlar var — logo, yetkili adı ve e-posta zorunlu';
+    notifyListeners();
+  }
+
+  bool get hasMailSignature => company?.hasMailSignature == true;
 
   Future<void> bindCompanyFromUser(AppUser user) async {
     if (!user.isCompany) {
@@ -92,6 +344,7 @@ class JobsProvider extends ChangeNotifier {
   void companyLogout() {
     company = null;
     ranked = [];
+    lastRankedJobId = null;
     notifyListeners();
   }
 
@@ -101,6 +354,25 @@ class JobsProvider extends ChangeNotifier {
     List<AppUser>? students,
     bool notifyStudents = false,
   }) async {
+    if (notifyStudents && !hasMailSignature) {
+      status = 'MAIL_SIGNATURE_REQUIRED';
+      notifyListeners();
+      // İlanı yine kaydet, bildirimi atlama
+      final i = _jobs.indexWhere((j) => j.id == job.id);
+      if (i >= 0) {
+        _jobs[i] = job;
+      } else {
+        _jobs.insert(0, job);
+      }
+      try {
+        await FirebaseFirestore.instance
+            .collection('jobs')
+            .doc(job.id)
+            .set(job.toJson(), SetOptions(merge: true));
+      } catch (_) {}
+      notifyListeners();
+      return;
+    }
     final i = _jobs.indexWhere((j) => j.id == job.id);
     if (i >= 0) {
       _jobs[i] = job;
@@ -156,6 +428,11 @@ class JobsProvider extends ChangeNotifier {
       return targeted;
     } catch (e) {
       debugPrint('notifyJobPosted CF: $e');
+      if ('$e'.contains('MAIL_SIGNATURE_REQUIRED')) {
+        status = 'MAIL_SIGNATURE_REQUIRED';
+        notifyListeners();
+        return 0;
+      }
     }
 
     // CF yoksa: yalnızca firmayı takip edenlere yerel bildirim
@@ -219,6 +496,11 @@ class JobsProvider extends ChangeNotifier {
     final i = _jobs.indexWhere((j) => j.id == jobId);
     if (i < 0) return false;
     final job = _jobs[i];
+    if (job.status != JobStatus.open || job.isExpired) {
+      status = 'Bu ilan artık başvuruya kapalı';
+      notifyListeners();
+      return false;
+    }
     if (job.applicantIds.contains(studentId)) return true;
     job.applicantIds = [...job.applicantIds, studentId];
     notifyListeners();
@@ -282,13 +564,60 @@ class JobsProvider extends ChangeNotifier {
     return out;
   }
 
-  Future<void> sendOffer({
+  Future<bool> sendOffer({
     required String studentId,
     required String message,
     NotificationProvider? notifications,
     AuthProvider? auth,
+    String? studentEmail,
+    String? studentName,
   }) async {
-    if (company == null) return;
+    if (company == null) return false;
+    // Auth uid ile firma kaydını hizala (sendCompanyMail auth.uid kullanır)
+    final authUid = FirebaseAuth.instance.currentUser?.uid;
+    if (authUid != null &&
+        authUid.isNotEmpty &&
+        company!.id != authUid) {
+      company = CompanyAccount(
+        id: authUid,
+        name: company!.name,
+        email: company!.email,
+        sector: company!.sector,
+        logoUrl: company!.logoUrl,
+        mailSignature: company!.mailSignature,
+      );
+      try {
+        await FirebaseFirestore.instance.collection('companies').doc(authUid).set({
+          'name': company!.name,
+          'email': company!.email,
+          'logoUrl': company!.logoUrl,
+          'mailSignature': company!.mailSignature.toJson(),
+          'role': 'company',
+          'authUid': authUid,
+          'updatedAt': DateTime.now().toIso8601String(),
+        }, SetOptions(merge: true));
+      } catch (_) {}
+      await refreshCompanyProfile();
+    }
+    if (!hasMailSignature) {
+      await refreshCompanyProfile();
+      if (!hasMailSignature) {
+        status = 'MAIL_SIGNATURE_REQUIRED';
+        notifyListeners();
+        return false;
+      }
+    }
+    final contact = await resolveStudentContact(
+      studentId,
+      auth: auth,
+      fallbackName: studentName,
+    );
+    final mailTo = (studentEmail ?? '').trim().isNotEmpty
+        ? studentEmail!.trim()
+        : contact.email;
+    final displayName =
+        (studentName ?? '').trim().isNotEmpty ? studentName!.trim() : contact.name;
+
     final offer = CompanyOffer(
       id: const Uuid().v4(),
       companyId: company!.id,
@@ -317,9 +646,47 @@ class JobsProvider extends ChangeNotifier {
       personalize: true,
     );
 
+    var mailed = false;
+    if (mailTo.contains('@')) {
+      busy = true;
+      status = 'Teklif maili gönderiliyor…';
+      notifyListeners();
+      try {
+        final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('sendCompanyMail');
+        await callable.call({
+          'to': mailTo,
+          'subject': '${company!.name} · Teklif',
+          'bodyText': message,
+          'kind': 'offer',
+          'studentName': displayName.split(' ').first,
+          'ctaLabel': 'KampüsteyimAPP’i aç',
+          'ctaUrl': 'https://app.kampusteyim.app/staj-ai',
+        });
+        mailed = true;
+        status = 'Teklif ve mail gönderildi · $mailTo';
+      } catch (e) {
+        debugPrint('[jobs] offer mail: $e');
+        final msg = '$e';
+        if (msg.contains('MAIL_SIGNATURE_REQUIRED')) {
+          status = 'MAIL_SIGNATURE_REQUIRED';
+        } else {
+          status = 'Teklif kaydedildi; mail gönderilemedi';
+        }
+      }
+      busy = false;
+      notifyListeners();
+    } else {
+      status = 'Teklif kaydedildi; öğrencinin e-postası bulunamadı';
+      notifyListeners();
+    }
+    debugPrint('[jobs] offer mailed=$mailed to=$mailTo');
+
     // Firma teklifi → Twitter tarzı kurum ilişkisi (gold tick yok)
     final companyUser = auth?.findUser(company!.id);
-    final logo = companyUser?.communityLogoUrl ?? companyUser?.photoUrl;
+    final logo = company?.displayLogoUrl.isNotEmpty == true
+        ? company!.displayLogoUrl
+        : (companyUser?.communityLogoUrl ?? companyUser?.photoUrl);
     if (auth != null) {
       final student = auth.findUser(studentId);
       if (student != null) {
@@ -341,23 +708,42 @@ class JobsProvider extends ChangeNotifier {
         }, SetOptions(merge: true));
       } catch (_) {}
     }
+    return true;
   }
 
   Future<void> emailStudent({
     required String toEmail,
     required String subject,
     required String html,
+    String? studentName,
+    String? bodyText,
   }) async {
+    if (!hasMailSignature) {
+      status = 'MAIL_SIGNATURE_REQUIRED';
+      notifyListeners();
+      return;
+    }
     busy = true;
     status = 'Mail gönderiliyor…';
     notifyListeners();
     try {
       final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
-          .httpsCallable('notifyMail');
-      await callable.call({'to': toEmail, 'subject': subject, 'html': html});
+          .httpsCallable('sendCompanyMail');
+      await callable.call({
+        'to': toEmail,
+        'subject': subject,
+        'bodyText': bodyText ?? html.replaceAll(RegExp(r'<[^>]*>'), ' '),
+        'kind': 'mail',
+        'studentName': studentName ?? '',
+      });
       status = 'Mail gönderildi';
     } catch (e) {
-      status = 'Mail kuyruğa alındı (mock): $e';
+      final msg = '$e';
+      if (msg.contains('MAIL_SIGNATURE_REQUIRED')) {
+        status = 'MAIL_SIGNATURE_REQUIRED';
+      } else {
+        status = 'Mail gönderilemedi: $e';
+      }
     }
     busy = false;
     notifyListeners();
@@ -366,6 +752,7 @@ class JobsProvider extends ChangeNotifier {
   Future<void> rankApplicantsWithAi(JobListing job) async {
     if (company == null) return;
     busy = true;
+    lastRankedJobId = job.id;
     status = 'Firma AI başvuruları sıralıyor…';
     ranked = [];
     notifyListeners();
@@ -397,7 +784,7 @@ class JobsProvider extends ChangeNotifier {
             );
           })
           .toList();
-      status = 'AI sıralama hazır · ${ranked.length} aday';
+      status = 'AI sıralama hazır · ${ranked.length} aday · ${job.title}';
     } catch (_) {
       ranked = job.applicantIds
           .asMap()
@@ -415,10 +802,18 @@ class JobsProvider extends ChangeNotifier {
             ),
           )
           .toList();
-      status = 'Yerel AI sıralama (Function yoksa)';
+      status = 'Yerel AI sıralama · ${job.title}';
     }
     busy = false;
     notifyListeners();
+  }
+
+  JobListing? jobById(String? id) {
+    if (id == null) return null;
+    for (final j in _jobs) {
+      if (j.id == id) return j;
+    }
+    return null;
   }
 
   JobListing newDraft() {
@@ -432,5 +827,12 @@ class JobsProvider extends ChangeNotifier {
       type: JobType.internship,
       createdAt: DateTime.now(),
     );
+  }
+
+  @override
+  void dispose() {
+    unawaited(_jobsSub?.cancel());
+    unawaited(_offersSub?.cancel());
+    super.dispose();
   }
 }

@@ -88,6 +88,37 @@
       setTimeout(hideBoot, 3500);
     })();
   </script>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Eski SW / Cache Storage hashed asset ister → SPA rewrite HTML döner →
+    // "unsupported MIME type ('text/html')". Önce temizle, sonra boot.
+    (function () {
+      function bootFlutter() {
+        var s = document.createElement('script');
+        s.src = 'flutter_bootstrap.js';
+        s.async = true;
+        document.body.appendChild(s);
+      }
+      var tasks = [];
+      if ('serviceWorker' in navigator) {
+        tasks.push(
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            return Promise.all(regs.map(function (reg) {
+              return reg.unregister().catch(function () {});
+            }));
+          }).catch(function () {})
+        );
+      }
+      if (window.caches && caches.keys) {
+        tasks.push(
+          caches.keys().then(function (keys) {
+            return Promise.all(keys.map(function (k) {
+              return caches.delete(k).catch(function () {});
+            }));
+          }).catch(function () {})
+        );
+      }
+      Promise.all(tasks).then(bootFlutter).catch(bootFlutter);
+    })();
+  </script>
 </body>
 </html>

@@ -3,132 +3,181 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="description" content="KampüsteyimAPP Market — Plus üyelik ve kampüs ürünleri. Resmi satış vitrini." />
+  <meta name="description" content="KampüsteyimAPP Market — Plus üyelik, tişört, şapka ve kampüs ürünleri." />
   <meta name="theme-color" content="#0B1F3A" />
-  <title>KampüsteyimAPP Market · Plus</title>
+  <title>KampüsteyimAPP Market</title>
   <link rel="icon" href="./kampusteyim_icon.png" type="image/png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --navy: #0B1F3A;
-      --navy2: #061426;
-      --cyan: #00D4C8;
-      --lime: #89C741;
-      --soft: #F4F7FB;
-      --muted: #5B6B7C;
-      --line: #D7E0EB;
-      --ok: #0a8f6c;
-      --err: #C8102E;
+      --navy: #0B1F3A; --navy2: #061426; --cyan: #00D4C8; --lime: #89C741;
+      --soft: #F2F5F8; --card: #fff; --muted: #5B6B7C; --line: #D7E0EB;
+      --ok: #0a8f6c; --err: #C8102E;
       --pad: max(1rem, env(safe-area-inset-left));
       --pad-r: max(1rem, env(safe-area-inset-right));
       --font-d: "Syne", system-ui, sans-serif;
       --font-b: "Instrument Sans", system-ui, sans-serif;
+      --max: 1080px;
     }
     *, *::before, *::after { box-sizing: border-box; }
-    html { -webkit-text-size-adjust: 100%; }
+    html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
     body {
-      margin: 0;
-      font-family: var(--font-b);
-      color: var(--navy);
+      margin: 0; font-family: var(--font-b); color: var(--navy);
       background:
-        radial-gradient(ellipse 80% 50% at 10% -10%, rgba(0,212,200,.18), transparent 55%),
-        radial-gradient(ellipse 60% 40% at 100% 0%, rgba(137,199,65,.12), transparent 50%),
-        var(--soft);
-      min-height: 100svh;
-      line-height: 1.45;
+        radial-gradient(ellipse 70% 45% at 0% 0%, rgba(0,212,200,.16), transparent 55%),
+        radial-gradient(ellipse 50% 35% at 100% 8%, rgba(137,199,65,.1), transparent 45%),
+        linear-gradient(180deg, #EAF0F6 0%, var(--soft) 28%, #EEF2F6 100%);
+      min-height: 100svh; line-height: 1.45;
     }
     a { color: inherit; }
-    button, input { font: inherit; font-size: 16px; }
-    .wrap { width: 100%; max-width: 560px; margin: 0 auto; padding: 0 var(--pad) 2.5rem var(--pad-r); }
+    button, input, select { font: inherit; font-size: 16px; }
+    img { max-width: 100%; display: block; }
+    .wrap { width: 100%; max-width: var(--max); margin: 0 auto; padding: 0 var(--pad) 2.5rem var(--pad-r); }
 
     .top {
-      position: sticky; top: 0; z-index: 20;
-      background: rgba(6,20,38,.94);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      position: sticky; top: 0; z-index: 40;
+      background: rgba(6,20,38,.95); backdrop-filter: blur(14px);
       border-bottom: 1px solid rgba(255,255,255,.08);
       padding-top: env(safe-area-inset-top);
     }
     .top-inner {
-      max-width: 560px; margin: 0 auto;
-      display: flex; align-items: center; justify-content: space-between;
-      min-height: 56px; padding: 0 var(--pad) 0 var(--pad-r); gap: .75rem;
+      max-width: var(--max); margin: 0 auto; display: flex; align-items: center;
+      justify-content: space-between; min-height: 58px; padding: 0 var(--pad) 0 var(--pad-r); gap: .75rem;
     }
     .brand {
-      display: inline-flex; align-items: center; gap: .55rem;
-      text-decoration: none; color: #fff;
+      display: inline-flex; align-items: center; gap: .55rem; text-decoration: none; color: #fff;
       font-family: var(--font-d); font-weight: 800; font-size: 1.05rem;
     }
     .brand img { width: 34px; height: 34px; border-radius: 9px; }
     .brand span { color: var(--cyan); }
+    .nav-links { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .nav-links a {
+      color: rgba(255,255,255,.82); text-decoration: none; font-size: .82rem; font-weight: 650;
+      padding: .4rem .65rem; border-radius: 999px;
+    }
     .pill {
-      font-size: .75rem; font-weight: 700; letter-spacing: .04em;
-      text-transform: uppercase; color: var(--navy2);
-      background: var(--cyan); border-radius: 999px; padding: .35rem .7rem;
+      font-size: .72rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--navy2); background: var(--cyan); border-radius: 999px; padding: .35rem .7rem;
     }
 
-    .hero { padding: 1.75rem 0 1rem; }
-    .hero h1 {
-      font-family: var(--font-d); font-weight: 800; font-size: clamp(1.55rem, 5vw, 1.9rem);
-      letter-spacing: -.03em; margin: 0 0 .4rem; line-height: 1.15;
+    .hero { display: grid; gap: 1.25rem; padding: 1.6rem 0 1.1rem; align-items: end; }
+    @media (min-width: 820px) {
+      .hero { grid-template-columns: 1.2fr .8fr; gap: 2rem; padding: 2rem 0 1.4rem; }
     }
-    .hero p { margin: 0; color: var(--muted); font-size: .98rem; }
+    .hero h1 {
+      font-family: var(--font-d); font-weight: 800;
+      font-size: clamp(1.7rem, 4.5vw, 2.55rem); letter-spacing: -.035em;
+      margin: 0 0 .45rem; line-height: 1.08;
+    }
+    .hero p { margin: 0; color: var(--muted); font-size: 1rem; max-width: 38ch; }
+    .hero-stats { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1rem; }
+    .stat {
+      background: rgba(255,255,255,.78); border: 1px solid var(--line);
+      border-radius: 12px; padding: .55rem .8rem; font-size: .8rem; font-weight: 700;
+    }
+    .stat b { color: var(--navy); display: block; font-family: var(--font-d); font-size: 1rem; }
+    .hero-card {
+      background: linear-gradient(145deg, #0B1F3A 0%, #123456 55%, #0A5F5A 120%);
+      color: #fff; border-radius: 22px; padding: 1.2rem 1.15rem;
+      box-shadow: 0 18px 40px rgba(11,31,58,.22); position: relative; overflow: hidden;
+    }
+    .hero-card .kicker { font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--cyan); }
+    .hero-card h2 { font-family: var(--font-d); margin: .35rem 0 .4rem; font-size: 1.35rem; }
+    .hero-card p { margin: 0; color: rgba(255,255,255,.78); font-size: .9rem; }
+
+    .tabs { display: flex; gap: .45rem; overflow-x: auto; padding: .15rem 0 .85rem; }
+    .tab {
+      border: 1px solid var(--line); background: #fff; color: var(--muted);
+      border-radius: 999px; padding: .55rem .95rem; font-weight: 750; cursor: pointer; white-space: nowrap;
+    }
+    .tab.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+    .section-head {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: .75rem; margin: .4rem 0 .85rem;
+    }
+    .section-head h2 { font-family: var(--font-d); font-size: 1.2rem; font-weight: 800; margin: 0; }
+    .section-head span { color: var(--muted); font-size: .85rem; }
+
+    .grid {
+      display: grid; gap: .85rem; grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    @media (min-width: 720px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; } }
+
+    .product {
+      background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+      overflow: hidden; display: flex; flex-direction: column; cursor: pointer;
+      box-shadow: 0 10px 28px rgba(11,31,58,.05); text-align: left;
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .product:hover { transform: translateY(-3px); box-shadow: 0 16px 36px rgba(11,31,58,.1); }
+    .product .media { aspect-ratio: 1; background: #EEF2F6; position: relative; overflow: hidden; }
+    .product .media img { width: 100%; height: 100%; object-fit: cover; }
+    .product .tag {
+      position: absolute; left: .55rem; top: .55rem; background: rgba(255,255,255,.92);
+      color: var(--navy); font-size: .68rem; font-weight: 800; text-transform: uppercase;
+      border-radius: 8px; padding: .28rem .45rem;
+    }
+    .product .body { padding: .85rem .8rem 1rem; display: flex; flex-direction: column; flex: 1; gap: .35rem; }
+    .product h3 { margin: 0; font-size: .95rem; font-weight: 800; }
+    .product .desc { margin: 0; color: var(--muted); font-size: .78rem; flex: 1; }
+    .product .row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: .35rem; }
+    .product .price { font-family: var(--font-d); font-weight: 800; font-size: 1.05rem; }
+    .product .hint { font-size: .72rem; font-weight: 700; color: var(--cyan); background: var(--navy); border-radius: 8px; padding: .35rem .55rem; }
+
+    .featured {
+      grid-column: 1 / -1; display: grid; gap: 0; background: var(--card);
+      border: 1px solid var(--line); border-radius: 22px; overflow: hidden;
+      box-shadow: 0 14px 36px rgba(11,31,58,.07);
+    }
+    @media (min-width: 820px) { .featured { grid-template-columns: .9fr 1.1fr; } }
+    .featured .media {
+      min-height: 220px;
+      background: radial-gradient(circle at 30% 20%, rgba(0,212,200,.35), transparent 45%), linear-gradient(160deg, #0B1F3A, #123A5C 55%, #0D6B66);
+      display: grid; place-items: center; padding: 1.5rem; color: #fff; text-align: center;
+    }
+    .featured .badge-xl {
+      width: 88px; height: 88px; border-radius: 22px; background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.18); display: grid; place-items: center; margin: 0 auto .75rem;
+    }
+    .featured .badge-xl img { width: 64px; height: 64px; border-radius: 16px; }
+    .featured .media h3 { font-family: var(--font-d); font-size: 1.45rem; margin: 0 0 .25rem; }
+    .featured .media p { margin: 0; color: rgba(255,255,255,.78); font-size: .9rem; }
+    .featured .body { padding: 1.15rem 1.1rem 1.25rem; }
 
     .card {
       background: #fff; border: 1px solid var(--line); border-radius: 18px;
-      padding: 1.15rem 1.1rem; margin: 0 0 1rem;
-      box-shadow: 0 10px 30px rgba(11,31,58,.05);
+      padding: 1.15rem 1.1rem; margin: 0 0 1rem; box-shadow: 0 10px 30px rgba(11,31,58,.05);
     }
-    .card h2 {
-      font-family: var(--font-d); font-size: 1.05rem; font-weight: 800;
-      margin: 0 0 .85rem; letter-spacing: -.02em;
-    }
+    .card h2 { font-family: var(--font-d); font-size: 1.05rem; font-weight: 800; margin: 0 0 .85rem; }
 
     .plans {
       display: flex; gap: .65rem; overflow-x: auto; scroll-snap-type: x mandatory;
       padding: .15rem .1rem .55rem; margin: 0 -.15rem .35rem;
-      -webkit-overflow-scrolling: touch;
     }
-    .plans::-webkit-scrollbar { height: 4px; }
-    .plans::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
     .plan {
       flex: 0 0 42%; min-width: 132px; scroll-snap-align: start;
-      border: 1.5px solid var(--line); border-radius: 14px;
-      padding: .9rem .75rem; background: var(--soft); cursor: pointer;
-      text-align: left; transition: border-color .15s, background .15s, transform .15s;
+      border: 1.5px solid var(--line); border-radius: 14px; padding: .9rem .75rem;
+      background: var(--soft); cursor: pointer; text-align: left;
     }
-    .plan:hover { transform: translateY(-1px); }
-    .plan.active {
-      border-color: var(--navy); background: #fff;
-      box-shadow: 0 0 0 2px rgba(11,31,58,.12);
-    }
-    .plan .badge {
-      display: inline-block; font-size: .65rem; font-weight: 800;
-      color: var(--navy2); background: var(--lime); border-radius: 6px;
-      padding: .15rem .4rem; margin-bottom: .35rem;
-    }
+    .plan.active { border-color: var(--navy); background: #fff; box-shadow: 0 0 0 2px rgba(11,31,58,.12); }
+    .plan .badge { display: inline-block; font-size: .65rem; font-weight: 800; color: var(--navy2); background: var(--lime); border-radius: 6px; padding: .15rem .4rem; margin-bottom: .35rem; }
     .plan .label { font-weight: 800; font-size: .95rem; }
     .plan .price { font-family: var(--font-d); font-weight: 800; font-size: 1.25rem; margin-top: .25rem; }
     .plan .sub { font-size: .78rem; color: var(--muted); margin-top: .15rem; }
 
     .features { list-style: none; padding: 0; margin: .75rem 0 0; }
-    .features li {
-      display: flex; gap: .5rem; align-items: flex-start;
-      font-size: .9rem; padding: .35rem 0; color: var(--navy);
-    }
-    .features li::before {
-      content: ""; width: .55rem; height: .55rem; margin-top: .4rem;
-      border-radius: 50%; background: var(--cyan); flex: 0 0 auto;
-    }
+    .features li { display: flex; gap: .5rem; align-items: flex-start; font-size: .9rem; padding: .35rem 0; }
+    .features li::before { content: ""; width: .55rem; height: .55rem; margin-top: .4rem; border-radius: 50%; background: var(--cyan); flex: 0 0 auto; }
 
     label { display: block; font-size: .8rem; font-weight: 700; color: var(--muted); margin: .65rem 0 .3rem; }
-    input {
+    input, select {
       width: 100%; border: 1px solid var(--line); border-radius: 12px;
       padding: .75rem .85rem; background: #fff; color: var(--navy);
     }
-    input:focus { outline: 2px solid rgba(0,212,200,.45); border-color: var(--cyan); }
+    input:focus, select:focus { outline: 2px solid rgba(0,212,200,.45); border-color: var(--cyan); }
 
     .btn {
       display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
@@ -138,10 +187,8 @@
     }
     .btn:disabled { opacity: .55; cursor: not-allowed; }
     .btn.cyan { background: var(--cyan); color: var(--navy2); }
-    .btn.ghost {
-      background: transparent; color: var(--navy);
-      border: 1px solid var(--line); margin-top: .55rem;
-    }
+    .btn.ghost { background: transparent; color: var(--navy); border: 1px solid var(--line); margin-top: .55rem; }
+    .btn.sm { width: auto; margin: 0; padding: .55rem .75rem; font-size: .8rem; border-radius: 11px; }
 
     .userbar {
       display: flex; align-items: center; justify-content: space-between; gap: .75rem;
@@ -149,28 +196,21 @@
       padding-bottom: .75rem; border-bottom: 1px solid var(--line);
     }
     .userbar strong { color: var(--navy); }
-    .msg {
-      border-radius: 12px; padding: .75rem .85rem; font-size: .9rem; margin: .75rem 0 0;
-    }
+    .msg { border-radius: 12px; padding: .75rem .85rem; font-size: .9rem; margin: .75rem 0 0; }
     .msg.ok { background: rgba(10,143,108,.1); color: var(--ok); }
     .msg.err { background: rgba(200,16,46,.08); color: var(--err); }
     .msg.info { background: rgba(0,212,200,.12); color: var(--navy); }
-
-    .iban-box {
-      background: var(--soft); border-radius: 12px; padding: .85rem;
-      font-size: .9rem; margin-top: .75rem; word-break: break-all;
-    }
+    .iban-box { background: var(--soft); border-radius: 12px; padding: .85rem; font-size: .9rem; margin-top: .75rem; word-break: break-all; }
     .iban-box code { font-weight: 800; color: var(--navy); }
-
-    .coming { opacity: .72; border-style: dashed; }
-    .coming h3 { margin: 0 0 .35rem; font-size: 1rem; }
-    .coming p { margin: 0; font-size: .88rem; color: var(--muted); }
+    .note { margin: .85rem 0 0; padding: .85rem 1rem; border-radius: 14px; background: rgba(11,31,58,.04); border: 1px dashed var(--line); color: var(--muted); font-size: .85rem; }
 
     footer {
       text-align: center; color: var(--muted); font-size: .78rem;
-      padding: 1.5rem var(--pad) calc(1.5rem + env(safe-area-inset-bottom));
+      padding: 1.5rem var(--pad) calc(1.5rem + env(safe-area-inset-bottom)); line-height: 1.55;
     }
     footer a { color: var(--navy); font-weight: 600; text-decoration: none; }
+    footer .contact { margin-top: .65rem; font-size: .8rem; }
+    footer .contact strong { color: var(--navy2); font-weight: 700; }
     .hidden { display: none !important; }
     .spin {
       width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.25);
@@ -178,6 +218,74 @@
     }
     .btn.cyan .spin { border-color: rgba(6,20,38,.2); border-top-color: var(--navy2); }
     @keyframes s { to { transform: rotate(360deg); } }
+
+    /* Product detail + checkout sheets */
+    .sheet-bg {
+      position: fixed; inset: 0; z-index: 60; background: rgba(6,20,38,.55);
+      display: flex; align-items: flex-end; justify-content: center;
+      padding: env(safe-area-inset-top) .6rem 0;
+    }
+    @media (min-width: 720px) { .sheet-bg { align-items: center; padding: 1rem; } }
+    .sheet {
+      width: min(560px, 100%); max-height: min(92svh, 900px); overflow: auto;
+      background: #fff; border-radius: 22px 22px 0 0;
+      box-shadow: 0 -8px 40px rgba(6,20,38,.25);
+      padding-bottom: calc(.5rem + env(safe-area-inset-bottom));
+    }
+    @media (min-width: 720px) { .sheet { border-radius: 22px; } }
+    .sheet-head {
+      position: sticky; top: 0; z-index: 2; background: rgba(255,255,255,.94);
+      backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: space-between;
+      padding: .85rem 1rem; border-bottom: 1px solid var(--line);
+    }
+    .sheet-head strong { font-family: var(--font-d); }
+    .icon-btn {
+      border: 0; background: var(--soft); width: 36px; height: 36px; border-radius: 10px;
+      cursor: pointer; font-size: 1.1rem; font-weight: 800; color: var(--navy);
+    }
+    .sheet-body { padding: 0 1rem 1.15rem; }
+    .detail-photo {
+      margin: .75rem 0 1rem; border-radius: 16px; overflow: hidden; background: #EEF2F6;
+      cursor: zoom-in; border: 1px solid var(--line);
+    }
+    .detail-photo img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+    .detail-title { font-family: var(--font-d); font-size: 1.35rem; margin: 0 0 .25rem; }
+    .detail-price { font-family: var(--font-d); font-size: 1.4rem; font-weight: 800; margin: 0 0 .65rem; }
+    .detail-long { color: var(--muted); font-size: .92rem; margin: 0 0 1rem; white-space: pre-line; }
+    .sizes { display: flex; flex-wrap: wrap; gap: .45rem; margin: .35rem 0 .75rem; }
+    .size-chip {
+      border: 1.5px solid var(--line); background: #fff; border-radius: 999px;
+      padding: .5rem .85rem; font-weight: 750; cursor: pointer;
+    }
+    .size-chip.active { border-color: var(--navy); background: var(--navy); color: #fff; }
+
+    .zoom-bg {
+      position: fixed; inset: 0; z-index: 80; background: rgba(0,0,0,.88);
+      display: flex; align-items: center; justify-content: center; padding: 1rem; cursor: zoom-out;
+    }
+    .zoom-bg img { max-width: min(920px, 100%); max-height: 90svh; object-fit: contain; border-radius: 12px; }
+
+    .pay-steps { display: flex; gap: .4rem; margin: .5rem 0 1rem; flex-wrap: wrap; }
+    .pay-steps span {
+      font-size: .72rem; font-weight: 800; letter-spacing: .03em; text-transform: uppercase;
+      padding: .3rem .55rem; border-radius: 8px; background: var(--soft); color: var(--muted);
+    }
+    .pay-steps span.on { background: var(--cyan); color: var(--navy2); }
+    .pay-box {
+      background: linear-gradient(180deg, #F7FBFC, #EEF5F8); border: 1px solid var(--line);
+      border-radius: 16px; padding: 1rem; margin: .5rem 0;
+    }
+    .pay-box .row { display: flex; justify-content: space-between; gap: .75rem; padding: .35rem 0; font-size: .92rem; }
+    .pay-box .row b { word-break: break-all; text-align: right; }
+    .copy-btn { margin-top: .35rem; }
+    .success-panel {
+      text-align: center; padding: 1.25rem .5rem 1rem;
+    }
+    .success-panel .big {
+      width: 64px; height: 64px; border-radius: 50%; background: rgba(10,143,108,.12);
+      color: var(--ok); display: grid; place-items: center; margin: 0 auto .75rem;
+      font-size: 1.6rem; font-weight: 900;
+    }
   </style>
 </head>
 <body>
@@ -187,68 +295,150 @@
         <img src="./kampusteyim_icon.png" width="34" height="34" alt="" />
         Kampüsteyim<span>APP</span>
       </a>
-      <span class="pill">Market</span>
+      <div class="nav-links">
+        <a href="#merch">Ürünler</a>
+        <a href="#plus">Plus</a>
+        <span class="pill">Market</span>
+      </div>
     </div>
   </header>
 
   <main class="wrap">
     <section class="hero">
-      <h1>Kampüsteyim Plus</h1>
-      <p>Resmi satış vitrini · Süreyi seç, satın al — ödeme adımında KampüsteyimAPP hesabınla giriş yaparsın.</p>
+      <div>
+        <h1>Kampüs marketi.<br />Giy, kullan, Plus’la öne çık.</h1>
+        <p>Ürün detayına gir, beden seç, hesabınla giriş yap — IBAN ile güvenli ödeme.</p>
+        <div class="hero-stats">
+          <div class="stat"><b>4+</b> Merch ürün</div>
+          <div class="stat"><b>Plus</b> Dijital üyelik</div>
+          <div class="stat"><b>IBAN</b> Havale / EFT</div>
+        </div>
+      </div>
+      <aside class="hero-card">
+        <div class="kicker">Öne çıkan</div>
+        <h2>Kampüsteyim Plus</h2>
+        <p>Yeşil tick, CV-AI ayrıcalıkları ve kampüs öncelikli deneyim.</p>
+        <a class="btn cyan sm" href="#plus" style="margin-top:.9rem;width:auto;padding:.7rem 1rem">Plus’a git</a>
+      </aside>
     </section>
 
     <div id="banner" class="msg info hidden"></div>
 
-    <!-- Önce vitrin -->
-    <section class="card" id="shopCard">
+    <div class="tabs" role="tablist">
+      <button class="tab active" type="button" data-tab="all">Tümü</button>
+      <button class="tab" type="button" data-tab="merch">Giyim &amp; Aksesuar</button>
+      <button class="tab" type="button" data-tab="digital">Dijital</button>
+    </div>
+
+    <section id="merch">
+      <div class="section-head">
+        <h2>Kampüs koleksiyonu</h2>
+        <span>Detay için ürüne dokun</span>
+      </div>
+      <div class="grid" id="productGrid"></div>
+      <p class="note">Merch siparişlerinde KampüsteyimAPP hesabınla giriş zorunlu. Havale açıklamasını aynen yaz; “Ödeme tamamlandı” de — admin onayından sonra kargo hazırlanır.</p>
+    </section>
+
+    <section class="card" id="shopCard" style="margin-top:1.25rem">
       <div class="userbar hidden" id="userbar">
         <div>Giriş: <strong id="userEmail"></strong></div>
         <button class="btn ghost" id="logoutBtn" type="button" style="width:auto;margin:0;padding:.45rem .7rem;font-size:.8rem">Çıkış</button>
       </div>
-
-      <h2>Plus süresi seç</h2>
-      <div class="plans" id="plans" role="listbox" aria-label="Plus süreleri"></div>
-      <p style="margin:.25rem 0 0;font-size:.82rem;color:var(--muted)">Kaydırarak seç · fiyat admin panelindeki aylık tutardan hesaplanır.</p>
-
-      <ul class="features">
-        <li>CV-AI ve kampüs ayrıcalıkları</li>
-        <li>Dosya paylaşımı ve Plus limitleri</li>
-        <li>Aynı API · uygulama içi satışla senkron</li>
-      </ul>
-
-      <button class="btn cyan" id="buyBtn" type="button">Satın al</button>
-      <div id="shopMsg" class="msg hidden"></div>
-      <div id="ibanBox" class="iban-box hidden"></div>
+      <div id="plus">
+        <h2>Plus · dijital ürün</h2>
+        <div class="plans" id="plans" role="listbox" aria-label="Plus süreleri"></div>
+        <p style="margin:.25rem 0 0;font-size:.82rem;color:var(--muted)">Kaydırarak seç · fiyat admin panelindeki aylık tutardan hesaplanır.</p>
+        <button class="btn cyan" id="buyBtn" type="button">Satın al</button>
+        <div id="shopMsg" class="msg hidden"></div>
+        <div id="ibanBox" class="iban-box hidden"></div>
+      </div>
     </section>
 
-    <!-- Giriş yalnızca satın alırken -->
     <section class="card hidden" id="authCard">
-      <h2>Ödeme için giriş yap</h2>
-      <p style="margin:0;color:var(--muted);font-size:.9rem">KampüsteyimAPP’te kullandığın e-posta ve şifre. Girişten sonra seçtiğin paket için ödeme başlar.</p>
+      <h2>KampüsteyimAPP hesabınla giriş</h2>
+      <p style="margin:0;color:var(--muted);font-size:.9rem">Satın alma için uygulama e-posta ve şifren gerekli.</p>
       <label for="email">E-posta</label>
       <input id="email" type="email" autocomplete="username" placeholder="ornek@uni.edu.tr" />
       <label for="password">Şifre</label>
       <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
-      <button class="btn" id="loginBtn" type="button">Giriş yap ve öde</button>
+      <button class="btn" id="loginBtn" type="button">Giriş yap ve devam et</button>
       <button class="btn ghost" id="authCancel" type="button">Vazgeç</button>
       <a class="btn ghost" href="https://app.kampusteyim.app/register">Hesabın yok mu? Kayıt ol</a>
       <div id="authMsg" class="msg err hidden"></div>
-    </section>
-
-    <section class="card coming">
-      <h3>Market ürünleri</h3>
-      <p>Kampüs market (bilet, rozet, paketler) yakında burada. Altyapı aynı ödeme API’sine bağlı.</p>
     </section>
   </main>
 
   <footer>
     <div>© KampüsteyimAPP · AYS Tech</div>
-    <div style="margin-top:.35rem">
+    <div class="contact">
+      <div><strong>İletişim</strong></div>
+      <div><a href="mailto:payments@kampusteyim.app">payments@kampusteyim.app</a></div>
+      <div><a href="tel:+905551405501">+90 555 140 55 01</a></div>
+      <div>PTT Mh. No:8, Adana / Yüreğir</div>
+    </div>
+    <div style="margin-top:.55rem">
       <a href="https://app.kampusteyim.app/privacy.html">Gizlilik</a> ·
       <a href="https://app.kampusteyim.app/sales.html">Mesafeli satış</a> ·
       <a href="https://app.kampusteyim.app">Uygulama</a>
     </div>
   </footer>
+
+  <div id="detailSheet" class="sheet-bg hidden" role="dialog" aria-modal="true">
+    <div class="sheet">
+      <div class="sheet-head">
+        <strong id="dTitle">Ürün</strong>
+        <button class="icon-btn" type="button" id="dClose" aria-label="Kapat">×</button>
+      </div>
+      <div class="sheet-body">
+        <div class="detail-photo" id="dPhotoWrap" title="Büyüt">
+          <img id="dImg" src="" alt="" />
+        </div>
+        <h2 class="detail-title" id="dName"></h2>
+        <div class="detail-price" id="dPrice"></div>
+        <p class="detail-long" id="dLong"></p>
+        <label>Beden</label>
+        <div class="sizes" id="dSizes"></div>
+        <label for="dShipName">Alıcı adı</label>
+        <input id="dShipName" type="text" placeholder="Ad Soyad" />
+        <label for="dCity">Şehir</label>
+        <input id="dCity" type="text" placeholder="Gaziantep" />
+        <button class="btn cyan" id="dBuy" type="button">Satın al</button>
+        <div id="dMsg" class="msg hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="paySheet" class="sheet-bg hidden" role="dialog" aria-modal="true">
+    <div class="sheet">
+      <div class="sheet-head">
+        <strong>Ödeme</strong>
+        <button class="icon-btn" type="button" id="pClose" aria-label="Kapat">×</button>
+      </div>
+      <div class="sheet-body">
+        <div class="pay-steps">
+          <span id="stepLogin">1 · Giriş</span>
+          <span id="stepPay" class="on">2 · Havale</span>
+          <span id="stepDone">3 · Tamamlandı</span>
+        </div>
+        <div id="payForm">
+          <p style="margin:0 0 .75rem;color:var(--muted);font-size:.92rem">
+            Aşağıdaki IBAN’a tutarı yatır. <strong>Açıklama</strong> alanına üretilen kodu aynen yaz.
+          </p>
+          <div class="pay-box" id="payBox"></div>
+          <button class="btn cyan" id="pConfirm" type="button">Ödeme tamamlandı</button>
+          <div id="pMsg" class="msg hidden"></div>
+        </div>
+        <div id="paySuccess" class="success-panel hidden">
+          <div class="big">✓</div>
+          <h2 style="font-family:var(--font-d);margin:0 0 .35rem">Ödeme tamamlandı</h2>
+          <p id="paySuccessText" style="margin:0;color:var(--muted)">Bildirimin alındı. Kontrol sonrası siparişin işleme alınır.</p>
+          <button class="btn" id="pDoneClose" type="button">Markete dön</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="zoom" class="zoom-bg hidden"><img id="zoomImg" alt="" /></div>
 
   <script>
 (function () {
@@ -256,22 +446,44 @@
   var FN = 'https://europe-west1-ayskampuss.cloudfunctions.net';
   var AUTH = 'https://identitytoolkit.googleapis.com/v1/accounts';
 
+  var CATALOG = {
+    tshirt: {
+      sku: 'tshirt', name: 'Logo Tişört', amount: 349, tag: 'Yeni',
+      img: './market/merch_tshirt_white.jpg',
+      sizes: ['S', 'M', 'L', 'XL'],
+      short: 'Beyaz pamuk · göğüs logo baskı · unisex',
+      long: 'Resmi KampüsteyimAPP logolu beyaz tişört.\n• %100 pamuk hissiyatlı kumaş\n• Göğüste merkez logo baskı\n• Unisex kalıp\n• Günlük kampüs ve etkinlik kullanımı\nKargo Adana çıkışlıdır; beden seçimini doğru yap.'
+    },
+    hoodie: {
+      sku: 'hoodie', name: 'Campus Hoodie', amount: 799, tag: 'Popüler',
+      img: './market/merch_hoodie_black.jpg',
+      sizes: ['S', 'M', 'L', 'XL'],
+      short: 'Siyah sweatshirt · büyük logo · kışlık',
+      long: 'Siyah kampüs hoodie — büyük göğüs logo.\n• Soft fleece iç yüzey\n• Kapüşonlu, kanguru cep\n• Soğuk hava ve stant günleri için\n• Dayanıklı baskı\nBeden tablosu standart unisex.'
+    },
+    cap: {
+      sku: 'cap', name: 'Navy Şapka', amount: 249, tag: 'Aksesuar',
+      img: './market/merch_cap_navy.jpg',
+      sizes: ['Tek beden'],
+      short: 'Lacivert baseball · önde logo · ayarlı',
+      long: 'Lacivert baseball şapka.\n• Önde KampüsteyimAPP logo\n• Arkadan ayarlanabilir\n• Tek beden, çoğu kafaya uyumlu\nGüneşli kampüs günleri için.'
+    },
+    tote: {
+      sku: 'tote', name: 'Kampüs Tote', amount: 199, tag: 'Günlük',
+      img: './market/merch_tote_beige.jpg',
+      sizes: ['Tek beden'],
+      short: 'Bej kanvas · logo baskı · ders / stand',
+      long: 'Bej kanvas tote çanta.\n• Dayanıklı kumaş\n• Ön yüzde logo\n• Kitap / laptop / stant malzemesi\n• Tek beden\nHafif ve katlanabilir.'
+    }
+  };
+
   var state = {
-    idToken: null,
-    email: null,
-    cfg: null,
-    selected: null,
-    pendingBuy: false,
+    idToken: null, email: null, cfg: null, selected: null,
+    pendingBuy: false, pendingMerch: false,
+    merchSku: null, merchSize: null, merchOrder: null,
   };
 
   var $ = function (id) { return document.getElementById(id); };
-  var authCard = $('authCard');
-  var userbar = $('userbar');
-  var plansEl = $('plans');
-  var banner = $('banner');
-  var authMsg = $('authMsg');
-  var shopMsg = $('shopMsg');
-  var ibanBox = $('ibanBox');
 
   function show(el, cls, text) {
     el.classList.remove('hidden', 'ok', 'err', 'info');
@@ -282,24 +494,18 @@
 
   function money(n, cur) {
     var c = (cur || 'TL').replace('TRY', 'TL');
-    return (Number(n) || 0).toLocaleString('tr-TR', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    }) + ' ' + c;
+    return (Number(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' ' + c;
   }
 
   async function callFn(name, data, token) {
     var headers = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = 'Bearer ' + token;
     var res = await fetch(FN + '/' + name, {
-      method: 'POST',
-      headers: headers,
+      method: 'POST', headers: headers,
       body: JSON.stringify({ data: data || {} }),
     });
     var json = await res.json();
-    if (json.error) {
-      throw new Error(json.error.message || json.error.status || 'İstek başarısız');
-    }
+    if (json.error) throw new Error(json.error.message || json.error.status || 'İstek başarısız');
     return json.result;
   }
 
@@ -307,11 +513,7 @@
     var res = await fetch(AUTH + ':signInWithPassword?key=' + API_KEY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: email,
-        password: password,
-        returnSecureToken: true,
-      }),
+      body: JSON.stringify({ email: email, password: password, returnSecureToken: true }),
     });
     var json = await res.json();
     if (json.error) throw new Error(json.error.message || 'Giriş başarısız');
@@ -319,8 +521,7 @@
   }
 
   function persistSession(token, email) {
-    state.idToken = token;
-    state.email = email;
+    state.idToken = token; state.email = email;
     try {
       sessionStorage.setItem('kt_market_token', token);
       sessionStorage.setItem('kt_market_email', email);
@@ -329,43 +530,226 @@
   }
 
   function clearSession() {
-    state.idToken = null;
-    state.email = null;
-    state.pendingBuy = false;
+    state.idToken = null; state.email = null;
+    state.pendingBuy = false; state.pendingMerch = false;
     try {
       sessionStorage.removeItem('kt_market_token');
       sessionStorage.removeItem('kt_market_email');
     } catch (e) {}
     syncUserbar();
-    authCard.classList.add('hidden');
+    $('authCard').classList.add('hidden');
   }
 
   function syncUserbar() {
     if (state.idToken && state.email) {
-      userbar.classList.remove('hidden');
+      $('userbar').classList.remove('hidden');
       $('userEmail').textContent = state.email;
-    } else {
-      userbar.classList.add('hidden');
-    }
+    } else $('userbar').classList.add('hidden');
   }
 
   function restoreSession() {
     try {
       var t = sessionStorage.getItem('kt_market_token');
       var e = sessionStorage.getItem('kt_market_email');
-      if (t && e) {
-        state.idToken = t;
-        state.email = e;
-        syncUserbar();
-      }
+      if (t && e) { state.idToken = t; state.email = e; syncUserbar(); }
     } catch (e) {}
   }
 
+  function renderGrid() {
+    var grid = $('productGrid');
+    grid.innerHTML = '';
+    Object.keys(CATALOG).forEach(function (sku) {
+      var p = CATALOG[sku];
+      var art = document.createElement('article');
+      art.className = 'product';
+      art.setAttribute('data-cat', 'merch');
+      art.innerHTML =
+        '<div class="media"><span class="tag">' + p.tag + '</span><img src="' + p.img + '" alt="' + p.name + '" loading="lazy" /></div>' +
+        '<div class="body"><h3>' + p.name + '</h3><p class="desc">' + p.short + '</p>' +
+        '<div class="row"><div class="price">' + money(p.amount) + '</div><span class="hint">Detay</span></div></div>';
+      art.addEventListener('click', function () { openDetail(sku); });
+      grid.appendChild(art);
+    });
+
+    var feat = document.createElement('article');
+    feat.className = 'featured';
+    feat.setAttribute('data-cat', 'digital');
+    feat.innerHTML =
+      '<div class="media"><div><div class="badge-xl"><img src="./kampusteyim_icon.png" alt="" /></div>' +
+      '<h3>Kampüsteyim Plus</h3><p>Dijital üyelik · anında hesabına işlenir</p></div></div>' +
+      '<div class="body"><h3 style="margin:0 0 .35rem;font-size:1.15rem">Plus üyelik</h3>' +
+      '<p class="desc" style="font-size:.9rem">CV-AI ayrıcalıkları, yeşil tick ve kampüs öncelikli deneyim.</p>' +
+      '<ul class="features"><li>Yeşil tick ve öncelikli görünürlük</li><li>CV-AI / dosya limitleri</li><li>Uygulama içi satışla senkron</li></ul>' +
+      '<a class="btn cyan" href="#plus">Süreyi seç ve satın al</a></div>';
+    grid.appendChild(feat);
+  }
+
+  function openDetail(sku) {
+    var p = CATALOG[sku];
+    if (!p) return;
+    state.merchSku = sku;
+    state.merchSize = p.sizes[0];
+    $('dTitle').textContent = 'Ürün detayı';
+    $('dName').textContent = p.name;
+    $('dPrice').textContent = money(p.amount);
+    $('dLong').textContent = p.long;
+    $('dImg').src = p.img;
+    $('dImg').alt = p.name;
+    var sizes = $('dSizes');
+    sizes.innerHTML = '';
+    p.sizes.forEach(function (s, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'size-chip' + (i === 0 ? ' active' : '');
+      b.textContent = s;
+      b.addEventListener('click', function () {
+        state.merchSize = s;
+        Array.prototype.forEach.call(sizes.querySelectorAll('.size-chip'), function (el) {
+          el.classList.remove('active');
+        });
+        b.classList.add('active');
+      });
+      sizes.appendChild(b);
+    });
+    show($('dMsg'), '', '');
+    $('detailSheet').classList.remove('hidden');
+  }
+
+  function closeDetail() { $('detailSheet').classList.add('hidden'); }
+  function closePay() {
+    $('paySheet').classList.add('hidden');
+    $('payForm').classList.remove('hidden');
+    $('paySuccess').classList.add('hidden');
+  }
+
+  function showAuth(forMerch) {
+    state.pendingBuy = !forMerch;
+    state.pendingMerch = !!forMerch;
+    $('authCard').classList.remove('hidden');
+    $('authCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function hideAuth() {
+    $('authCard').classList.add('hidden');
+    state.pendingBuy = false;
+    show($('authMsg'), '', '');
+  }
+
+  function renderPayBox(order) {
+    var html =
+      '<div class="row"><span>Ürün</span><b>' + (order.merchName || order.product || '') + '</b></div>' +
+      (order.size ? '<div class="row"><span>Beden</span><b>' + order.size + '</b></div>' : '') +
+      '<div class="row"><span>Tutar</span><b>' + money(order.amount) + '</b></div>' +
+      '<div class="row"><span>IBAN</span><b><code id="payIban">' + (order.iban || '') + '</code></b></div>' +
+      '<div class="row"><span>Alıcı</span><b>' + (order.ibanHolder || '') + '</b></div>' +
+      (order.ibanBank ? '<div class="row"><span>Banka</span><b>' + order.ibanBank + '</b></div>' : '') +
+      '<div class="row"><span>Açıklama</span><b><code id="payRef">' + (order.transferDescription || '') + '</code></b></div>' +
+      '<button class="btn ghost copy-btn" type="button" id="copyRef">Açıklamayı kopyala</button>' +
+      (order.note ? '<p style="margin:.65rem 0 0;font-size:.82rem;color:var(--muted)">' + order.note + '</p>' : '');
+    $('payBox').innerHTML = html;
+    var copy = $('copyRef');
+    if (copy) {
+      copy.onclick = function () {
+        var t = order.transferDescription || '';
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(t).then(function () {
+            show($('pMsg'), 'ok', 'Açıklama kopyalandı');
+          });
+        } else {
+          show($('pMsg'), 'info', t);
+        }
+      };
+    }
+  }
+
+  async function startMerchCheckout() {
+    show($('dMsg'), '', '');
+    if (!state.merchSku || !state.merchSize) {
+      show($('dMsg'), 'err', 'Beden seç');
+      return;
+    }
+    if (!state.idToken) {
+      closeDetail();
+      showAuth(true);
+      return;
+    }
+    var btn = $('dBuy');
+    btn.disabled = true;
+    var prev = btn.textContent;
+    btn.innerHTML = '<span class="spin"></span> Sipariş…';
+    try {
+      var order = await callFn(
+        'createPaymentOrder',
+        {
+          product: 'merch',
+          sku: state.merchSku,
+          size: state.merchSize,
+          city: ($('dCity').value || '').trim(),
+          shipName: ($('dShipName').value || '').trim(),
+          source: 'market_web',
+          provider: 'iban',
+        },
+        state.idToken,
+      );
+      state.merchOrder = Object.assign({}, order, {
+        merchName: CATALOG[state.merchSku].name,
+        size: state.merchSize,
+      });
+      closeDetail();
+      $('stepLogin').classList.remove('on');
+      $('stepPay').classList.add('on');
+      $('stepDone').classList.remove('on');
+      $('payForm').classList.remove('hidden');
+      $('paySuccess').classList.add('hidden');
+      renderPayBox(state.merchOrder);
+      show($('pMsg'), '', '');
+      $('paySheet').classList.remove('hidden');
+    } catch (e) {
+      var msg = String(e.message || e);
+      if (/unauthenticated|Giriş gerekli/i.test(msg)) {
+        clearSession();
+        closeDetail();
+        showAuth(true);
+        return;
+      }
+      show($('dMsg'), 'err', msg);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  }
+
+  async function confirmMerchPay() {
+    if (!state.merchOrder || !state.merchOrder.orderId) return;
+    var btn = $('pConfirm');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>';
+    try {
+      var res = await callFn(
+        'confirmIbanTransfer',
+        { orderId: state.merchOrder.orderId },
+        state.idToken,
+      );
+      $('payForm').classList.add('hidden');
+      $('paySuccess').classList.remove('hidden');
+      $('stepPay').classList.remove('on');
+      $('stepDone').classList.add('on');
+      $('paySuccessText').textContent =
+        res.message || 'Ödeme tamamlandı olarak bildirildi. Kontrol sonrası kargo hazırlığı başlar.';
+    } catch (e) {
+      show($('pMsg'), 'err', String(e.message || e));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Ödeme tamamlandı';
+    }
+  }
+
+  /* Plus (mevcut) */
   function renderPlans() {
     var plans = (state.cfg && state.cfg.plusPlans) || [];
+    var plansEl = $('plans');
     if (!plans.length) {
-      plansEl.innerHTML =
-        '<p style="color:var(--muted);font-size:.9rem">Fiyat henüz tanımlı değil. Admin’den Plus tutarını gir.</p>';
+      plansEl.innerHTML = '<p style="color:var(--muted);font-size:.9rem">Fiyat henüz tanımlı değil.</p>';
       updateBuyLabel();
       return;
     }
@@ -374,7 +758,6 @@
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'plan' + (i === 0 ? ' active' : '');
-      btn.setAttribute('role', 'option');
       btn.innerHTML =
         (p.popular ? '<div class="badge">Popüler</div>' : '') +
         '<div class="label">' + p.label + '</div>' +
@@ -382,9 +765,7 @@
         '<div class="sub">' + p.days + ' gün Plus</div>';
       btn.addEventListener('click', function () {
         state.selected = p;
-        Array.prototype.forEach.call(plansEl.querySelectorAll('.plan'), function (el) {
-          el.classList.remove('active');
-        });
+        Array.prototype.forEach.call(plansEl.querySelectorAll('.plan'), function (el) { el.classList.remove('active'); });
         btn.classList.add('active');
         updateBuyLabel();
       });
@@ -397,191 +778,163 @@
   function updateBuyLabel() {
     var p = state.selected;
     var btn = $('buyBtn');
-    if (!p) {
-      btn.textContent = 'Satın al';
-      btn.disabled = true;
-      return;
-    }
+    if (!p) { btn.textContent = 'Satın al'; btn.disabled = true; return; }
     btn.disabled = !(Number(p.amount) > 0);
     btn.textContent = Number(p.amount) > 0
       ? (p.label + ' · ' + money(p.amount, state.cfg.currency) + ' · Satın al')
       : 'Fiyat tanımlı değil';
   }
 
-  function showAuthForCheckout() {
-    state.pendingBuy = true;
-    authCard.classList.remove('hidden');
-    authCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    show(shopMsg, 'info', 'Ödemeye geçmek için hesabına giriş yap.');
-  }
-
-  function hideAuth() {
-    authCard.classList.add('hidden');
-    state.pendingBuy = false;
-    show(authMsg, '', '');
-  }
-
-  async function startCheckout() {
-    show(shopMsg, '', '');
-    ibanBox.classList.add('hidden');
-    if (!state.selected) return;
-    if (!(Number(state.selected.amount) > 0)) {
-      show(shopMsg, 'err', 'Plus tutarı tanımlı değil');
+  async function startPlusCheckout() {
+    show($('shopMsg'), '', '');
+    $('ibanBox').classList.add('hidden');
+    if (!state.selected || !(Number(state.selected.amount) > 0)) {
+      show($('shopMsg'), 'err', 'Plus tutarı tanımlı değil');
       return;
     }
-    if (!state.idToken) {
-      showAuthForCheckout();
-      return;
-    }
-
+    if (!state.idToken) { showAuth(false); return; }
     var btn = $('buyBtn');
     btn.disabled = true;
     var prev = btn.textContent;
-    btn.innerHTML = '<span class="spin"></span> Sipariş oluşuyor…';
+    btn.innerHTML = '<span class="spin"></span> Sipariş…';
     try {
       var order = await callFn(
         'createPaymentOrder',
-        {
-          product: 'plus',
-          months: state.selected.months,
-          source: 'market_web',
-        },
+        { product: 'plus', months: state.selected.months, source: 'market_web' },
         state.idToken,
       );
-
       hideAuth();
-
       if (order.provider === 'paytr' && order.iframeUrl) {
-        show(shopMsg, 'info', 'PayTR ödeme sayfasına yönlendiriliyorsun…');
-        location.href = order.iframeUrl;
-        return;
+        location.href = order.iframeUrl; return;
       }
       if (order.provider === 'shopier' && order.payUrl) {
-        show(shopMsg, 'info', 'Shopier ödeme sayfasına yönlendiriliyorsun…');
-        location.href = order.payUrl;
-        return;
+        location.href = order.payUrl; return;
       }
       if (order.provider === 'iban') {
-        ibanBox.classList.remove('hidden');
-        ibanBox.innerHTML =
-          '<div><strong>Havale / EFT</strong></div>' +
-          '<div style="margin-top:.4rem">IBAN: <code>' + (order.iban || '') + '</code></div>' +
-          '<div>Alıcı: <code>' + (order.ibanHolder || '') + '</code></div>' +
-          (order.ibanBank ? '<div>Banka: ' + order.ibanBank + '</div>' : '') +
-          '<div style="margin-top:.45rem">Açıklama (zorunlu): <code>' +
-            (order.transferDescription || '') +
-            '</code></div>' +
-          '<div style="margin-top:.45rem;color:var(--muted)">' +
-            (order.note || '') +
-            '</div>' +
-          '<button class="btn" id="ibanConfirm" type="button" style="margin-top:.75rem">Havale yaptım · bildir</button>';
-        show(
-          shopMsg,
-          'ok',
-          'Sipariş oluşturuldu · ' + money(order.amount, state.cfg.currency),
-        );
-        $('ibanConfirm').onclick = async function () {
+        state.merchOrder = order;
+        renderPayBox(Object.assign({}, order, { merchName: 'Kampüsteyim Plus' }));
+        $('payForm').classList.remove('hidden');
+        $('paySuccess').classList.add('hidden');
+        $('stepPay').classList.add('on');
+        $('stepDone').classList.remove('on');
+        show($('pMsg'), '', '');
+        $('paySheet').classList.remove('hidden');
+        // Plus confirm uses same button — override once
+        $('pConfirm').onclick = async function () {
           try {
-            await callFn(
-              'confirmIbanTransfer',
-              { orderId: order.orderId },
-              state.idToken,
-            );
-            show(
-              shopMsg,
-              'ok',
-              'Bildirim alındı. Admin onayından sonra Plus hesabına işlenir.',
-            );
+            await callFn('confirmIbanTransfer', { orderId: order.orderId }, state.idToken);
+            $('payForm').classList.add('hidden');
+            $('paySuccess').classList.remove('hidden');
+            $('stepDone').classList.add('on');
+            $('paySuccessText').textContent =
+              'Ödeme tamamlandı olarak bildirildi. Admin onayından sonra Plus hesabına işlenir.';
           } catch (err) {
-            show(shopMsg, 'err', String(err.message || err));
+            show($('pMsg'), 'err', String(err.message || err));
           }
         };
         return;
       }
-      show(shopMsg, 'err', 'Ödeme yöntemi hazır değil');
+      show($('shopMsg'), 'err', 'Ödeme yöntemi hazır değil');
     } catch (e) {
       var msg = String(e.message || e);
-      if (/unauthenticated|Giriş gerekli/i.test(msg)) {
-        clearSession();
-        showAuthForCheckout();
-        return;
-      }
-      show(shopMsg, 'err', msg);
+      if (/unauthenticated|Giriş gerekli/i.test(msg)) { clearSession(); showAuth(false); return; }
+      show($('shopMsg'), 'err', msg);
     } finally {
-      btn.disabled = false;
-      btn.textContent = prev;
-      updateBuyLabel();
+      btn.disabled = false; btn.textContent = prev; updateBuyLabel();
     }
   }
 
   async function loadCatalog() {
     var cfg = await callFn('getPaymentsPublic', {});
     state.cfg = cfg;
+    if (cfg.merch && cfg.merch.length) {
+      cfg.merch.forEach(function (m) {
+        if (CATALOG[m.sku]) {
+          CATALOG[m.sku].amount = m.amount;
+          CATALOG[m.sku].sizes = m.sizes || CATALOG[m.sku].sizes;
+          CATALOG[m.sku].name = m.name || CATALOG[m.sku].name;
+        }
+      });
+      renderGrid();
+    }
     renderPlans();
     if (!(Number(cfg.plusAmount) > 0)) {
-      show(
-        banner,
-        'info',
-        'Plus fiyatı henüz admin panelinden girilmemiş. Vitrin hazır; tutar girilince satış açılır.',
-      );
+      show($('banner'), 'info', 'Plus fiyatı henüz girilmemiş. Merch satışları IBAN ile açık.');
     }
   }
 
-  $('buyBtn').addEventListener('click', startCheckout);
-  $('authCancel').addEventListener('click', hideAuth);
-  $('logoutBtn').addEventListener('click', clearSession);
+  /* events */
+  $('dClose').onclick = closeDetail;
+  $('pClose').onclick = closePay;
+  $('pDoneClose').onclick = closePay;
+  $('dBuy').onclick = startMerchCheckout;
+  $('pConfirm').onclick = confirmMerchPay;
+  $('dPhotoWrap').onclick = function () {
+    $('zoomImg').src = $('dImg').src;
+    $('zoom').classList.remove('hidden');
+  };
+  $('zoom').onclick = function () { $('zoom').classList.add('hidden'); };
+  $('detailSheet').addEventListener('click', function (e) {
+    if (e.target === $('detailSheet')) closeDetail();
+  });
+  $('paySheet').addEventListener('click', function (e) {
+    if (e.target === $('paySheet')) closePay();
+  });
 
-  $('loginBtn').addEventListener('click', async function () {
+  document.querySelectorAll('.tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      var key = tab.getAttribute('data-tab');
+      document.querySelectorAll('#productGrid [data-cat]').forEach(function (el) {
+        var cat = el.getAttribute('data-cat');
+        el.style.display = (key === 'all' || key === cat) ? '' : 'none';
+      });
+    });
+  });
+
+  $('buyBtn').onclick = startPlusCheckout;
+  $('authCancel').onclick = hideAuth;
+  $('logoutBtn').onclick = clearSession;
+  $('loginBtn').onclick = async function () {
     var email = $('email').value.trim();
     var password = $('password').value;
-    show(authMsg, '', '');
-    if (!email || !password) {
-      show(authMsg, 'err', 'E-posta ve şifre gerekli');
-      return;
-    }
+    show($('authMsg'), '', '');
+    if (!email || !password) { show($('authMsg'), 'err', 'E-posta ve şifre gerekli'); return; }
     var btn = $('loginBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span>';
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
     try {
       var auth = await signIn(email, password);
       persistSession(auth.idToken, auth.email || email);
       hideAuth();
-      if (state.pendingBuy) {
+      if (state.pendingMerch) {
+        state.pendingMerch = false;
+        openDetail(state.merchSku);
+        await startMerchCheckout();
+      } else if (state.pendingBuy) {
         state.pendingBuy = false;
-        await startCheckout();
+        await startPlusCheckout();
       }
     } catch (e) {
       var m = String(e.message || e);
-      if (/INVALID_LOGIN|INVALID_PASSWORD|EMAIL_NOT_FOUND|INVALID_EMAIL/i.test(m)) {
-        m = 'E-posta veya şifre hatalı';
-      } else if (/TOO_MANY_ATTEMPTS/i.test(m)) {
-        m = 'Çok fazla deneme · biraz bekle';
-      }
-      show(authMsg, 'err', m);
+      if (/INVALID_LOGIN|INVALID_PASSWORD|EMAIL_NOT_FOUND|INVALID_EMAIL/i.test(m)) m = 'E-posta veya şifre hatalı';
+      else if (/TOO_MANY_ATTEMPTS/i.test(m)) m = 'Çok fazla deneme · biraz bekle';
+      show($('authMsg'), 'err', m);
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'Giriş yap ve öde';
+      btn.disabled = false; btn.textContent = 'Giriş yap ve devam et';
     }
-  });
+  };
 
   (function () {
     var q = new URLSearchParams(location.search);
-    var pay = q.get('pay');
-    if (pay === 'ok') {
-      show(
-        banner,
-        'ok',
-        'Ödeme alındı. Plus kısa sürede hesabına yansır — uygulamayı yenile.',
-      );
-    }
-    if (pay === 'fail') {
-      show(banner, 'err', 'Ödeme tamamlanamadı. Tekrar deneyebilirsin.');
-    }
+    if (q.get('pay') === 'ok') show($('banner'), 'ok', 'Ödeme alındı. Plus kısa sürede hesabına yansır.');
+    if (q.get('pay') === 'fail') show($('banner'), 'err', 'Ödeme tamamlanamadı.');
   })();
 
+  renderGrid();
   restoreSession();
   loadCatalog().catch(function (e) {
-    show(banner, 'err', 'Katalog yüklenemedi: ' + (e.message || e));
+    show($('banner'), 'err', 'Katalog yüklenemedi: ' + (e.message || e));
   });
 })();
   </script>

@@ -217,12 +217,24 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
 }
 
 /// Profil / listelerde ortak takip butonu metni.
-String followActionLabel(AuthProvider auth, AppUser target) {
+String followActionLabel(
+  AuthProvider auth,
+  AppUser target, {
+  bool compact = false,
+}) {
   final me = auth.user;
   if (me == null || auth.idsFor(target.id).contains(me.id)) return '';
-  if (auth.follows(target.id)) return 'Takip ediliyor';
-  if (auth.hasOutgoingFollowRequest(target.id)) return 'İstek gönderildi';
-  if (auth.isFollowedBy(target.id)) return 'Geri takip';
-  if (target.isPrivateAccount) return 'İstek gönder';
+  if (auth.follows(target.id)) {
+    return compact ? 'Takip' : 'Takip ediliyor';
+  }
+  if (auth.hasOutgoingFollowRequest(target.id)) {
+    return compact ? 'İstek' : 'İstek gönderildi';
+  }
+  if (auth.isFollowedBy(target.id)) {
+    return compact ? 'Geri takip' : 'Sen de onu takip et';
+  }
+  if (target.isPrivateAccount) {
+    return compact ? 'İstek' : 'İstek gönder';
+  }
   return 'Takip et';
 }

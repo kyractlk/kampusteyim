@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +12,7 @@ import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
 import 'company_applicant_widgets.dart';
+import 'company_mail_gate.dart';
 import 'job_models.dart';
 import 'jobs_provider.dart';
 
@@ -174,6 +177,13 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
                                 companyName: companyUser.fullName,
                                 userId: auth.user?.id ?? companyUser.id,
                               );
+                          if (!context.mounted) return;
+                          // Firebase Auth oturumu ile JobsProvider’ı kesin bağla
+                          if (auth.user != null) {
+                            await context
+                                .read<JobsProvider>()
+                                .bindCompanyFromUser(auth.user!);
+                          }
                           if (context.mounted) context.go('/firma/dashboard');
                         },
                         child: const Text('Panele gir'),
@@ -201,26 +211,77 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
   }
 }
 
+Future<void> launchFirmaAi(BuildContext context, JobsProvider jobs) async {
+  final candidates = jobs.companyJobs
+      .where((j) => j.status == JobStatus.open && j.applicantIds.isNotEmpty)
+      .toList()
+    ..sort((a, b) => b.applicantIds.length.compareTo(a.applicantIds.length));
+  if (candidates.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('AI sıralama için başvurulu açık ilan gerekli.'),
+      ),
+    );
+    return;
+  }
+  JobListing? selected = candidates.first;
+  if (candidates.length > 1 && context.mounted) {
+    selected = await showDialog<JobListing>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Hangi ilanı sıralayalım?'),
+        children: [
+          for (final j in candidates)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, j),
+              child: Text(
+                '${j.title} · ${j.applicantIds.length} başvuru',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+  if (selected == null || !context.mounted) return;
+  unawaited(jobs.rankApplicantsWithAi(selected));
+  context.push('/firma/ai');
+}
+
 class CompanyDashboardScreen extends StatelessWidget {
   const CompanyDashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final jobs = context.watch<JobsProvider>();
-    final me = context.watch<AuthProvider>().user;
+    final auth = context.watch<AuthProvider>();
+    final me = auth.user;
     final isOrganizer = me?.isEventOrganizer == true;
     if (jobs.company == null) {
+      if (me != null && me.isCompany) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          context.read<JobsProvider>().bindCompanyFromUser(me);
+        });
+      }
       return const CompanyLoginScreen();
+    }
+
+    // Auth ile firma id sapmışsa düzelt
+    final uid = me?.id;
+    if (uid != null && uid.isNotEmpty && jobs.company!.id != uid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        context.read<JobsProvider>().bindCompanyFromUser(me!);
+      });
     }
 
     return CompanyPortalShell(
       child: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= AppBreakpoints.wide;
-          final openCount =
-              jobs.companyJobs.where((j) => j.status == JobStatus.open).length;
-          final applicants = jobs.companyJobs
-              .fold<int>(0, (n, j) => n + j.applicantIds.length);
+          final openCount = jobs.companyOpenCount;
+          final applicants = jobs.companyApplicantCount;
+          final aiReady = jobs.companyAiReadyCount;
+          final closedCount = jobs.companyClosedCount;
 
           return Scaffold(
             appBar: AppBar(
@@ -280,12 +341,10 @@ class CompanyDashboardScreen extends StatelessWidget {
                         context.push('/firma/organizer');
                       case 'students':
                         context.push('/firma/students');
+                      case 'settings':
+                        context.push('/firma/settings');
                       case 'ai':
-                        final open = jobs.companyJobs
-                            .where((j) => j.status == JobStatus.open);
-                        if (open.isEmpty) return;
-                        jobs.rankApplicantsWithAi(open.first);
-                        context.push('/firma/ai');
+                        launchFirmaAi(context, jobs);
                     }
                   },
                   itemBuilder: (_) => [
@@ -306,6 +365,10 @@ class CompanyDashboardScreen extends StatelessWidget {
                     const PopupMenuItem(
                       value: 'students',
                       child: Text('Öğrenci tara'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'settings',
+                      child: Text('Mail imzası'),
                     ),
                     const PopupMenuItem(
                       value: 'ai',
@@ -366,40 +429,109 @@ class CompanyDashboardScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                if (wide)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _FirmaStat(
-                            label: 'Açık ilan',
-                            value: '$openCount',
+                Padding(
+                  padding: EdgeInsets.fromLTRB(wide ? 16 : 12, 12, wide ? 16 : 12, 8),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _FirmaStat(
+                              label: 'Açık ilan',
+                              value: '$openCount',
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _FirmaStat(
-                            label: 'Başvuru',
-                            value: '$applicants',
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _FirmaStat(
+                              label: 'Başvuru',
+                              value: '$applicants',
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _FirmaStat(
-                            label: 'Toplam ilan',
-                            value: '${jobs.companyJobs.length}',
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _FirmaStat(
+                              label: 'AI hazır',
+                              value: '$aiReady',
+                              onTap: aiReady > 0
+                                  ? () => launchFirmaAi(context, jobs)
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _FirmaStat(
+                              label: 'Kapalı',
+                              value: '$closedCount',
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (!jobs.hasMailSignature) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+                          decoration: BoxDecoration(
+                            color: AppColors.crimson.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: AppColors.crimson.withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.draw_outlined,
+                                color: AppColors.crimson,
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Mail imzanızı ayarlayın',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'Mail, teklif ve ilan bildirimi için zorunlu',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              FilledButton(
+                                onPressed: () =>
+                                    context.push('/firma/settings'),
+                                child: const Text('Ayarla'),
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                    ),
+                    ],
                   ),
+                ),
                 Expanded(
                   child: wide
                       ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             SizedBox(
-                              width: 280,
+                              width: 260,
                               child: _SideNav(
                                 jobs: jobs,
                                 isOrganizer: isOrganizer,
@@ -421,24 +553,37 @@ class CompanyDashboardScreen extends StatelessWidget {
 }
 
 class _FirmaStat extends StatelessWidget {
-  const _FirmaStat({required this.label, required this.value});
+  const _FirmaStat({
+    required this.label,
+    required this.value,
+    this.onTap,
+  });
   final String label;
   final String value;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final child = Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: onTap != null
+              ? AppColors.navy.withValues(alpha: 0.35)
+              : AppColors.border,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
@@ -448,12 +593,23 @@ class _FirmaStat extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 12,
               color: AppColors.textSecondary,
             ),
           ),
         ],
+      ),
+    );
+    if (onTap == null) return child;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: child,
       ),
     );
   }
@@ -500,16 +656,18 @@ class _SideNav extends StatelessWidget {
           onTap: () => context.push('/firma/students'),
         ),
         ListTile(
+          leading: const Icon(Icons.draw_outlined),
+          title: const Text('Mail imzası'),
+          subtitle: Text(
+            jobs.hasMailSignature ? 'Hazır' : 'Ayarlanmadı',
+          ),
+          onTap: () => context.push('/firma/settings'),
+        ),
+        ListTile(
           leading: const Icon(Icons.auto_awesome),
           title: const Text('Firma AI'),
-          subtitle: Text(jobs.status ?? 'Başvuranları sırala'),
-          onTap: () {
-            final open =
-                jobs.companyJobs.where((j) => j.status == JobStatus.open);
-            if (open.isEmpty) return;
-            jobs.rankApplicantsWithAi(open.first);
-            context.push('/firma/ai');
-          },
+          subtitle: const Text('Başvuruları sırala'),
+          onTap: () => launchFirmaAi(context, jobs),
         ),
         const Divider(),
         const Padding(
@@ -535,92 +693,218 @@ class _SideNav extends StatelessWidget {
   }
 }
 
-class _JobsPane extends StatelessWidget {
+class _JobsPane extends StatefulWidget {
   const _JobsPane({required this.jobs});
   final JobsProvider jobs;
 
   @override
+  State<_JobsPane> createState() => _JobsPaneState();
+}
+
+class _JobsPaneState extends State<_JobsPane> {
+  String _filter = 'all'; // all | open | closed
+
+  @override
   Widget build(BuildContext context) {
-    final list = jobs.companyJobs;
-    if (list.isEmpty) {
-      return const Center(child: Text('Henüz ilan yok. Yeni ilan oluştur.'));
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: list.length,
-      itemBuilder: (context, i) {
-        final job = list[i];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Material(
-          color: AppColors.surface,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: AppColors.border),
-          ),
-          child: ExpansionTile(
-            collapsedIconColor: AppColors.textSecondary,
-            iconColor: AppColors.navy,
-            tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            title: Text(job.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: Text(
-              '${job.status.name} · ${job.applicantIds.length} başvuru · ${_type(job.type)}',
-              style: const TextStyle(color: AppColors.textSecondary),
-            ),
+    final jobs = widget.jobs;
+    final all = jobs.companyJobs;
+    final list = switch (_filter) {
+      'open' => all.where((j) => j.status == JobStatus.open).toList(),
+      'closed' => all.where((j) => j.status == JobStatus.closed).toList(),
+      _ => all,
+    };
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
             children: [
-              Text(job.description),
-              const SizedBox(height: 8),
+              FilterChip(
+                label: Text(
+                  'Tümü',
+                  style: TextStyle(
+                    color: _filter == 'all' ? Colors.white : AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                selected: _filter == 'all',
+                selectedColor: AppColors.navy,
+                checkmarkColor: Colors.white,
+                backgroundColor: AppColors.surface,
+                side: const BorderSide(color: AppColors.border),
+                onSelected: (_) => setState(() => _filter = 'all'),
+              ),
+              const SizedBox(width: 8),
+              FilterChip(
+                label: Text(
+                  'Açık',
+                  style: TextStyle(
+                    color:
+                        _filter == 'open' ? Colors.white : AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                selected: _filter == 'open',
+                selectedColor: AppColors.navy,
+                checkmarkColor: Colors.white,
+                backgroundColor: AppColors.surface,
+                side: const BorderSide(color: AppColors.border),
+                onSelected: (_) => setState(() => _filter = 'open'),
+              ),
+              const SizedBox(width: 8),
+              FilterChip(
+                label: Text(
+                  'Kapalı',
+                  style: TextStyle(
+                    color: _filter == 'closed'
+                        ? Colors.white
+                        : AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                selected: _filter == 'closed',
+                selectedColor: AppColors.navy,
+                checkmarkColor: Colors.white,
+                backgroundColor: AppColors.surface,
+                side: const BorderSide(color: AppColors.border),
+                onSelected: (_) => setState(() => _filter = 'closed'),
+              ),
+              const Spacer(),
               Text(
-                'Gereksinimler: ${job.requirements}',
-                style: const TextStyle(color: AppColors.textSecondary),
+                '${list.length} ilan',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
               ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton(
-                    onPressed: () => context.push('/firma/job/${job.id}'),
-                    child: const Text('Düzenle'),
-                  ),
-                  OutlinedButton(
-                    onPressed: job.status == JobStatus.closed
-                        ? null
-                        : () => jobs.closeJob(job.id),
-                    child: const Text('Kapat'),
-                  ),
-                  OutlinedButton(
-                    onPressed: () => jobs.deleteJob(job.id),
-                    child: const Text('Sil'),
-                  ),
-                  FilledButton.tonal(
-                    onPressed: job.applicantIds.isEmpty
-                        ? null
-                        : () {
-                            jobs.rankApplicantsWithAi(job);
-                            context.push('/firma/ai');
-                          },
-                    child: const Text('AI sırala'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              JobApplicantsBlock(job: job),
             ],
           ),
         ),
-        );
-      },
+        Expanded(
+          child: list.isEmpty
+              ? const Center(child: Text('Bu filtrede ilan yok.'))
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: list.length,
+                  itemBuilder: (context, i) {
+                    final job = list[i];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Material(
+                        color: AppColors.surface,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: const BorderSide(color: AppColors.border),
+                        ),
+                        child: ExpansionTile(
+                          collapsedIconColor: AppColors.textSecondary,
+                          iconColor: AppColors.navy,
+                          tilePadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
+                          childrenPadding:
+                              const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          title: Text(
+                            job.title,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            '${job.status.name} · ${job.applicantIds.length} başvuru · ${job.typeLabel}'
+                            '${job.department.isNotEmpty ? ' · ${job.department}' : ''}'
+                            ' · ${job.workModeLabel}',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          children: [
+                            Text(job.description),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Gereksinimler: ${job.requirements}',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            if (job.deadline != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                'Son başvuru: '
+                                '${job.deadline!.day.toString().padLeft(2, '0')}.'
+                                '${job.deadline!.month.toString().padLeft(2, '0')}.'
+                                '${job.deadline!.year}'
+                                '${job.isExpired ? ' · süresi doldu' : ''}',
+                                style: TextStyle(
+                                  color: job.isExpired
+                                      ? AppColors.crimson
+                                      : AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                            if (job.tags.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: job.tags
+                                    .map(
+                                      (t) => Chip(
+                                        label: Text(t),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                OutlinedButton(
+                                  onPressed: () =>
+                                      context.push('/firma/job/${job.id}'),
+                                  child: const Text('Düzenle'),
+                                ),
+                                OutlinedButton(
+                                  onPressed: job.status == JobStatus.closed
+                                      ? null
+                                      : () => jobs.closeJob(job.id),
+                                  child: const Text('Kapat'),
+                                ),
+                                OutlinedButton(
+                                  onPressed: () => jobs.deleteJob(job.id),
+                                  child: const Text('Sil'),
+                                ),
+                                FilledButton.tonal(
+                                  onPressed: job.applicantIds.isEmpty
+                                      ? null
+                                      : () {
+                                          unawaited(
+                                            jobs.rankApplicantsWithAi(job),
+                                          );
+                                          context.push('/firma/ai');
+                                        },
+                                  child: const Text('AI sırala'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            JobApplicantsBlock(job: job),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
-
-  String _type(JobType t) => switch (t) {
-        JobType.internship => 'Staj',
-        JobType.fulltime => 'İş',
-        JobType.parttime => 'Part-time',
-      };
 }
 
 class CompanyJobEditorScreen extends StatefulWidget {
@@ -637,6 +921,8 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
   late final TextEditingController _desc;
   late final TextEditingController _req;
   late final TextEditingController _loc;
+  late final TextEditingController _dept;
+  late final TextEditingController _tags;
 
   @override
   void initState() {
@@ -654,6 +940,8 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
     _desc = TextEditingController(text: job.description);
     _req = TextEditingController(text: job.requirements);
     _loc = TextEditingController(text: job.location);
+    _dept = TextEditingController(text: job.department);
+    _tags = TextEditingController(text: job.tags.join(', '));
   }
 
   @override
@@ -662,14 +950,29 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
     _desc.dispose();
     _req.dispose();
     _loc.dispose();
+    _dept.dispose();
+    _tags.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDeadline() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: job.deadline ?? now.add(const Duration(days: 21)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365 * 2)),
+    );
+    if (picked != null) setState(() => job.deadline = picked);
   }
 
   @override
   Widget build(BuildContext context) {
     return CompanyPortalShell(
       child: Scaffold(
-        appBar: AppBar(title: Text(widget.jobId == 'new' ? 'Yeni ilan' : 'İlanı düzenle')),
+        appBar: AppBar(
+          title: Text(widget.jobId == 'new' ? 'Yeni ilan' : 'İlanı düzenle'),
+        ),
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
@@ -688,7 +991,11 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
                       .map(
                         (t) => DropdownMenuItem(
                           value: t,
-                          child: Text(t.name),
+                          child: Text(switch (t) {
+                            JobType.internship => 'Staj',
+                            JobType.fulltime => 'Tam zamanlı',
+                            JobType.parttime => 'Part-time',
+                          }),
                         ),
                       )
                       .toList(),
@@ -696,9 +1003,72 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
                   decoration: const InputDecoration(labelText: 'Tür'),
                 ),
                 const SizedBox(height: 10),
+                DropdownButtonFormField<JobWorkMode>(
+                  // ignore: deprecated_member_use
+                  value: job.workMode,
+                  items: JobWorkMode.values
+                      .map(
+                        (m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(switch (m) {
+                            JobWorkMode.onsite => 'Ofis',
+                            JobWorkMode.hybrid => 'Hibrit',
+                            JobWorkMode.remote => 'Uzaktan',
+                          }),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) =>
+                      setState(() => job.workMode = v ?? job.workMode),
+                  decoration: const InputDecoration(labelText: 'Çalışma modeli'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _dept,
+                  decoration: const InputDecoration(
+                    labelText: 'Birim / departman',
+                    hintText: 'ör. Yazılım, Pazarlama',
+                  ),
+                ),
+                const SizedBox(height: 10),
                 TextField(
                   controller: _loc,
                   decoration: const InputDecoration(labelText: 'Konum'),
+                ),
+                const SizedBox(height: 10),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    job.deadline == null
+                        ? 'Son başvuru tarihi (opsiyonel)'
+                        : 'Son başvuru: '
+                            '${job.deadline!.day.toString().padLeft(2, '0')}.'
+                            '${job.deadline!.month.toString().padLeft(2, '0')}.'
+                            '${job.deadline!.year}',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (job.deadline != null)
+                        IconButton(
+                          tooltip: 'Temizle',
+                          onPressed: () => setState(() => job.deadline = null),
+                          icon: const Icon(Icons.clear),
+                        ),
+                      IconButton(
+                        onPressed: _pickDeadline,
+                        icon: const Icon(Icons.event),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _tags,
+                  decoration: const InputDecoration(
+                    labelText: 'Etiketler',
+                    hintText: 'virgülle ayır: Flutter, SQL, İngilizce',
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -719,6 +1089,12 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
                     job.description = _desc.text.trim();
                     job.requirements = _req.text.trim();
                     job.location = _loc.text.trim();
+                    job.department = _dept.text.trim();
+                    job.tags = _tags.text
+                        .split(',')
+                        .map((e) => e.trim())
+                        .where((e) => e.isNotEmpty)
+                        .toList();
                     if (job.title.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('İlan başlığı gerekli')),
@@ -728,14 +1104,19 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
                     final jobsProv = context.read<JobsProvider>();
                     final notif = context.read<NotificationProvider>();
                     final auth = context.read<AuthProvider>();
+                    final canNotify =
+                        await ensureCompanyMailSignature(context);
+                    if (!context.mounted) return;
                     await jobsProv.saveJob(
                       job,
                       notifications: notif,
                       students: auth.directory,
-                      notifyStudents: true,
+                      notifyStudents: canNotify,
                     );
                     if (!context.mounted) return;
-                    final msg = jobsProv.status ?? 'İlan kaydedildi';
+                    final msg = jobsProv.status == 'MAIL_SIGNATURE_REQUIRED'
+                        ? 'İlan kaydedildi. Bildirim için önce mail imzasını ayarlayın.'
+                        : (jobsProv.status ?? 'İlan kaydedildi');
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text(msg)),
                     );
@@ -802,12 +1183,21 @@ class _CompanyStudentsScreenState extends State<CompanyStudentsScreen> {
                   return ListTile(
                     title: Text(s.fullName),
                     subtitle: Text('${s.handle} · ${s.bio}'),
+                    onTap: () => openCompanyStudentCv(
+                      context,
+                      s.id,
+                      fallbackName: s.fullName,
+                    ),
                     trailing: Wrap(
                       spacing: 4,
                       children: [
                         IconButton(
-                          tooltip: 'CV-AI profili',
-                          onPressed: () => context.push('/user/${s.id}'),
+                          tooltip: 'CV görüntüle',
+                          onPressed: () => openCompanyStudentCv(
+                            context,
+                            s.id,
+                            fallbackName: s.fullName,
+                          ),
                           icon: const Icon(Icons.description_outlined),
                         ),
                         IconButton(
@@ -839,14 +1229,24 @@ class _CompanyStudentsScreenState extends State<CompanyStudentsScreen> {
                               ),
                             );
                             if (ok == true && context.mounted) {
+                              if (!await ensureCompanyMailSignature(context)) {
+                                return;
+                              }
+                              if (!context.mounted) return;
                               await jobs.emailStudent(
                                 toEmail: s.email,
                                 subject: '${jobs.company?.name} · KampüsteyimAPP',
-                                html: '<p>${_mail.text}</p><p>${AppInfo.developer}</p>',
+                                html: '<p>${_mail.text}</p>',
+                                bodyText: _mail.text,
+                                studentName: s.firstName,
                               );
                               if (context.mounted) {
+                                final msg = jobs.status ==
+                                        'MAIL_SIGNATURE_REQUIRED'
+                                    ? 'Önce mail imzasını ayarlayın'
+                                    : (jobs.status ?? 'Gönderildi');
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(jobs.status ?? 'Gönderildi')),
+                                  SnackBar(content: Text(msg)),
                                 );
                               }
                             }
@@ -879,13 +1279,29 @@ class _CompanyStudentsScreenState extends State<CompanyStudentsScreen> {
                               ),
                             );
                             if (ok == true && context.mounted) {
+                              if (!await ensureCompanyMailSignature(context)) {
+                                return;
+                              }
+                              if (!context.mounted) return;
                               await jobs.sendOffer(
                                 studentId: s.id,
                                 message: _offer.text,
                                 notifications:
                                     context.read<NotificationProvider>(),
                                 auth: context.read<AuthProvider>(),
+                                studentEmail: s.email,
+                                studentName: s.firstName,
                               );
+                              if (context.mounted &&
+                                  jobs.status == 'MAIL_SIGNATURE_REQUIRED') {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Önce mail imzasını ayarlayın',
+                                    ),
+                                  ),
+                                );
+                              }
                             }
                           },
                           icon: const Icon(Icons.handshake_outlined),
@@ -909,19 +1325,68 @@ class CompanyAiScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final jobs = context.watch<JobsProvider>();
-    final auth = context.watch<AuthProvider>();
+    final rankedJob = jobs.jobById(jobs.lastRankedJobId);
+    final aiJobs = jobs.companyJobs
+        .where((j) => j.status == JobStatus.open && j.applicantIds.isNotEmpty)
+        .toList();
+
     return CompanyPortalShell(
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
           title: const Text('Firma AI · Aday sıralaması'),
           backgroundColor: AppColors.surface,
+          actions: [
+            TextButton(
+              onPressed: () => launchFirmaAi(context, jobs),
+              child: const Text('İlan seç'),
+            ),
+          ],
         ),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (jobs.status != null)
+            if (aiJobs.isNotEmpty)
+              DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
+                value: jobs.lastRankedJobId != null &&
+                        aiJobs.any((j) => j.id == jobs.lastRankedJobId)
+                    ? jobs.lastRankedJobId
+                    : null,
+                decoration: const InputDecoration(
+                  labelText: 'Sıralanacak ilan',
+                  border: OutlineInputBorder(),
+                ),
+                items: aiJobs
+                    .map(
+                      (j) => DropdownMenuItem(
+                        value: j.id,
+                        child: Text(
+                          '${j.title} (${j.applicantIds.length})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (id) {
+                  final job = jobs.jobById(id);
+                  if (job != null) unawaited(jobs.rankApplicantsWithAi(job));
+                },
+              ),
+            if (rankedJob != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                rankedJob.title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+            if (jobs.status != null) ...[
+              const SizedBox(height: 8),
               Text(jobs.status!, style: const TextStyle(color: AppColors.cyan)),
+            ],
             const SizedBox(height: 8),
             if (jobs.busy) const LinearProgressIndicator(),
             if (jobs.ranked.isEmpty)
@@ -935,7 +1400,6 @@ class CompanyAiScreen extends StatelessWidget {
               )
             else
               ...jobs.ranked.map((r) {
-                final user = auth.findUser(r.studentId);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Material(
@@ -1023,24 +1487,45 @@ class CompanyAiScreen extends StatelessWidget {
                             spacing: 8,
                             children: [
                               OutlinedButton(
-                                onPressed: () =>
-                                    context.push('/user/${r.studentId}'),
-                                child: const Text('Profil'),
-                              ),
-                              if (user != null)
-                                TextButton(
-                                  onPressed: () async {
-                                    await jobs.sendOffer(
-                                      studentId: r.studentId,
-                                      message:
-                                          'Merhaba ${r.name.split(' ').first}, AI değerlendirmemizde öne çıktınız. Görüşmek isteriz.',
-                                      notifications: context
-                                          .read<NotificationProvider>(),
-                                      auth: context.read<AuthProvider>(),
-                                    );
-                                  },
-                                  child: const Text('Teklif gönder'),
+                                onPressed: () => openCompanyStudentCv(
+                                  context,
+                                  r.studentId,
+                                  fallbackName: r.name,
                                 ),
+                                child: const Text('CV görüntüle'),
+                              ),
+                              TextButton(
+                                onPressed: () async {
+                                  if (!await ensureCompanyMailSignature(
+                                    context,
+                                  )) {
+                                    return;
+                                  }
+                                  if (!context.mounted) return;
+                                  final auth = context.read<AuthProvider>();
+                                  final user = auth.findUser(r.studentId);
+                                  await jobs.sendOffer(
+                                    studentId: r.studentId,
+                                    message:
+                                        'Merhaba ${r.name.split(' ').first}, AI değerlendirmemizde öne çıktınız. Görüşmek isteriz.',
+                                    notifications: context
+                                        .read<NotificationProvider>(),
+                                    auth: auth,
+                                    studentEmail: user?.email,
+                                    studentName: r.name,
+                                  );
+                                  if (!context.mounted) return;
+                                  final msg = jobs.status ?? 'Teklif gönderildi';
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(msg)),
+                                  );
+                                  if (jobs.status ==
+                                      'MAIL_SIGNATURE_REQUIRED') {
+                                    context.push('/firma/settings');
+                                  }
+                                },
+                                child: const Text('Teklif gönder'),
+                              ),
                             ],
                           ),
                         ],
@@ -1055,3 +1540,4 @@ class CompanyAiScreen extends StatelessWidget {
     );
   }
 }
+

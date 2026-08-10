@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -67,7 +69,24 @@ class _FollowListScreenState extends State<FollowListScreen>
     final out = <AppUser>[];
     for (final id in ids) {
       final u = auth.findUser(id);
-      if (u != null) out.add(u);
+      if (u != null) {
+        out.add(u);
+      } else {
+        out.add(
+          AppUser(
+            id: id,
+            email: '',
+            studentNo: '',
+            firstName: 'Kullanıcı',
+            lastName: '',
+            phone: '',
+            city: '',
+            university: '',
+            username: id.length > 12 ? id.substring(0, 12) : id,
+          ),
+        );
+        unawaited(auth.ensureUserLoaded(id, forceRemote: true));
+      }
     }
     return out;
   }

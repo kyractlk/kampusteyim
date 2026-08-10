@@ -216,7 +216,7 @@ def build_firm_deck() -> Path:
             blank,
             "FİRMALAR İÇİN KAMPÜS İŞ BİRLİĞİ",
             "İşveren markası, staj ve yetenek erişimini tek doğrulanmış kampüs kanalında yönetin.",
-            "Doğrulanmış firma hesabı · Kariyer · Etkinlik",
+            "Firma Online · Staj-AI · Firma AI · CV-AI · Etkinlik · Reels",
         )
     )
 
@@ -230,10 +230,110 @@ def build_firm_deck() -> Path:
         Inches(11.9),
         Inches(4.6),
         [
-            ("İşveren markası", "Firmanızı doğrulanmış hesapla öğrenci kitlesine anlatın."),
-            ("Staj & ilan", "Staj-AI ile ilan, başvuru ve aday havuzunu tek noktada yönetin."),
-            ("Kampüs etkinliği", "Kariyer günü, atölye ve teknik etkinlikleri kota ile yayınlayın."),
-            ("Güvenli görünürlük", "Rozet, Guard ve moderasyonla marka güvenini koruyun."),
+            ("İşveren markası", "Doğrulanmış firma hesabıyla akış, hikâye ve Reels’te görünür olun."),
+            ("Staj & ilan", "Staj-AI ile ilan, başvuru ve aday havuzunu tek panelde yönetin."),
+            ("Kampüs etkinliği", "Kariyer günü ve atölyeleri kota + başvuru ile yayınlayın."),
+            ("Güven & Guard", "Rozet, moderasyon ve doğrulanmış hesapla marka güvenini koruyun."),
+        ],
+    )
+    slides.append(s)
+
+    s = prs.slides.add_slide(blank)
+    header_bar(s, prs, "Firmalar")
+    section_title(s, "FİRMA ONLINE PANELİ", "Web’de güçlü işveren operasyonu")
+    process_row(
+        s,
+        Inches(0.55),
+        Inches(1.95),
+        Inches(12.2),
+        [
+            ("Giriş", "Admin’in açtığı hesap"),
+            ("İlan", "Staj / iş / part-time"),
+            ("Aday", "CV tarama + sıralama"),
+            ("İletişim", "Mail · direkt teklif"),
+        ],
+    )
+    matrix_2x2(
+        s,
+        Inches(0.7),
+        Inches(3.55),
+        Inches(11.9),
+        Inches(2.85),
+        [
+            ("Canlı panel", "Açık / kapalı ilan, başvuru ve AI-hazır metrikleri anlık."),
+            ("Zengin ilan", "Departman · ofis/hibrit/uzaktan · etiket · son başvuru."),
+            ("Firma AI", "İlan seçerek başvuruları gerekçeli skorla sıralayın."),
+            ("Öğrenci tarama", "Kampüs profili ve CV’si olan adaylara ulaşın."),
+        ],
+    )
+    slides.append(s)
+
+    s = prs.slides.add_slide(blank)
+    header_bar(s, prs, "Firmalar")
+    section_title(s, "FİRMA AI", "Kısa listeyi dakikalar içinde kurun")
+    add_textbox(
+        s,
+        Inches(0.55),
+        Inches(1.65),
+        Inches(12.2),
+        Inches(0.55),
+        "Her açık ilan için başvuranları CV, yetkinlik ve gereksinim uyumuna göre skorlayın; güçlü yön / eksik gerekçesiyle kısa liste çıkarın.",
+        size=14,
+        color=INK,
+    )
+    process_row(
+        s,
+        Inches(0.55),
+        Inches(2.4),
+        Inches(12.2),
+        [
+            ("İlan seç", "Başvurulu açık fırsat"),
+            ("Sırala", "Cloud / yerel AI skor"),
+            ("İncele", "Profil · CV · gerekçe"),
+            ("Teklif", "Direkt teklif + push"),
+        ],
+    )
+    bullet_block(
+        s,
+        Inches(0.55),
+        Inches(4.15),
+        Inches(12.0),
+        [
+            "Birden fazla ilanda AI hazır sayacı — paneldan tek tıkla sıralama",
+            "Skor kartında güçlü yönler ve eksikler görünür",
+            "Teklif gönderildiğinde öğrenci Staj-AI kutusu ve bildirimi güncellenir",
+            "Mail ile adaya kurumsal mesaj gönderme seçeneği",
+        ],
+        size=13,
+    )
+    slides.append(s)
+
+    s = prs.slides.add_slide(blank)
+    header_bar(s, prs, "Firmalar")
+    section_title(s, "STAJ-AI (ÖĞRENCİ)", "CV kapısından nitelikli başvuruya")
+    process_row(
+        s,
+        Inches(0.55),
+        Inches(1.95),
+        Inches(12.2),
+        [
+            ("CV-AI", "ATS özgeçmiş"),
+            ("Keşif", "Arama + filtre"),
+            ("Uyum", "Beceri eşleşme skoru"),
+            ("Başvuru", "Teklif kutusu"),
+        ],
+    )
+    matrix_2x2(
+        s,
+        Inches(0.7),
+        Inches(3.55),
+        Inches(11.9),
+        Inches(2.85),
+        [
+            ("Kalite kapısı", "CV hazır değilse başvuru açılmaz — havuz daha nitelikli."),
+            ("Akıllı liste", "Staj / iş / part-time, uzaktan-hibrit ve metin araması."),
+            ("Uyum skoru", "Öğrenci becerileri ilan gereksinimleriyle örtüşürse öne çıkar."),
+            ("Canlı teklif", "Firma teklifleri anlık; başvurularım paneli takip kolaylaştırır."),
         ],
     )
     slides.append(s)
@@ -254,15 +354,16 @@ def build_firm_deck() -> Path:
     bullet_block(
         s,
         Inches(0.55),
-        Inches(2.5),
+        Inches(2.4),
         Inches(7.0),
         [
             "Doğrulanmış firma rozetiyle güven verin",
-            "Staj ve etkinlik içeriklerini hashtag ile keşfettirin",
-            "Hikâye ve Reels ile kısa, yüksek etkileşimli anlatım kurun",
-            "Kampüs geri bildirimini tek kanalda takip edin",
+            "Şehir / üniversite filtreli akışta doğru kitleye düşün",
+            "Hikâye halkası ve Reels ile kısa, yüksek etkileşimli anlatım",
+            "Stream-first medya: içerik anında açılır, bekleme azalır",
+            "Deep link ile ilan / profil paylaşımını mağazaya kadar taşıyın",
         ],
-        size=14,
+        size=13,
     )
     add_shot(
         s, SHOTS / "03_feed.png", Inches(8.45), Inches(1.65), Inches(4.3), Inches(5.15)
@@ -281,7 +382,7 @@ def build_firm_deck() -> Path:
             ("Firma profili", "Doğrulanmış kimlik"),
             ("Staj-AI", "İlan ve kriterler"),
             ("Başvuru", "Öğrenci aday havuzu"),
-            ("Eşleşme", "CV-AI destekli seçim"),
+            ("Eşleşme", "CV-AI + Firma AI"),
         ],
     )
     stack_layers(
@@ -291,9 +392,9 @@ def build_firm_deck() -> Path:
         Inches(11.7),
         [
             ("Erişim", "Kampüs öğrencileri ve bölümler", TEAL),
-            ("Nitelik", "CV-AI · profil · yetkinlik", RGBColor(0x17, 0x8A, 0x84)),
-            ("Operasyon", "Başvuru · kota · takip", NAVY2),
-            ("Güven", "Doğrulanmış hesap · Guard", NAVY),
+            ("Nitelik", "CV-AI · profil · yetkinlik · uyum skoru", RGBColor(0x17, 0x8A, 0x84)),
+            ("Operasyon", "Başvuru · AI sıralama · mail · teklif", NAVY2),
+            ("Güven", "Doğrulanmış hesap · Guard · push", NAVY),
         ],
     )
     slides.append(s)
@@ -318,7 +419,7 @@ def build_firm_deck() -> Path:
         Inches(7.2),
         [
             ("Oluştur", "Etkinlik kartı"),
-            ("Duyur", "Akış + hikâye"),
+            ("Duyur", "Akış + hikâye + Reels"),
             ("Başvuru", "Öğrenci katılımı"),
             ("Ölç", "Kota ve ilgi"),
         ],
@@ -330,6 +431,24 @@ def build_firm_deck() -> Path:
         Inches(1.65),
         Inches(4.15),
         Inches(5.1),
+    )
+    slides.append(s)
+
+    s = prs.slides.add_slide(blank)
+    header_bar(s, prs, "Firmalar")
+    section_title(s, "GÖRÜNÜRLÜK & PLUS", "Kampüste öne çıkmanın yeni katmanları")
+    matrix_2x2(
+        s,
+        Inches(0.7),
+        Inches(1.85),
+        Inches(11.9),
+        Inches(4.5),
+        [
+            ("KampüsteyimPlus", "Öğrenci kitlesinde yeşil tick ve öncelikli deneyim."),
+            ("Market", "app.kampusteyim.app/market — web’den Plus satışı."),
+            ("İş ortaklarımız", "Kurumsal partner vitrini ile güven ve görünürlük."),
+            ("Anlık bildirim", "İlan, teklif ve etkileşim push + uygulama içi inbox."),
+        ],
     )
     slides.append(s)
 
@@ -355,8 +474,8 @@ def build_firm_deck() -> Path:
         Inches(4.48),
         Inches(10.4),
         Inches(0.55),
-        "Demo ve kurumsal hesap aktivasyonu için KampüsteyimAPP ile iletişime geçin.",
-        size=18,
+        "Firma hesapları yalnızca platform admini tarafından açılır ve teslim edilir.",
+        size=17,
         bold=True,
         color=NAVY2,
         align=PP_ALIGN.CENTER,
@@ -391,11 +510,11 @@ def build_firm_deck() -> Path:
     add_textbox(
         s,
         Inches(1.2),
-        Inches(5.75),
+        Inches(5.55),
         Inches(10.9),
-        Inches(0.5),
-        "KampüsteyimAPP · AYS Tech · kampusteyim.app",
-        size=17,
+        Inches(0.7),
+        "KampüsteyimAPP · AYS Tech · info@kampusteyim.app\nkampusteyim.app  ·  app.kampusteyim.app  ·  /market · /firma",
+        size=15,
         bold=True,
         color=TEAL,
         align=PP_ALIGN.CENTER,
@@ -414,7 +533,7 @@ def build_community_deck() -> Path:
             blank,
             "ÜNİVERSİTE TOPLULUKLARI İÇİN",
             "Resmi kimliğinizi güçlendirin; duyuru, etkinlik ve üye etkileşimini kampüsün dijital alanında büyütün.",
-            "Topluluk tanıtım standı · Takip · Üyelik · Etkinlik",
+            "Rozet · Hikâye · Reels · Etkinlik · Elçilik",
         )
     )
 
@@ -428,10 +547,10 @@ def build_community_deck() -> Path:
         Inches(11.9),
         Inches(4.6),
         [
-            ("Resmi kimlik", "Doğrulama rozetiyle sahte hesaplardan net biçimde ayrışın."),
+            ("Resmi kimlik", "Altın / mavi rozetle sahte hesaplardan net biçimde ayrışın."),
             ("Üye kazanımı", "Standdan QR ile uygulamaya ve topluluk hesabınıza yönlendirin."),
             ("Etkinlik yönetimi", "Tarih, yer, kota ve başvuruyu tek karttan yönetin."),
-            ("Canlı etkileşim", "Akış, hikâye ve Reels ile topluluk nabzını canlı tutun."),
+            ("Canlı etkileşim", "Akış, hikâye halkası ve Reels ile nabzı canlı tutun."),
         ],
     )
     slides.append(s)
@@ -486,7 +605,7 @@ def build_community_deck() -> Path:
         Inches(0.55),
         Inches(1.65),
         Inches(7.0),
-        Inches(0.6),
+        Inches(0.55),
         "Tek bir duyuru yerine etkinlik öncesi, anı ve sonrasını kapsayan bir iletişim ritmi kurun.",
         size=14,
         color=INK,
@@ -494,18 +613,37 @@ def build_community_deck() -> Path:
     bullet_block(
         s,
         Inches(0.55),
-        Inches(2.45),
+        Inches(2.35),
         Inches(7.0),
         [
-            "Akış: ana duyuru ve kayıt bağlantısı",
-            "Hikâye: geri sayım, hatırlatma ve anlık paylaşım",
-            "Reels: stand, ekip ve etkinlik özeti",
-            "Profil: topluluk kimliği, rozet ve geçmiş içerikler",
+            "Akış: ana duyuru — şehir / üniversite filtresiyle doğru kitle",
+            "Hikâye halkası: geri sayım, hatırlatma, anlık paylaşım (stream)",
+            "Reels: stand, ekip ve etkinlik özeti — kaydırınca anında oynar",
+            "Profil: logo, rozet, biyografi ve geçmiş içerikler",
+            "Push: takipçiye anlık duyuru ve etkinlik hatırlatması",
         ],
-        size=14,
+        size=13,
     )
     add_shot(
         s, SHOTS / "03_feed.png", Inches(8.5), Inches(1.65), Inches(4.25), Inches(5.1)
+    )
+    slides.append(s)
+
+    s = prs.slides.add_slide(blank)
+    header_bar(s, prs, "Üniversite Toplulukları")
+    section_title(s, "HİKÂYE & REELS", "Instagram ritminde kampüs medyası")
+    matrix_2x2(
+        s,
+        Inches(0.7),
+        Inches(1.85),
+        Inches(11.9),
+        Inches(4.5),
+        [
+            ("Hikâye halkası", "Görülmemiş / görülmüş halka; canlı snapshot ile saniyelik yansıma."),
+            ("Stream-first", "Video tam indirme beklemez — progressive oynatma."),
+            ("Reels motoru", "Önceki / sonraki ısıtma; kaydırınca takılma azalır."),
+            ("Deep link", "Paylaşılan hikâye / profil / etkinlik mağazaya kadar gider."),
+        ],
     )
     slides.append(s)
 
@@ -519,7 +657,7 @@ def build_community_deck() -> Path:
         Inches(7.2),
         [
             ("Oluştur", "Tarih · yer · görsel"),
-            ("Yayınla", "Akış + hikâye"),
+            ("Yayınla", "Akış + hikâye + Reels"),
             ("Topla", "Başvuru + kota"),
             ("Yönet", "Katılım takibi"),
         ],
@@ -544,6 +682,7 @@ def build_community_deck() -> Path:
             "Dağınık form ve mesaj trafiği azalır",
             "Kontenjan ve son başvuru net görünür",
             "Üyeler duyuruyu kampüs akışında keşfeder",
+            "App Link ile etkinlik linki uygulama yoksa mağazaya düşer",
         ],
         size=13,
     )
@@ -554,6 +693,24 @@ def build_community_deck() -> Path:
         Inches(1.65),
         Inches(4.15),
         Inches(5.1),
+    )
+    slides.append(s)
+
+    s = prs.slides.add_slide(blank)
+    header_bar(s, prs, "Üniversite Toplulukları")
+    section_title(s, "ELÇİLİK & AİDİYET", "Kampüs elçileri ve bağlı hesaplar")
+    matrix_2x2(
+        s,
+        Inches(0.7),
+        Inches(1.85),
+        Inches(11.9),
+        Inches(4.5),
+        [
+            ("Kampüs elçisi", "Topluluğu temsil eden öğrencilere özel rozet ve görünürlük."),
+            ("Bağlı hesaplar", "Öğrenci profilinde topluluk / firma aidiyeti gösterimi."),
+            ("Takip & gizlilik", "Gizli hesap ve takip isteği ile üye yönetimini netleştirin."),
+            ("İş ortakları", "About bölümünde partner vitrini — sponsor görünürlüğü."),
+        ],
     )
     slides.append(s)
 
@@ -591,7 +748,7 @@ def build_community_deck() -> Path:
         Inches(4.55),
         Inches(10.95),
         Inches(0.5),
-        "Duyuru yetkisi · Etkinlik kartı · Topluluk profili · Güvenli moderasyon",
+        "Logo zorunlu · Duyuru yetkisi · Etkinlik kartı · Guard / moderasyon",
         size=14,
         color=MUTED,
         align=PP_ALIGN.CENTER,
@@ -669,9 +826,9 @@ def build_community_deck() -> Path:
         Inches(1),
         Inches(5.0),
         Inches(11.3),
-        Inches(0.45),
-        f"{INSTAGRAM}  ·  kampusteyim.app",
-        size=18,
+        Inches(0.55),
+        f"{INSTAGRAM}  ·  kampusteyim.app  ·  app.kampusteyim.app",
+        size=17,
         bold=True,
         color=TEAL,
         align=PP_ALIGN.CENTER,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
@@ -23,11 +25,21 @@ class _StajAiScreenState extends State<StajAiScreen> {
   bool _checkedCv = false;
   bool _hasCv = false;
   _CvGateProgress _progress = const _CvGateProgress.empty();
+  final _search = TextEditingController();
+  JobType? _typeFilter;
+  JobWorkMode? _modeFilter;
+  List<String> _skills = const [];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _recheckCv());
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   Future<void> _recheckCv() async {
@@ -39,6 +51,7 @@ class _StajAiScreenState extends State<StajAiScreen> {
     setState(() => _checkedCv = false);
     final jobs = context.read<JobsProvider>();
     await jobs.bindJobsFromFirestore();
+    unawaited(jobs.bindOffersForStudent(auth.user!.id));
     final cv = CvProvider();
     await cv.bootstrap(auth);
     final progress = _CvGateProgress.fromCv(cv);
@@ -46,6 +59,10 @@ class _StajAiScreenState extends State<StajAiScreen> {
     setState(() {
       _progress = progress;
       _hasCv = progress.isReady;
+      _skills = cv.data.skills
+          .map((s) => s.name.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
       _checkedCv = true;
     });
   }
@@ -68,6 +85,16 @@ class _StajAiScreenState extends State<StajAiScreen> {
 
     final jobs = context.watch<JobsProvider>();
     final offers = jobs.offersFor(auth.user!.id);
+    final applied = jobs.applicationsFor(auth.user!.id);
+    final filtered = jobs.filterOpenJobs(
+      type: _typeFilter,
+      workMode: _modeFilter,
+      query: _search.text,
+    )..sort((a, b) {
+        final ma = jobs.matchScore(a, _skills);
+        final mb = jobs.matchScore(b, _skills);
+        return mb.compareTo(ma);
+      });
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -94,6 +121,83 @@ class _StajAiScreenState extends State<StajAiScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                     children: [
                       _ReadyBanner(onEditCv: _openCvAi),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _search,
+                        decoration: InputDecoration(
+                          hintText: 'İlan, firma, etiket ara…',
+                          prefixIcon: const Icon(Icons.search),
+                          filled: true,
+                          fillColor: AppColors.surface,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide:
+                                const BorderSide(color: AppColors.border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide:
+                                const BorderSide(color: AppColors.border),
+                          ),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 10),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            FilterChip(
+                              label: const Text('Tümü'),
+                              selected: _typeFilter == null,
+                              onSelected: (_) =>
+                                  setState(() => _typeFilter = null),
+                            ),
+                            const SizedBox(width: 8),
+                            FilterChip(
+                              label: const Text('Staj'),
+                              selected: _typeFilter == JobType.internship,
+                              onSelected: (_) => setState(
+                                () => _typeFilter = JobType.internship,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilterChip(
+                              label: const Text('Tam zamanlı'),
+                              selected: _typeFilter == JobType.fulltime,
+                              onSelected: (_) => setState(
+                                () => _typeFilter = JobType.fulltime,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilterChip(
+                              label: const Text('Part-time'),
+                              selected: _typeFilter == JobType.parttime,
+                              onSelected: (_) => setState(
+                                () => _typeFilter = JobType.parttime,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilterChip(
+                              label: const Text('Uzaktan'),
+                              selected: _modeFilter == JobWorkMode.remote,
+                              onSelected: (v) => setState(
+                                () => _modeFilter =
+                                    v ? JobWorkMode.remote : null,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilterChip(
+                              label: const Text('Hibrit'),
+                              selected: _modeFilter == JobWorkMode.hybrid,
+                              onSelected: (v) => setState(
+                                () => _modeFilter =
+                                    v ? JobWorkMode.hybrid : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 18),
                       if (offers.isNotEmpty) ...[
                         Text(
@@ -123,7 +227,8 @@ class _StajAiScreenState extends State<StajAiScreen> {
                                   height: 42,
                                   alignment: Alignment.center,
                                   decoration: BoxDecoration(
-                                    color: AppColors.cyan.withValues(alpha: 0.12),
+                                    color:
+                                        AppColors.cyan.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: const Icon(
@@ -144,6 +249,42 @@ class _StajAiScreenState extends State<StajAiScreen> {
                         ),
                         const SizedBox(height: 8),
                       ],
+                      if (applied.isNotEmpty) ...[
+                        Text(
+                          'Başvurularım',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        ...applied.take(5).map(
+                          (job) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                side: const BorderSide(color: AppColors.border),
+                              ),
+                              tileColor: AppColors.surface,
+                              title: Text(
+                                job.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${job.companyName} · ${job.status.name}',
+                              ),
+                              trailing: const Icon(
+                                Icons.check_circle,
+                                color: AppColors.lime,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       Text(
                         'Açık ilanlar',
                         style: Theme.of(context)
@@ -153,30 +294,33 @@ class _StajAiScreenState extends State<StajAiScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${jobs.openJobs.length} aktif fırsat',
+                        '${filtered.length} fırsat · CV uyumuna göre sıralı',
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 13,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      if (jobs.openJobs.isEmpty)
+                      if (filtered.isEmpty)
                         const Padding(
                           padding: EdgeInsets.only(top: 40),
                           child: Center(
                             child: Text(
-                              'Şu an açık ilan yok. Daha sonra tekrar bak.',
+                              'Bu filtrede açık ilan yok. Filtreyi değiştir veya sonra bak.',
+                              textAlign: TextAlign.center,
                               style: TextStyle(color: AppColors.textSecondary),
                             ),
                           ),
                         )
                       else
-                        ...jobs.openJobs.map((job) {
-                          final applied =
+                        ...filtered.map((job) {
+                          final appliedNow =
                               job.applicantIds.contains(auth.user!.id);
+                          final match = jobs.matchScore(job, _skills);
                           return _JobTile(
                             job: job,
-                            applied: applied,
+                            applied: appliedNow,
+                            matchScore: match,
                             onApply: () => _apply(job),
                           );
                         }),
@@ -214,7 +358,7 @@ class _StajAiScreenState extends State<StajAiScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok ? 'Başvuru gönderildi' : 'Başvuru başarısız'),
+        content: Text(ok ? 'Başvuru gönderildi' : (jobs.status ?? 'Başvuru başarısız')),
       ),
     );
   }
@@ -622,11 +766,13 @@ class _JobTile extends StatelessWidget {
     required this.job,
     required this.applied,
     required this.onApply,
+    this.matchScore = 0,
   });
 
   final JobListing job;
   final bool applied;
   final VoidCallback onApply;
+  final int matchScore;
 
   @override
   Widget build(BuildContext context) {
@@ -653,21 +799,42 @@ class _JobTile extends StatelessWidget {
                       borderRadius: BorderRadius.circular(99),
                     ),
                     child: Text(
-                      _typeLabel(job.type),
+                      job.typeLabel,
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    job.companyName,
-                    style: const TextStyle(
-                      color: AppColors.cyan,
-                      fontWeight: FontWeight.w700,
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.cyan.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      job.workModeLabel,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.navy,
+                      ),
                     ),
                   ),
+                  const Spacer(),
+                  if (matchScore > 0)
+                    Text(
+                      '%$matchScore uyum',
+                      style: TextStyle(
+                        color: matchScore >= 60
+                            ? AppColors.lime
+                            : AppColors.cyan,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -676,6 +843,14 @@ class _JobTile extends StatelessWidget {
                 style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                job.companyName,
+                style: const TextStyle(
+                  color: AppColors.cyan,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 6),
@@ -687,12 +862,47 @@ class _JobTile extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                job.location,
+                [
+                  if (job.location.isNotEmpty) job.location,
+                  if (job.department.isNotEmpty) job.department,
+                  if (job.deadline != null)
+                    'Son: ${job.deadline!.day}.${job.deadline!.month}.${job.deadline!.year}',
+                ].join(' · '),
                 style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 13,
                 ),
               ),
+              if (job.requirements.trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  job.requirements,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+              if (job.tags.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: job.tags
+                      .take(5)
+                      .map(
+                        (t) => Chip(
+                          label: Text(t, style: const TextStyle(fontSize: 11)),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -707,10 +917,4 @@ class _JobTile extends StatelessWidget {
       ),
     );
   }
-
-  String _typeLabel(JobType t) => switch (t) {
-        JobType.internship => 'Staj',
-        JobType.fulltime => 'Tam zamanlı',
-        JobType.parttime => 'Part-time',
-      };
 }

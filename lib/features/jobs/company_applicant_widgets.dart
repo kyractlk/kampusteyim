@@ -1,13 +1,75 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
+import 'company_mail_gate.dart';
 import 'job_models.dart';
 import 'jobs_provider.dart';
+
+/// Firma panelinden öğrenci CV’sini açar; platform profiline gitmez.
+Future<void> openCompanyStudentCv(
+  BuildContext context,
+  String studentId, {
+  String? fallbackName,
+}) async {
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(
+      child: Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
+        ),
+      ),
+    ),
+  );
+  try {
+    final jobs = context.read<JobsProvider>();
+    final auth = context.read<AuthProvider>();
+    final list = await jobs.loadApplicantPreviews(
+      applicantIds: [studentId],
+      auth: auth,
+    );
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    final a = list.isEmpty
+        ? ApplicantPreview(
+            studentId: studentId,
+            name: fallbackName ?? 'Aday',
+            email: '',
+          )
+        : list.first;
+    if (!a.hasCv) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('CV bulunamadı'),
+          content: Text(
+            '${a.name.trim().isEmpty ? 'Öğrencinin' : a.name} CV’si bulunmamaktadır.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Tamam'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    await showApplicantCvSheet(context, a);
+  } catch (_) {
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Öğrencinin CV’si bulunmamaktadır.')),
+    );
+  }
+}
 
 Future<void> showApplicantCvSheet(
   BuildContext context,
@@ -69,8 +131,11 @@ Future<void> showApplicantCvSheet(
               const SizedBox(height: 16),
               if (!a.hasCv)
                 const Text(
-                  'Bu adayın platformda yeterli CV kaydı yok.',
-                  style: TextStyle(color: AppColors.crimson),
+                  'Öğrencinin CV’si bulunmamaktadır.',
+                  style: TextStyle(
+                    color: AppColors.crimson,
+                    fontWeight: FontWeight.w700,
+                  ),
                 )
               else ...[
                 _CvSection('Hakkımda / Özet', a.about),
@@ -107,62 +172,55 @@ Future<void> showApplicantCvSheet(
                 ],
               ],
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        context.push('/user/${a.studentId}');
-                      },
-                      child: const Text('Platform profili'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: () async {
-                        final jobs = context.read<JobsProvider>();
-                        final offer = TextEditingController(
-                          text:
-                              'Merhaba ${a.name.split(' ').first}, başvurunuzu değerlendirdik. Görüşme için sizi davet ediyoruz.',
-                        );
-                        final ok = await showDialog<bool>(
-                          context: context,
-                          builder: (dCtx) => AlertDialog(
-                            title: const Text('Teklif gönder'),
-                            content: TextField(
-                              controller: offer,
-                              maxLines: 4,
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(dCtx, false),
-                                child: const Text('İptal'),
-                              ),
-                              FilledButton(
-                                onPressed: () => Navigator.pop(dCtx, true),
-                                child: const Text('Gönder'),
-                              ),
-                            ],
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () async {
+                    final jobs = context.read<JobsProvider>();
+                    final offer = TextEditingController(
+                      text:
+                          'Merhaba ${a.name.split(' ').first}, başvurunuzu değerlendirdik. Görüşme için sizi davet ediyoruz.',
+                    );
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (dCtx) => AlertDialog(
+                        title: const Text('Teklif gönder'),
+                        content: TextField(
+                          controller: offer,
+                          maxLines: 4,
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dCtx, false),
+                            child: const Text('İptal'),
                           ),
-                        );
-                        if (ok == true && context.mounted) {
-                          await jobs.sendOffer(
-                            studentId: a.studentId,
-                            message: offer.text,
-                            notifications:
-                                context.read<NotificationProvider>(),
-                            auth: context.read<AuthProvider>(),
-                          );
-                          if (context.mounted) Navigator.pop(ctx);
-                        }
-                        offer.dispose();
-                      },
-                      child: const Text('Teklif'),
-                    ),
-                  ),
-                ],
+                          FilledButton(
+                            onPressed: () => Navigator.pop(dCtx, true),
+                            child: const Text('Gönder'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (ok == true && context.mounted) {
+                      if (!await ensureCompanyMailSignature(context)) {
+                        return;
+                      }
+                      if (!context.mounted) return;
+                      await jobs.sendOffer(
+                        studentId: a.studentId,
+                        message: offer.text,
+                        notifications:
+                            context.read<NotificationProvider>(),
+                        auth: context.read<AuthProvider>(),
+                        studentEmail: a.email,
+                        studentName: a.name.split(' ').first,
+                      );
+                      if (context.mounted) Navigator.pop(ctx);
+                    }
+                    offer.dispose();
+                  },
+                  child: const Text('Teklif gönder'),
+                ),
               ),
             ],
           );

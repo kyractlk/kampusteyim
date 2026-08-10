@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -363,7 +364,9 @@ class _ReelPageState extends State<_ReelPage> {
       );
       _vc = c;
       _ownedLocally = true;
-      await c.initialize().timeout(const Duration(seconds: 20));
+      await c.initialize().timeout(
+        Duration(seconds: kIsWeb ? 12 : 20),
+      );
       if (!mounted || gen != _loadGen) {
         try {
           await c.dispose();
@@ -759,8 +762,8 @@ class _ReelPageState extends State<_ReelPage> {
             ),
           Positioned(
             left: 12,
-            right: 64,
-            bottom: bottomClear,
+            right: 76,
+            bottom: bottomClear + 14,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -805,45 +808,6 @@ class _ReelPageState extends State<_ReelPage> {
                         ),
                       ),
                     ),
-                    if (!isSelf && me != null) ...[
-                      const SizedBox(width: 8),
-                      if (!following)
-                        OutlinedButton(
-                          style: LiquidGlass.enabled(context)
-                              ? liquidOutlinedButtonStyle(
-                                  dark: true,
-                                  minimumSize: const Size(0, 30),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 0,
-                                  ),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                )
-                              : OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.white,
-                                  side:
-                                      const BorderSide(color: Colors.white70),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 0),
-                                  minimumSize: const Size(0, 28),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                          onPressed: () => _toggleFollow(author),
-                          child: Text(
-                            author == null
-                                ? 'Takip et'
-                                : followActionLabel(auth, author).isEmpty
-                                    ? 'Takip et'
-                                    : followActionLabel(auth, author),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                    ],
                     if (isSelf) ...[
                       const SizedBox(width: 4),
                       PopupMenuButton<String>(
@@ -882,6 +846,42 @@ class _ReelPageState extends State<_ReelPage> {
                     ],
                   ],
                 ),
+                if (!isSelf && me != null && author != null && !following) ...[
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 40),
+                    child: OutlinedButton(
+                      style: LiquidGlass.enabled(context)
+                          ? liquidOutlinedButtonStyle(
+                              dark: true,
+                              minimumSize: const Size(0, 28),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 0,
+                              ),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            )
+                          : OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white70),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 0,
+                              ),
+                              minimumSize: const Size(0, 28),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                      onPressed: () => _toggleFollow(author),
+                      child: Text(
+                        followActionLabel(auth, author, compact: true),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 if (reel.caption.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   _ReelCaptionText(caption: reel.caption),

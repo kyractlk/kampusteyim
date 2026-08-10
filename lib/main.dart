@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -60,6 +61,14 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    // Web: Chrome QUIC / WebChannel kopmaları (QUIC_TOO_MANY_RTOS) için
+    // long-polling zorla — Listen/Write kanalı daha stabil.
+    if (kIsWeb) {
+      FirebaseFirestore.instance.settings = const Settings(
+        persistenceEnabled: true,
+        webExperimentalForceLongPolling: true,
+      );
+    }
   } catch (e, st) {
     debugPrint('[boot] firebase: $e\n$st');
   }

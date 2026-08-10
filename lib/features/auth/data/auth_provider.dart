@@ -33,6 +33,8 @@ class AuthProvider extends ChangeNotifier {
   final Map<String, String> _idAliases = {};
   /// Instagram tarzı önerilenler — bu oturumda kapatılanlar (sonra tekrar çıkabilir).
   final Set<String> _dismissedSuggestions = {};
+  /// Takip mutasyonu sırasında remote sync follow alanlarını ezmesin.
+  int _followGraphBusy = 0;
 
   AppUser? get user => _user;
   bool get isAuthenticated => _user != null;
@@ -172,9 +174,18 @@ class AuthProvider extends ChangeNotifier {
         return;
       }
       final user = _appUserFromFirestore(doc.id, data);
-      _user = user;
+      if (_followGraphBusy > 0 && _user != null) {
+        _user = user.copyWith(
+          following: _user!.following,
+          followers: _user!.followers,
+          incomingFollowRequests: _user!.incomingFollowRequests,
+          outgoingFollowRequests: _user!.outgoingFollowRequests,
+        );
+      } else {
+        _user = user;
+      }
       _boundAuthUid = fb.uid;
-      _upsert(user);
+      _upsert(_user!);
       if (doc.id != user.id) {
         _idAliases[doc.id] = user.id;
         _idAliases[user.id] = doc.id;
@@ -984,7 +995,17 @@ class AuthProvider extends ChangeNotifier {
                   doc.id == _boundAuthUid ||
                   doc.id == me.id ||
                   (stable.isNotEmpty && stable == me.id))) {
-            _user = user;
+            if (_followGraphBusy > 0) {
+              // Optimistic takip grafiği remote boş/stale ile silinmesin.
+              _user = user.copyWith(
+                following: me.following,
+                followers: me.followers,
+                incomingFollowRequests: me.incomingFollowRequests,
+                outgoingFollowRequests: me.outgoingFollowRequests,
+              );
+            } else {
+              _user = user;
+            }
           }
           if (stable.isNotEmpty && stable != doc.id) {
             _idAliases[stable] = doc.id;
@@ -1322,10 +1343,9 @@ class AuthProvider extends ChangeNotifier {
         'updatedAt': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
       unawaited(
-        _persistFollowGraph(
-          followerId: _user!.id,
+        _mutateFollowRemote(
+          action: 'unfollow',
           targetId: canonical,
-          follow: false,
         ),
       );
     } catch (e) {
@@ -1368,39 +1388,23 @@ class AuthProvider extends ChangeNotifier {
     _upsert(_user!);
     _upsert(target.copyWith(incomingFollowRequests: incoming));
     notifyListeners();
-    try {
-      final myUid = fa.FirebaseAuth.instance.currentUser?.uid ?? _user!.id;
-      var targetDocId = canonical;
-      final snap =
-          await FirebaseFirestore.instance.collection('users').doc(canonical).get();
-      if (!snap.exists) {
-        final q = await FirebaseFirestore.instance
-            .collection('users')
-            .where('stableId', isEqualTo: canonical)
-            .limit(1)
-            .get();
-        if (q.docs.isNotEmpty) targetDocId = q.docs.first.id;
+    final ok = await _mutateFollowRemote(
+      action: 'request',
+      targetId: canonical,
+    );
+    if (!ok) {
+      // Rollback optimistic
+      final out2 = List<String>.from(_user!.outgoingFollowRequests)
+        ..removeWhere((id) => idsFor(canonical).contains(id));
+      _user = _user!.copyWith(outgoingFollowRequests: out2);
+      final t = findUser(canonical);
+      if (t != null) {
+        final inc = List<String>.from(t.incomingFollowRequests)
+          ..removeWhere((id) => idsFor(_user!.id).contains(id));
+        _upsert(t.copyWith(incomingFollowRequests: inc));
       }
-      final batch = FirebaseFirestore.instance.batch();
-      batch.set(
-        FirebaseFirestore.instance.collection('users').doc(myUid),
-        {
-          'outgoingFollowRequests': FieldValue.arrayUnion([canonical]),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
-      batch.set(
-        FirebaseFirestore.instance.collection('users').doc(targetDocId),
-        {
-          'incomingFollowRequests': FieldValue.arrayUnion([_user!.id]),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
-      await batch.commit();
-    } catch (e) {
-      debugPrint('[auth] requestFollow: $e');
+      _upsert(_user!);
+      notifyListeners();
     }
   }
 
@@ -1419,40 +1423,7 @@ class AuthProvider extends ChangeNotifier {
     }
     _upsert(_user!);
     notifyListeners();
-    try {
-      final myUid = fa.FirebaseAuth.instance.currentUser?.uid ?? _user!.id;
-      var targetDocId = canonical;
-      final snap =
-          await FirebaseFirestore.instance.collection('users').doc(canonical).get();
-      if (!snap.exists) {
-        final q = await FirebaseFirestore.instance
-            .collection('users')
-            .where('stableId', isEqualTo: canonical)
-            .limit(1)
-            .get();
-        if (q.docs.isNotEmpty) targetDocId = q.docs.first.id;
-      }
-      final batch = FirebaseFirestore.instance.batch();
-      batch.set(
-        FirebaseFirestore.instance.collection('users').doc(myUid),
-        {
-          'outgoingFollowRequests': FieldValue.arrayRemove([canonical]),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
-      batch.set(
-        FirebaseFirestore.instance.collection('users').doc(targetDocId),
-        {
-          'incomingFollowRequests': FieldValue.arrayRemove([_user!.id]),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
-      await batch.commit();
-    } catch (e) {
-      debugPrint('[auth] cancelFollowRequest: $e');
-    }
+    await _mutateFollowRemote(action: 'cancel_request', targetId: canonical);
   }
 
   /// Gelen takip isteğini kabul et → requester beni takip eder.
@@ -1486,44 +1457,16 @@ class AuthProvider extends ChangeNotifier {
       ),
     );
     notifyListeners();
-    try {
-      final myUid = fa.FirebaseAuth.instance.currentUser?.uid ?? _user!.id;
-      var requesterDocId = canonical;
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(canonical)
-          .get();
-      if (!snap.exists) {
-        final q = await FirebaseFirestore.instance
-            .collection('users')
-            .where('stableId', isEqualTo: canonical)
-            .limit(1)
-            .get();
-        if (q.docs.isNotEmpty) requesterDocId = q.docs.first.id;
-      }
-      final batch = FirebaseFirestore.instance.batch();
-      batch.set(
-        FirebaseFirestore.instance.collection('users').doc(myUid),
-        {
-          'incomingFollowRequests': FieldValue.arrayRemove([canonical]),
-          'followers': FieldValue.arrayUnion([canonical]),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
-      batch.set(
-        FirebaseFirestore.instance.collection('users').doc(requesterDocId),
-        {
-          'outgoingFollowRequests': FieldValue.arrayRemove([_user!.id, myUid]),
-          'following': FieldValue.arrayUnion([_user!.id, myUid]),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
-      await batch.commit();
-    } catch (e) {
-      debugPrint('[auth] acceptFollowRequest: $e');
+    final ok = await _mutateFollowRemote(
+      action: 'accept',
+      targetId: canonical,
+    );
+    if (!ok) {
+      await refreshCurrentUser();
+      await ensureUserLoaded(canonical, forceRemote: true);
+      return false;
     }
+    unawaited(ensureUserLoaded(canonical, forceRemote: true));
     return true;
   }
 
@@ -1543,48 +1486,14 @@ class AuthProvider extends ChangeNotifier {
     }
     _upsert(_user!);
     notifyListeners();
-    try {
-      final myUid = fa.FirebaseAuth.instance.currentUser?.uid ?? _user!.id;
-      var requesterDocId = canonical;
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(canonical)
-          .get();
-      if (!snap.exists) {
-        final q = await FirebaseFirestore.instance
-            .collection('users')
-            .where('stableId', isEqualTo: canonical)
-            .limit(1)
-            .get();
-        if (q.docs.isNotEmpty) requesterDocId = q.docs.first.id;
-      }
-      final batch = FirebaseFirestore.instance.batch();
-      batch.set(
-        FirebaseFirestore.instance.collection('users').doc(myUid),
-        {
-          'incomingFollowRequests': FieldValue.arrayRemove([canonical]),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
-      batch.set(
-        FirebaseFirestore.instance.collection('users').doc(requesterDocId),
-        {
-          'outgoingFollowRequests': FieldValue.arrayRemove([_user!.id, myUid]),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
-      await batch.commit();
-    } catch (e) {
-      debugPrint('[auth] rejectFollowRequest: $e');
-    }
+    await _mutateFollowRemote(action: 'reject', targetId: canonical);
   }
 
   Future<void> toggleFollow(String targetId) async {
     if (_user == null || _user!.id == targetId) return;
     if (_user!.isSpectatorMode) return;
-    final target = findUser(targetId) ?? await ensureUserLoaded(targetId);
+    final target = findUser(targetId) ??
+        await ensureUserLoaded(targetId, forceRemote: true);
     if (target == null) return;
     final canonicalTarget = target.id;
     final following = List<String>.from(_user!.following);
@@ -1594,71 +1503,66 @@ class AuthProvider extends ChangeNotifier {
     if (already) {
       following.removeWhere((id) => idsFor(canonicalTarget).contains(id));
       targetFollowers.removeWhere((id) => idsFor(_user!.id).contains(id));
-    } else {
-      // Gizli hesap: anında takip yerine istek.
-      if (target.isPrivateAccount) {
-        await requestFollow(canonicalTarget);
-        return;
+      _user = _user!.copyWith(following: following);
+      _upsert(_user!);
+      _upsert(target.copyWith(followers: targetFollowers));
+      notifyListeners();
+      final ok = await _mutateFollowRemote(
+        action: 'unfollow',
+        targetId: canonicalTarget,
+      );
+      if (!ok) {
+        await refreshCurrentUser();
+        await ensureUserLoaded(canonicalTarget, forceRemote: true);
       }
-      if (!following.contains(canonicalTarget)) {
-        following.add(canonicalTarget);
-      }
-      if (!targetFollowers.contains(_user!.id)) {
-        targetFollowers.add(_user!.id);
-      }
+      return;
     }
-    _user = _user!.copyWith(following: following);
+    // Gizli hesap: anında takip yerine istek.
+    if (target.isPrivateAccount) {
+      await requestFollow(canonicalTarget);
+      return;
+    }
+    if (!following.contains(canonicalTarget)) {
+      following.add(canonicalTarget);
+    }
+    if (!targetFollowers.contains(_user!.id)) {
+      targetFollowers.add(_user!.id);
+    }
+    // İstek varsa temizle (optimistic)
+    final outgoing = List<String>.from(_user!.outgoingFollowRequests)
+      ..removeWhere((id) => idsFor(canonicalTarget).contains(id));
+    _user = _user!.copyWith(
+      following: following,
+      outgoingFollowRequests: outgoing,
+    );
     _upsert(_user!);
     _upsert(target.copyWith(followers: targetFollowers));
     notifyListeners();
-    unawaited(
-      _persistFollowGraph(
-        followerId: _user!.id,
-        targetId: canonicalTarget,
-        follow: !already,
-      ),
+    final ok = await _mutateFollowRemote(
+      action: 'follow',
+      targetId: canonicalTarget,
     );
+    if (!ok) {
+      await refreshCurrentUser();
+      await ensureUserLoaded(canonicalTarget, forceRemote: true);
+    }
   }
 
-  Future<void> _persistFollowGraph({
-    required String followerId,
+  Future<bool> _mutateFollowRemote({
+    required String action,
     required String targetId,
-    required bool follow,
   }) async {
+    _followGraphBusy++;
     try {
-      final myUid = fa.FirebaseAuth.instance.currentUser?.uid ?? followerId;
-      var targetDocId = targetId;
-      final targetSnap =
-          await FirebaseFirestore.instance.collection('users').doc(targetId).get();
-      if (!targetSnap.exists) {
-        final q = await FirebaseFirestore.instance
-            .collection('users')
-            .where('stableId', isEqualTo: targetId)
-            .limit(1)
-            .get();
-        if (q.docs.isNotEmpty) targetDocId = q.docs.first.id;
-      }
-      final op = follow ? FieldValue.arrayUnion : FieldValue.arrayRemove;
-      final batch = FirebaseFirestore.instance.batch();
-      batch.set(
-        FirebaseFirestore.instance.collection('users').doc(myUid),
-        {
-          'following': op([targetId]),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
-      batch.set(
-        FirebaseFirestore.instance.collection('users').doc(targetDocId),
-        {
-          'followers': op([followerId, if (myUid != followerId) myUid]),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
-      await batch.commit();
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('mutateFollow');
+      await callable.call({'action': action, 'targetId': targetId});
+      return true;
     } catch (e) {
-      debugPrint('[auth] persistFollow: $e');
+      debugPrint('[auth] mutateFollow($action): $e');
+      return false;
+    } finally {
+      _followGraphBusy = (_followGraphBusy - 1).clamp(0, 999);
     }
   }
 
