@@ -73,6 +73,9 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data
                     android:scheme="https"
+                    android:host="app.kampusteyim.app"/>
+                <data
+                    android:scheme="https"
                     android:host="kampusteyim.app"/>
                 <data
                     android:scheme="https"

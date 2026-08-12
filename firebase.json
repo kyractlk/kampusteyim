@@ -43,6 +43,17 @@
           "destination": "/market.html"
         },
         {
+          "source": "/pay",
+          "function": {
+            "functionId": "paytrPayPage",
+            "region": "europe-west1"
+          }
+        },
+        {
+          "source": "/pay-result",
+          "destination": "/pay-result.html"
+        },
+        {
           "source": "/privacy",
           "destination": "/privacy.html"
         },

@@ -5,12 +5,11 @@
  */
 const crypto = require('crypto');
 
-const DEFAULT_OK = 'https://app.kampusteyim.app/market?pay=ok';
-const DEFAULT_FAIL = 'https://app.kampusteyim.app/market?pay=fail';
+const DEFAULT_OK = 'https://app.kampusteyim.app/pay-result?status=ok';
+const DEFAULT_FAIL = 'https://app.kampusteyim.app/pay-result?status=fail';
 const DEFAULT_PAYTR_CB =
   'https://europe-west1-ayskampuss.cloudfunctions.net/paytrCallback';
-const DEFAULT_PAYTR_PAY =
-  'https://europe-west1-ayskampuss.cloudfunctions.net/paytrPayPage';
+const DEFAULT_PAYTR_PAY = 'https://app.kampusteyim.app/pay';
 const DEFAULT_SHOPIER_CB =
   'https://europe-west1-ayskampuss.cloudfunctions.net/shopierCallback';
 const DEFAULT_SHOPIER_PAY =
@@ -716,8 +715,18 @@ function paymentsModule({
             100,
           ) || 'Turkiye',
           user_phone: sanitizePlainText(user.phone || '05000000000', 20) || '05000000000',
-          merchant_ok_url: cfg.okUrl,
-          merchant_fail_url: cfg.failUrl,
+          merchant_ok_url:
+            'https://app.kampusteyim.app/pay-result?status=ok' +
+            '&orderId=' +
+            encodeURIComponent(order.id) +
+            '&product=' +
+            encodeURIComponent(product),
+          merchant_fail_url:
+            'https://app.kampusteyim.app/pay-result?status=fail' +
+            '&orderId=' +
+            encodeURIComponent(order.id) +
+            '&product=' +
+            encodeURIComponent(product),
           timeout_limit: '30',
           currency,
           test_mode: testMode,
@@ -929,8 +938,18 @@ ${fields}
         const iframeSrc = escapeHtml(
           'https://www.paytr.com/odeme/guvenli/' + token,
         );
-        const ok = escapeHtml(cfg.okUrl || DEFAULT_OK);
-        const fail = escapeHtml(cfg.failUrl || DEFAULT_FAIL);
+        const ok = escapeHtml(
+          'https://app.kampusteyim.app/pay-result?status=ok&orderId=' +
+            encodeURIComponent(orderId) +
+            '&product=' +
+            encodeURIComponent(String(order.product || '')),
+        );
+        const fail = escapeHtml(
+          'https://app.kampusteyim.app/pay-result?status=fail&orderId=' +
+            encodeURIComponent(orderId) +
+            '&product=' +
+            encodeURIComponent(String(order.product || '')),
+        );
         res.set('Content-Type', 'text/html; charset=utf-8');
         res.set('Cache-Control', 'no-store');
         res.set(

@@ -996,8 +996,14 @@
 
   (function () {
     var q = new URLSearchParams(location.search);
-    if (q.get('pay') === 'ok') show($('banner'), 'ok', 'Ödeme alındı. Plus kısa sürede hesabına yansır.');
-    if (q.get('pay') === 'fail') show($('banner'), 'err', 'Ödeme tamamlanamadı.');
+    if (q.get('pay') === 'ok' || q.get('status') === 'ok') {
+      show($('banner'), 'ok', 'Ödeme başarılı! Plus kısa sürede hesabına yansır. Uygulamayı açarak kontrol edebilirsin.');
+      $('banner').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    if (q.get('pay') === 'fail' || q.get('status') === 'fail') {
+      show($('banner'), 'err', 'Ödeme tamamlanamadı. Kartı kontrol edip tekrar deneyebilirsin.');
+      $('banner').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   })();
 
   renderGrid();

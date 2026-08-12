@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ödeme sonucu · KampüsteyimAPP</title>
+  <link rel="icon" href="favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --navy:#0B1F3A; --cyan:#00D4C8; --ok:#0a8f6c; --err:#C8102E; --muted:#64748b; --bg:#f4f7fb; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; font-family: "DM Sans", system-ui, sans-serif;
+      background:
+        radial-gradient(900px 420px at 10% -10%, rgba(0,212,200,.18), transparent 55%),
+        radial-gradient(700px 380px at 100% 0%, rgba(11,31,58,.1), transparent 50%),
+        var(--bg);
+      color: var(--navy);
+      display: flex; align-items: center; justify-content: center; padding: 1.25rem;
+    }
+    .card {
+      width: min(440px, 100%); background: #fff; border-radius: 22px;
+      border: 1px solid #e2e8f0; box-shadow: 0 18px 50px rgba(15,23,42,.08);
+      padding: 1.75rem 1.4rem 1.5rem; text-align: center;
+    }
+    .icon {
+      width: 72px; height: 72px; border-radius: 50%; margin: 0 auto .9rem;
+      display: grid; place-items: center; font-size: 2rem; font-weight: 900;
+    }
+    .icon.ok { background: rgba(10,143,108,.12); color: var(--ok); }
+    .icon.fail { background: rgba(200,16,46,.1); color: var(--err); }
+    h1 { font-family: Fraunces, serif; font-size: 1.55rem; margin: 0 0 .4rem; }
+    p { margin: 0; color: var(--muted); line-height: 1.5; font-size: .95rem; }
+    .meta { margin-top: .85rem; font-size: .8rem; color: #94a3b8; }
+    .actions { display: grid; gap: .55rem; margin-top: 1.25rem; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: .85rem 1rem; border-radius: 12px; font-weight: 800; text-decoration: none;
+      border: 0; cursor: pointer; font-size: .95rem;
+    }
+    .btn.primary { background: var(--navy); color: #fff; }
+    .btn.cyan { background: var(--cyan); color: var(--navy); }
+    .btn.ghost { background: transparent; color: var(--navy); border: 1px solid #d7e0eb; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="icon" id="icon">…</div>
+    <h1 id="title">Ödeme sonucu</h1>
+    <p id="msg">Durum kontrol ediliyor…</p>
+    <div class="meta" id="meta"></div>
+    <div class="actions">
+      <a class="btn cyan" id="openApp" href="#">Uygulamayı aç</a>
+      <a class="btn primary" id="toMarket" href="/market">Markete dön</a>
+      <a class="btn ghost" id="toHome" href="/">Ana sayfa</a>
+    </div>
+  </div>
+  <script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var status = (q.get('status') || q.get('pay') || '').toLowerCase();
+  var ok = status === 'ok' || status === 'success';
+  var orderId = q.get('orderId') || '';
+  var product = q.get('product') || '';
+  var productLabel = product === 'plus' ? 'Kampüsteyim Plus'
+    : product === 'merch' ? 'Market siparişi'
+    : product === 'event' ? 'Etkinlik bileti'
+    : 'Sipariş';
+
+  var icon = document.getElementById('icon');
+  var title = document.getElementById('title');
+  var msg = document.getElementById('msg');
+  var meta = document.getElementById('meta');
+
+  if (ok) {
+    icon.className = 'icon ok';
+    icon.textContent = '✓';
+    title.textContent = 'Ödeme başarılı';
+    msg.textContent = product === 'plus'
+      ? 'Plus üyeliğin hesabına işleniyor. Birkaç saniye içinde uygulamada görünecek.'
+      : product === 'merch'
+        ? 'Siparişin alındı. Kargo hazırlığı başlayınca bilgilendirileceksin.'
+        : 'Ödemen alındı. Teşekkürler!';
+  } else {
+    icon.className = 'icon fail';
+    icon.textContent = '!';
+    title.textContent = 'Ödeme tamamlanamadı';
+    msg.textContent = 'Kart ödeme ekranı iptal edildi veya banka işlemi reddetti. İstersen tekrar deneyebilirsin.';
+  }
+
+  var bits = [];
+  if (productLabel) bits.push(productLabel);
+  if (orderId) bits.push('Sipariş: ' + orderId.slice(0, 12) + (orderId.length > 12 ? '…' : ''));
+  meta.textContent = bits.join(' · ');
+
+  var deepQs = new URLSearchParams({
+    status: ok ? 'ok' : 'fail',
+    orderId: orderId || '',
+    product: product || '',
+  }).toString();
+  var appDeep = 'kampusteyim://open/pay-result?' + deepQs;
+  var appHttps = 'https://app.kampusteyim.app/pay-result?' + deepQs;
+  document.getElementById('openApp').href = appDeep;
+  document.getElementById('toMarket').href = ok ? '/market?pay=ok' : '/market?pay=fail';
+
+  // Uygulamayı otomatik açmayı dene (mobil tarayıcı / dış ödeme dönüşü)
+  var tried = false;
+  function tryOpenApp() {
+    if (tried) return;
+    tried = true;
+    var a = document.createElement('a');
+    a.href = appDeep;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      // Universal / App Link yedek
+      if (!document.hidden) {
+        /* kullanıcı uygulamada değilse sayfada kalsın */
+      }
+    }, 800);
+  }
+  if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    setTimeout(tryOpenApp, 400);
+  }
+})();
+  </script>
+</body>
+</html>

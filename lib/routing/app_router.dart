@@ -29,6 +29,7 @@ import '../features/commerce/my_tickets_screen.dart';
 import '../features/commerce/org_invite_screen.dart';
 import '../features/jobs/staj_ai_screen.dart';
 import '../features/legal/account_delete_screen.dart';
+import '../features/payments/pay_result_screen.dart';
 import '../features/market/market_screen.dart';
 import '../features/notifications/notification_settings_screen.dart';
 import '../features/notifications/notifications_screen.dart';
@@ -51,6 +52,35 @@ GoRouter createRouter(AuthProvider auth) {
     navigatorKey: appRootNavigatorKey,
     initialLocation: '/home',
     refreshListenable: auth,
+    errorBuilder: (context, state) => Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Sayfa bulunamadı',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  state.uri.toString(),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () => context.go('/home'),
+                  child: const Text('Ana sayfa'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
     redirect: (context, state) {
       // Custom scheme: kampusteyim://open/post/… → /post/…
       final fullPath = state.uri.path;
@@ -293,6 +323,18 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/market',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (context, state) => const MarketScreen(),
+      ),
+      GoRoute(
+        path: '/pay-result',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (context, state) {
+          final q = state.uri.queryParameters;
+          return PayResultScreen(
+            status: q['status'] ?? q['pay'] ?? 'fail',
+            orderId: q['orderId'],
+            product: q['product'],
+          );
+        },
       ),
       GoRoute(
         path: '/profile/notifications',
