@@ -20,6 +20,95 @@ class ProfileLink {
 
 enum UserRole { student, community, company, admin }
 
+/// Market kargo / teslimat adresi (users.deliveryAddresses).
+class DeliveryAddress {
+  const DeliveryAddress({
+    required this.id,
+    required this.fullName,
+    required this.phone,
+    required this.city,
+    required this.line1,
+    this.title = 'Adres',
+    this.district = '',
+    this.postalCode = '',
+    this.isDefault = false,
+  });
+
+  final String id;
+  final String title;
+  final String fullName;
+  final String phone;
+  final String city;
+  final String district;
+  final String line1;
+  final String postalCode;
+  final bool isDefault;
+
+  String get summaryLine {
+    final parts = <String>[
+      if (district.trim().isNotEmpty) district.trim(),
+      city.trim(),
+    ];
+    return [
+      line1.trim(),
+      if (parts.isNotEmpty) parts.join(' / '),
+    ].where((e) => e.isNotEmpty).join(' · ');
+  }
+
+  DeliveryAddress copyWith({
+    String? title,
+    String? fullName,
+    String? phone,
+    String? city,
+    String? district,
+    String? line1,
+    String? postalCode,
+    bool? isDefault,
+  }) {
+    return DeliveryAddress(
+      id: id,
+      title: title ?? this.title,
+      fullName: fullName ?? this.fullName,
+      phone: phone ?? this.phone,
+      city: city ?? this.city,
+      district: district ?? this.district,
+      line1: line1 ?? this.line1,
+      postalCode: postalCode ?? this.postalCode,
+      isDefault: isDefault ?? this.isDefault,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'fullName': fullName,
+        'phone': phone,
+        'city': city,
+        'district': district,
+        'line1': line1,
+        'postalCode': postalCode,
+        'isDefault': isDefault,
+      };
+
+  factory DeliveryAddress.fromJson(Map<String, dynamic> m) {
+    return DeliveryAddress(
+      id: '${m['id'] ?? ''}'.trim().isEmpty
+          ? DateTime.now().millisecondsSinceEpoch.toString()
+          : '${m['id']}'.trim(),
+      title: '${m['title'] ?? 'Adres'}'.trim().isEmpty
+          ? 'Adres'
+          : '${m['title']}'.trim(),
+      fullName: '${m['fullName'] ?? ''}'.trim(),
+      phone: '${m['phone'] ?? ''}'.trim(),
+      city: '${m['city'] ?? ''}'.trim(),
+      district: '${m['district'] ?? ''}'.trim(),
+      line1: '${m['line1'] ?? m['address'] ?? ''}'.trim(),
+      postalCode: '${m['postalCode'] ?? ''}'.trim(),
+      isDefault: m['isDefault'] == true,
+    );
+  }
+}
+
 class AppUser {
   const AppUser({
     required this.id,
@@ -83,6 +172,7 @@ class AppUser {
     this.blockedUserIds = const [],
     this.incomingFollowRequests = const [],
     this.outgoingFollowRequests = const [],
+    this.deliveryAddresses = const [],
   });
 
   final String id;
@@ -190,6 +280,9 @@ class AppUser {
 
   /// Benim gönderdiğim takip istekleri.
   final List<String> outgoingFollowRequests;
+
+  /// Market kargo adresleri.
+  final List<DeliveryAddress> deliveryAddresses;
 
   /// Panel erişimi: süper admin, UserRole.admin veya atanmış staff rolü.
   bool get canAccessAdmin =>
@@ -318,6 +411,14 @@ class AppUser {
         .toUpperCase();
   }
 
+  DeliveryAddress? get defaultDeliveryAddress {
+    if (deliveryAddresses.isEmpty) return null;
+    for (final a in deliveryAddresses) {
+      if (a.isDefault) return a;
+    }
+    return deliveryAddresses.first;
+  }
+
   AppUser copyWith({
     String? bio,
     String? photoUrl,
@@ -377,6 +478,7 @@ class AppUser {
     List<String>? blockedUserIds,
     List<String>? incomingFollowRequests,
     List<String>? outgoingFollowRequests,
+    List<DeliveryAddress>? deliveryAddresses,
     bool clearPhoto = false,
     bool clearAffiliation = false,
     bool clearRestrictionUntil = false,
@@ -467,6 +569,7 @@ class AppUser {
           incomingFollowRequests ?? this.incomingFollowRequests,
       outgoingFollowRequests:
           outgoingFollowRequests ?? this.outgoingFollowRequests,
+      deliveryAddresses: deliveryAddresses ?? this.deliveryAddresses,
     );
   }
 

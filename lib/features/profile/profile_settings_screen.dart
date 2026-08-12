@@ -138,6 +138,12 @@ class ProfileSettingsScreen extends StatelessWidget {
             onTap: () => context.push('/market'),
           ),
           _tile(
+            svg: MtIcons.ticket,
+            title: 'Teslimat adreslerim',
+            subtitle: 'Market kargo adreslerini yönet',
+            onTap: () => context.push('/profile/delivery-addresses'),
+          ),
+          _tile(
             svg: MtIcons.follow,
             title: 'Gelen istekler',
             subtitle: incoming > 0

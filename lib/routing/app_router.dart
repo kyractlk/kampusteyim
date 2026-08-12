@@ -31,6 +31,7 @@ import '../features/jobs/staj_ai_screen.dart';
 import '../features/legal/account_delete_screen.dart';
 import '../features/payments/pay_result_screen.dart';
 import '../features/market/market_screen.dart';
+import '../features/market/delivery_addresses_screen.dart';
 import '../features/notifications/notification_settings_screen.dart';
 import '../features/notifications/notifications_screen.dart';
 import '../features/privacy/privacy_settings_screen.dart';
@@ -323,6 +324,11 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/market',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (context, state) => const MarketScreen(),
+      ),
+      GoRoute(
+        path: '/profile/delivery-addresses',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (context, state) => const DeliveryAddressesScreen(),
       ),
       GoRoute(
         path: '/pay-result',

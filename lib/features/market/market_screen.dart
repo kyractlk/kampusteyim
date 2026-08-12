@@ -5,9 +5,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/widgets/liquid_glass.dart';
+import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../payments/payment_checkout_sheet.dart';
 import '../payments/payments_service.dart';
+import 'delivery_address_form.dart';
 
 /// Uygulama içi Market — merch, Plus, kodlarım.
 class MarketScreen extends StatefulWidget {
@@ -23,6 +25,7 @@ class _MarketScreenState extends State<MarketScreen>
   List<Map<String, dynamic>> _myCodes = [];
   String? _error;
   bool _loading = true;
+  bool _addressPrompted = false;
   late final TabController _tabs;
 
   @override
@@ -36,6 +39,35 @@ class _MarketScreenState extends State<MarketScreen>
   void dispose() {
     _tabs.dispose();
     super.dispose();
+  }
+
+  Future<void> _ensureDeliveryAddress({bool force = false}) async {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) return;
+    final user = auth.user;
+    if (user == null) return;
+    if (user.deliveryAddresses.isNotEmpty) return;
+    if (_addressPrompted && !force) return;
+    _addressPrompted = true;
+    final addr = await showDeliveryAddressEditor(
+      context,
+      required: true,
+      title: 'Teslimat adresi ekle',
+    );
+    if (addr == null || !mounted) return;
+    try {
+      await auth.upsertDeliveryAddress(addr);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Teslimat adresi kaydedildi')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Adres kaydedilemedi: $e')),
+      );
+    }
   }
 
   Future<void> _load() async {
@@ -57,6 +89,7 @@ class _MarketScreenState extends State<MarketScreen>
         _myCodes = mine;
         _loading = false;
       });
+      await _ensureDeliveryAddress();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -80,18 +113,23 @@ class _MarketScreenState extends State<MarketScreen>
 
   Future<void> _openMerch(Map<String, dynamic> item) async {
     if (!AuthGate.requireAuth(context)) return;
+    final auth = context.read<AuthProvider>();
+    if ((auth.user?.deliveryAddresses.isEmpty ?? true)) {
+      await _ensureDeliveryAddress(force: true);
+      if ((auth.user?.deliveryAddresses.isEmpty ?? true)) return;
+    }
     final sizes = (item['sizes'] as List? ?? const [])
         .map((e) => '$e')
         .toList();
     if (sizes.isEmpty) return;
-    final nameCtrl = TextEditingController(
-      text: context.read<AuthProvider>().user?.fullName ?? '',
+
+    final addresses = List<DeliveryAddress>.from(
+      auth.user?.deliveryAddresses ?? const [],
     );
-    final cityCtrl = TextEditingController(
-      text: context.read<AuthProvider>().user?.city ?? '',
-    );
+    var selectedId = auth.user?.defaultDeliveryAddress?.id ?? addresses.first.id;
     final codeCtrl = TextEditingController();
     var size = sizes.first;
+
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -106,7 +144,12 @@ class _MarketScreenState extends State<MarketScreen>
           ),
           child: StatefulBuilder(
             builder: (ctx, setLocal) {
-              return Column(
+              final selected = addresses.firstWhere(
+                (a) => a.id == selectedId,
+                orElse: () => addresses.first,
+              );
+              return SingleChildScrollView(
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -137,21 +180,46 @@ class _MarketScreenState extends State<MarketScreen>
                         ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Alıcı adı',
-                      border: OutlineInputBorder(),
-                    ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Teslimat adresi',
+                    style: TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: cityCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Şehir',
-                      border: OutlineInputBorder(),
-                    ),
+                  const SizedBox(height: 6),
+                  ...addresses.map((a) {
+                    final selectedNow = a.id == selectedId;
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      selected: selectedNow,
+                      leading: Icon(
+                        selectedNow
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                        color: AppColors.navy,
+                      ),
+                      title: Text(
+                        a.title,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      subtitle: Text('${a.fullName}\n${a.summaryLine}'),
+                      onTap: () => setLocal(() => selectedId = a.id),
+                    );
+                  }),
+                  TextButton.icon(
+                    onPressed: () async {
+                      final addr = await showDeliveryAddressEditor(ctx);
+                      if (addr == null) return;
+                      await auth.upsertDeliveryAddress(addr);
+                      setLocal(() {
+                        addresses
+                          ..clear()
+                          ..addAll(auth.user?.deliveryAddresses ?? [addr]);
+                        selectedId = addr.id;
+                      });
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Yeni adres ekle'),
                   ),
                   const SizedBox(height: 8),
                   TextField(
@@ -165,9 +233,10 @@ class _MarketScreenState extends State<MarketScreen>
                   const SizedBox(height: 14),
                   FilledButton(
                     onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Kart ile güvenle öde'),
+                    child: Text('Kart ile güvenle öde · ${selected.city}'),
                   ),
                 ],
+              ),
               );
             },
           ),
@@ -175,19 +244,27 @@ class _MarketScreenState extends State<MarketScreen>
       },
     );
     if (ok != true || !mounted) return;
+    final ship = addresses.firstWhere(
+      (a) => a.id == selectedId,
+      orElse: () => addresses.first,
+    );
     await openPaymentCheckout(
       context,
       product: 'merch',
       amount: (item['amount'] as num?)?.toDouble(),
       sku: '${item['sku']}',
       size: size,
-      city: cityCtrl.text.trim(),
-      shipName: nameCtrl.text.trim(),
+      city: ship.city,
+      shipName: ship.fullName,
+      shipAddress: ship.line1,
+      shipDistrict: ship.district,
+      shipPhone: ship.phone,
       discountCode: codeCtrl.text.trim().isEmpty ? null : codeCtrl.text.trim(),
       provider: (_cfg?.paytrReady == true && _cfg?.merchPaytrEnabled == true)
           ? 'paytr'
           : null,
     );
+    codeCtrl.dispose();
     await _load();
   }
 

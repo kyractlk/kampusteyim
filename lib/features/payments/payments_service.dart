@@ -165,6 +165,9 @@ class PaymentsService {
     String? size,
     String? city,
     String? shipName,
+    String? shipAddress,
+    String? shipDistrict,
+    String? shipPhone,
     String source = 'app',
   }) async {
     final res = await _fn.httpsCallable('createPaymentOrder').call({
@@ -180,6 +183,9 @@ class PaymentsService {
       if (size != null) 'size': size,
       if (city != null) 'city': city,
       if (shipName != null) 'shipName': shipName,
+      if (shipAddress != null) 'shipAddress': shipAddress,
+      if (shipDistrict != null) 'shipDistrict': shipDistrict,
+      if (shipPhone != null) 'shipPhone': shipPhone,
       'source': source,
     });
     return PaymentOrderResult(_map(res.data));

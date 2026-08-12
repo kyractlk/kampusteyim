@@ -474,6 +474,18 @@ function paymentsModule({
       const merchSize = sanitizePlainText(request.data?.size || '', 40);
       const shipCity = sanitizePlainText(request.data?.city || '', 80);
       const shipName = sanitizePlainText(request.data?.shipName || '', 80);
+      const shipAddress = sanitizePlainText(
+        request.data?.shipAddress || request.data?.address || '',
+        200,
+      );
+      const shipDistrict = sanitizePlainText(
+        request.data?.shipDistrict || request.data?.district || '',
+        80,
+      );
+      const shipPhone = sanitizePlainText(
+        request.data?.shipPhone || '',
+        20,
+      );
       const userName = sanitizePlainText(
         `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
           user.username ||
@@ -490,10 +502,10 @@ function paymentsModule({
         if (!merchItem.sizes.includes(merchSize)) {
           throw new HttpsError('invalid-argument', 'Geçersiz beden');
         }
-        if (!shipCity || !shipName) {
+        if (!shipCity || !shipName || !shipAddress) {
           throw new HttpsError(
             'invalid-argument',
-            'Teslimat için alıcı adı ve şehir gerekli',
+            'Teslimat için alıcı adı, şehir ve açık adres gerekli',
           );
         }
         amount = Number(merchItem.amount) || 0;
@@ -591,6 +603,9 @@ function paymentsModule({
           size: merchItem ? merchSize : null,
           city: product === 'merch' ? shipCity || null : null,
           shipName: product === 'merch' ? shipName || userName || null : null,
+          shipAddress: product === 'merch' ? shipAddress || null : null,
+          shipDistrict: product === 'merch' ? shipDistrict || null : null,
+          shipPhone: product === 'merch' ? shipPhone || null : null,
           discountCode: discountCode || null,
           ...(campaignMeta || {}),
         },
@@ -705,16 +720,25 @@ function paymentsModule({
           no_installment: noInstallment,
           max_installment: maxInstallment,
           user_name: sanitizePlainText(
-            `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
-              shipName ||
+            shipName ||
+              `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
               'Kampusteyim',
             60,
           ),
           user_address: sanitizePlainText(
-            shipCity || user.city || 'Turkiye',
+            [shipAddress, shipDistrict, shipCity || user.city || 'Turkiye']
+              .filter(Boolean)
+              .join(', ') ||
+              shipCity ||
+              user.city ||
+              'Turkiye',
             100,
           ) || 'Turkiye',
-          user_phone: sanitizePlainText(user.phone || '05000000000', 20) || '05000000000',
+          user_phone:
+            sanitizePlainText(
+              shipPhone || user.phone || '05000000000',
+              20,
+            ) || '05000000000',
           merchant_ok_url:
             'https://app.kampusteyim.app/pay-result?status=ok' +
             '&orderId=' +
@@ -938,96 +962,77 @@ ${fields}
         const iframeSrc = escapeHtml(
           'https://www.paytr.com/odeme/guvenli/' + token,
         );
-        const ok = escapeHtml(
-          'https://app.kampusteyim.app/pay-result?status=ok&orderId=' +
-            encodeURIComponent(orderId) +
-            '&product=' +
-            encodeURIComponent(String(order.product || '')),
-        );
-        const fail = escapeHtml(
-          'https://app.kampusteyim.app/pay-result?status=fail&orderId=' +
-            encodeURIComponent(orderId) +
-            '&product=' +
-            encodeURIComponent(String(order.product || '')),
-        );
         res.set('Content-Type', 'text/html; charset=utf-8');
         res.set('Cache-Control', 'no-store');
         res.set(
           'Content-Security-Policy',
-          "frame-src https://www.paytr.com https://*.paytr.com; default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com",
+          "frame-src https://www.paytr.com https://*.paytr.com; script-src 'self' 'unsafe-inline' https://www.paytr.com; default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com https://www.paytr.com",
         );
         res.status(200).send(`<!DOCTYPE html>
 <html lang="tr">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Güvenli ödeme · KampüsteyimAPP</title>
+<title>Ödeme · KampüsteyimAPP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://www.paytr.com/js/iframeResizer.min.js"></script>
 <style>
-:root{--navy:#0B1F3A;--cyan:#00D4C8;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--bg:#f4f7fb}
+:root{--navy:#0B1F3A;--cyan:#00D4C8;--muted:#64748b;--line:#e2e8f0;--bg:#f4f7fb}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;font-family:"DM Sans",system-ui,sans-serif;background:
-  radial-gradient(900px 420px at 10% -10%,rgba(0,212,200,.18),transparent 55%),
-  radial-gradient(700px 380px at 100% 0%,rgba(11,31,58,.12),transparent 50%),
-  var(--bg);color:var(--ink)}
-.wrap{max-width:920px;margin:0 auto;padding:1.25rem 1rem 2.5rem}
-.top{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.25rem}
-.brand{display:flex;align-items:center;gap:.65rem;font-weight:800;color:var(--navy);text-decoration:none}
+body{margin:0;min-height:100vh;font-family:"DM Sans",system-ui,sans-serif;background:var(--bg);color:#0f172a}
+.wrap{width:100%;max-width:100%;margin:0;padding:0 0 1.25rem}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.7rem 1rem;margin:0}
+.brand{font-weight:800;color:var(--navy);text-decoration:none;font-size:.95rem}
 .brand span{color:var(--cyan)}
-.badge{font-size:.68rem;font-weight:800;letter-spacing:.04em;background:#fef3c7;color:#92400e;padding:.28rem .55rem;border-radius:999px}
-.grid{display:grid;gap:1rem}
-@media(min-width:860px){.grid{grid-template-columns:300px 1fr}}
-.card{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 16px 40px rgba(15,23,42,.06)}
-.summary{padding:1.25rem}
-.summary h1{font-family:Fraunces,serif;font-size:1.45rem;margin:0 0 .35rem;line-height:1.2}
-.summary p{margin:0;color:var(--muted);font-size:.92rem;line-height:1.45}
-.amount{margin-top:1rem;padding:1rem;border-radius:14px;background:linear-gradient(135deg,rgba(11,31,58,.96),#12345a);color:#fff}
-.amount .lbl{font-size:.75rem;opacity:.75;font-weight:600}
-.amount .val{font-size:1.65rem;font-weight:800;margin-top:.15rem}
-.meta{margin-top:.9rem;font-size:.82rem;color:var(--muted);line-height:1.5}
-.meta a{color:var(--navy);font-weight:700}
-.pay{padding:.85rem;min-height:520px}
-.pay iframe{width:100%;min-height:520px;border:0;border-radius:12px;background:#fff}
-.foot{margin-top:1rem;text-align:center;font-size:.78rem;color:var(--muted)}
-.links{display:flex;flex-wrap:wrap;gap:.75rem;justify-content:center;margin-top:.55rem}
-.links a{color:var(--navy);font-weight:700;text-decoration:none}
+.badge{font-size:.68rem;font-weight:800;background:#fef3c7;color:#92400e;padding:.25rem .5rem;border-radius:999px}
+.card{background:#fff;border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:0;overflow:hidden;box-shadow:none}
+.head{padding:.9rem 1rem .75rem;border-bottom:1px solid var(--line)}
+.head h1{margin:0;font-size:1.1rem;font-weight:800;color:var(--navy)}
+.head .row{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-top:.4rem}
+.head .amt{font-size:1.3rem;font-weight:800;color:var(--navy)}
+.head .hint{margin:0;color:var(--muted);font-size:.8rem;line-height:1.4}
+.pay{padding:0;min-height:70vh;background:#fff}
+.pay iframe{width:100%;min-height:70vh;border:0;display:block;background:#fff}
+.foot{margin-top:.75rem;padding:0 1rem;text-align:center;font-size:.75rem;color:var(--muted)}
+.foot a{color:var(--navy);font-weight:700;text-decoration:none;margin:0 .4rem}
+@media(min-width:760px){
+  body{background:var(--bg)}
+  .wrap{max-width:720px;margin:0 auto;padding:1rem 1rem 2rem}
+  .bar{padding:0;margin-bottom:.85rem}
+  .card{border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 28px rgba(15,23,42,.05)}
+  .pay,.pay iframe{min-height:560px}
+  .foot{padding:0}
+}
 </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="top">
+    <div class="bar">
       <a class="brand" href="https://app.kampusteyim.app/market">Kampüsteyim<span>APP</span></a>
       ${testBadge}
     </div>
-    <div class="grid">
-      <aside class="card summary">
+    <div class="card">
+      <div class="head">
         <h1>${title}</h1>
-        <p>Ödemen PayTR güvencesiyle işlenir. Kart bilgilerin Kampüsteyim sunucularında saklanmaz.</p>
-        <div class="amount">
-          <div class="lbl">Ödenecek tutar</div>
-          <div class="val">${amountStr} TL</div>
+        <div class="row">
+          <span class="hint">PayTR güvenceli ödeme</span>
+          <span class="amt">${amountStr} TL</span>
         </div>
-        <div class="meta">
-          Sipariş: <strong>${escapeHtml(orderId)}</strong><br/>
-          Satıcı: ${escapeHtml(cfg.sellerName || 'AYS Tech')}<br/>
-          <a href="${ok}">Başarılı dönüş</a> · <a href="${fail}">İptal / hata</a>
-        </div>
-      </aside>
-      <section class="card pay">
+      </div>
+      <div class="pay">
         <iframe src="${iframeSrc}" id="paytriframe" title="PayTR güvenli ödeme" allow="payment *"></iframe>
-      </section>
+      </div>
     </div>
     <div class="foot">
-      256-bit SSL · PayTR · KampüsteyimAPP Market
-      <div class="links">
+      Kart bilgilerin Kampüsteyim sunucularında saklanmaz.
+      <div style="margin-top:.45rem">
         <a href="https://app.kampusteyim.app/sales.html">Satış sözleşmesi</a>
-        <a href="https://app.kampusteyim.app/shipping.html">Kargo</a>
-        <a href="https://app.kampusteyim.app/returns.html">İade</a>
         <a href="https://app.kampusteyim.app/privacy.html">Gizlilik</a>
       </div>
     </div>
   </div>
+  <script>try{iFrameResize({log:false,checkOrigin:false},'#paytriframe')}catch(e){}</script>
 </body>
 </html>`);
       } catch (e) {

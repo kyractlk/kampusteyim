@@ -19,6 +19,9 @@ Future<void> openPaymentCheckout(
   String? size,
   String? city,
   String? shipName,
+  String? shipAddress,
+  String? shipDistrict,
+  String? shipPhone,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -36,6 +39,9 @@ Future<void> openPaymentCheckout(
       size: size,
       city: city,
       shipName: shipName,
+      shipAddress: shipAddress,
+      shipDistrict: shipDistrict,
+      shipPhone: shipPhone,
     ),
   );
 }
@@ -53,6 +59,9 @@ class _CheckoutSheet extends StatefulWidget {
     this.size,
     this.city,
     this.shipName,
+    this.shipAddress,
+    this.shipDistrict,
+    this.shipPhone,
   });
 
   final String product;
@@ -66,6 +75,9 @@ class _CheckoutSheet extends StatefulWidget {
   final String? size;
   final String? city;
   final String? shipName;
+  final String? shipAddress;
+  final String? shipDistrict;
+  final String? shipPhone;
 
   @override
   State<_CheckoutSheet> createState() => _CheckoutSheetState();
@@ -184,6 +196,9 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
         size: widget.size,
         city: widget.city,
         shipName: widget.shipName,
+        shipAddress: widget.shipAddress,
+        shipDistrict: widget.shipDistrict,
+        shipPhone: widget.shipPhone,
       );
       setState(() => _order = order);
       if (order.provider == 'free') {

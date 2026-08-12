@@ -1109,10 +1109,24 @@ class AuthProvider extends ChangeNotifier {
       blockedUserIds: _stringList(m['blockedUserIds']),
       incomingFollowRequests: _stringList(m['incomingFollowRequests']),
       outgoingFollowRequests: _stringList(m['outgoingFollowRequests']),
+      deliveryAddresses: _deliveryAddressesFrom(m['deliveryAddresses']),
       notificationPrefs: prefsRaw is Map
           ? NotificationPrefs.fromJson(Map<String, dynamic>.from(prefsRaw))
           : NotificationPrefs.defaults,
     );
+  }
+
+  List<DeliveryAddress> _deliveryAddressesFrom(dynamic raw) {
+    if (raw is! List) return const [];
+    final out = <DeliveryAddress>[];
+    for (final e in raw) {
+      if (e is Map) {
+        try {
+          out.add(DeliveryAddress.fromJson(Map<String, dynamic>.from(e)));
+        } catch (_) {}
+      }
+    }
+    return out;
   }
 
   /// Hedefi (kişi / topluluk / firma) takip ediyor mu?
@@ -1298,6 +1312,65 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[auth] privacy: $e');
     }
+  }
+
+  Future<void> saveDeliveryAddresses(List<DeliveryAddress> addresses) async {
+    if (_user == null) return;
+    var list = List<DeliveryAddress>.from(addresses);
+    if (list.isNotEmpty && !list.any((a) => a.isDefault)) {
+      list = [
+        list.first.copyWith(isDefault: true),
+        ...list.skip(1).map((a) => a.copyWith(isDefault: false)),
+      ];
+    }
+    _user = _user!.copyWith(deliveryAddresses: list);
+    _upsert(_user!);
+    notifyListeners();
+    try {
+      final uid = fa.FirebaseAuth.instance.currentUser?.uid ?? _user!.id;
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'deliveryAddresses': list.map((e) => e.toJson()).toList(),
+        'updatedAt': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('[auth] deliveryAddresses: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> upsertDeliveryAddress(DeliveryAddress address) async {
+    if (_user == null) return;
+    final list = List<DeliveryAddress>.from(_user!.deliveryAddresses);
+    final i = list.indexWhere((a) => a.id == address.id);
+    var next = address;
+    if (list.isEmpty) next = next.copyWith(isDefault: true);
+    if (next.isDefault) {
+      for (var j = 0; j < list.length; j++) {
+        if (list[j].id != next.id) {
+          list[j] = list[j].copyWith(isDefault: false);
+        }
+      }
+    }
+    if (i >= 0) {
+      list[i] = next;
+    } else {
+      list.add(next);
+    }
+    await saveDeliveryAddresses(list);
+  }
+
+  Future<void> deleteDeliveryAddress(String id) async {
+    if (_user == null) return;
+    final list = _user!.deliveryAddresses.where((a) => a.id != id).toList();
+    await saveDeliveryAddresses(list);
+  }
+
+  Future<void> setDefaultDeliveryAddress(String id) async {
+    if (_user == null) return;
+    final list = _user!.deliveryAddresses
+        .map((a) => a.copyWith(isDefault: a.id == id))
+        .toList();
+    await saveDeliveryAddresses(list);
   }
 
   Future<void> blockUser(String targetId) async {
