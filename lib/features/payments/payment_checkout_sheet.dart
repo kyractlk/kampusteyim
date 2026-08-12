@@ -5,15 +5,20 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import 'payments_service.dart';
 
-/// Plus (veya etkinlik) ödemesi — aktif provider’a göre
+/// Plus / merch / etkinlik ödemesi — aktif provider’a göre
 Future<void> openPaymentCheckout(
   BuildContext context, {
   String product = 'plus',
   String? provider,
   double? amount,
+  int? months,
   String? eventId,
   String? tierLabel,
   String? discountCode,
+  String? sku,
+  String? size,
+  String? city,
+  String? shipName,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -23,9 +28,14 @@ Future<void> openPaymentCheckout(
       product: product,
       provider: provider,
       amount: amount,
+      months: months,
       eventId: eventId,
       tierLabel: tierLabel,
       discountCode: discountCode,
+      sku: sku,
+      size: size,
+      city: city,
+      shipName: shipName,
     ),
   );
 }
@@ -35,17 +45,27 @@ class _CheckoutSheet extends StatefulWidget {
     required this.product,
     this.provider,
     this.amount,
+    this.months,
     this.eventId,
     this.tierLabel,
     this.discountCode,
+    this.sku,
+    this.size,
+    this.city,
+    this.shipName,
   });
 
   final String product;
   final String? provider;
   final double? amount;
+  final int? months;
   final String? eventId;
   final String? tierLabel;
   final String? discountCode;
+  final String? sku;
+  final String? size;
+  final String? city;
+  final String? shipName;
 
   @override
   State<_CheckoutSheet> createState() => _CheckoutSheetState();
@@ -58,11 +78,25 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
   bool _busy = false;
   PaymentOrderResult? _order;
   String? _error;
+  final _codeCtrl = TextEditingController();
+  int _months = 1;
+  List<Map<String, dynamic>> _myCodes = [];
+  String? _previewNote;
 
   @override
   void initState() {
     super.initState();
+    _months = widget.months ?? 1;
+    if (widget.discountCode != null && widget.discountCode!.isNotEmpty) {
+      _codeCtrl.text = widget.discountCode!;
+    }
     _boot();
+  }
+
+  @override
+  void dispose() {
+    _codeCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _boot() async {
@@ -78,9 +112,14 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
           .toList();
       var sel = widget.provider ?? pub.activeProvider;
       if (!enabled.contains(sel) && enabled.isNotEmpty) sel = enabled.first;
+      List<Map<String, dynamic>> mine = const [];
+      try {
+        mine = await PaymentsService.myCampaigns();
+      } catch (_) {}
       setState(() {
         _pub = pub;
         _selected = enabled.isEmpty ? null : sel;
+        _myCodes = mine;
         _loading = false;
         if (enabled.isEmpty) {
           _error = 'Ödeme yöntemi henüz yapılandırılmamış.';
@@ -91,6 +130,36 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
         _loading = false;
         _error = 'Yüklenemedi: $e';
       });
+    }
+  }
+
+  double get _baseAmount {
+    if (widget.product == 'merch' || widget.product == 'event') {
+      return widget.amount ?? 0;
+    }
+    final unit = _pub?.plusAmount ?? widget.amount ?? 0;
+    return unit * _months;
+  }
+
+  Future<void> _previewCode() async {
+    final code = _codeCtrl.text.trim();
+    if (code.isEmpty) {
+      setState(() => _previewNote = null);
+      return;
+    }
+    try {
+      final r = await PaymentsService.previewCampaign(
+        code: code,
+        product: widget.product,
+        amount: _baseAmount,
+      );
+      setState(() {
+        _previewNote =
+            'İndirim ${((r['discountAmount'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)} TL → '
+            '${((r['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)} TL';
+      });
+    } catch (e) {
+      setState(() => _previewNote = '$e');
     }
   }
 
@@ -105,14 +174,30 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
         product: widget.product,
         provider: _selected,
         amount: widget.amount ?? _pub?.plusAmount,
+        months: widget.product == 'plus' ? _months : widget.months,
         eventId: widget.eventId,
         tierLabel: widget.tierLabel,
-        discountCode: widget.discountCode,
+        discountCode: _codeCtrl.text.trim().isEmpty
+            ? widget.discountCode
+            : _codeCtrl.text.trim(),
+        sku: widget.sku,
+        size: widget.size,
+        city: widget.city,
+        shipName: widget.shipName,
       );
       setState(() => _order = order);
-      if (order.provider == 'paytr' && order.iframeUrl != null) {
+      if (order.provider == 'free') {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(order.message ?? 'Kampanya uygulandı')),
+        );
+        Navigator.pop(context);
+        return;
+      }
+      final payLink = order.payUrl ?? order.iframeUrl;
+      if (order.provider == 'paytr' && payLink != null) {
         await launchUrl(
-          Uri.parse(order.iframeUrl!),
+          Uri.parse(payLink),
           mode: LaunchMode.externalApplication,
         );
       } else if (order.provider == 'shopier' && order.payUrl != null) {
@@ -164,7 +249,9 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                         ? 'KampüsteyimPlus satın al'
                         : widget.product == 'event'
                             ? 'Etkinlik bileti'
-                            : 'Ödeme',
+                            : widget.product == 'merch'
+                                ? 'Market siparişi'
+                                : 'Ödeme',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w900,
                         ),
@@ -172,12 +259,108 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                   if (_pub != null) ...[
                     const SizedBox(height: 6),
                     Text(
-                      widget.product == 'event'
-                          ? '${(widget.amount ?? 0).toStringAsFixed(2)} TL'
-                          : '${(_pub!.plusAmount > 0 ? _pub!.plusAmount : widget.amount ?? 0).toStringAsFixed(2)} TL'
-                              ' · ${_pub!.plusDays} gün',
+                      widget.product == 'event' || widget.product == 'merch'
+                          ? '${_baseAmount.toStringAsFixed(2)} TL'
+                          : '${_baseAmount.toStringAsFixed(2)} TL'
+                              ' · ${_months * (_pub!.plusDays)} gün',
                       style: const TextStyle(color: AppColors.textSecondary),
                     ),
+                  ],
+                  if (_pub?.paytrReady == true) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.navy.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.lock_rounded, size: 18, color: AppColors.navy),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Kart ile güvenle öde · PayTR',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.navy,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  if (widget.product == 'plus' && (_pub?.plusPlans.isNotEmpty ?? false)) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final p in _pub!.plusPlans)
+                          ChoiceChip(
+                            label: Text('${p['label']}'),
+                            selected: _months == (p['months'] as num?)?.toInt(),
+                            onSelected: (_) => setState(() {
+                              _months = (p['months'] as num?)?.toInt() ?? 1;
+                            }),
+                          ),
+                      ],
+                    ),
+                  ],
+                  if (widget.product == 'plus' || widget.product == 'merch') ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _codeCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: InputDecoration(
+                        labelText: 'Kampanya kodu',
+                        hintText: 'Varsa gir',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          tooltip: 'Uygula',
+                          onPressed: _previewCode,
+                          icon: const Icon(Icons.check_circle_outline),
+                        ),
+                      ),
+                      onSubmitted: (_) => _previewCode(),
+                    ),
+                    if (_previewNote != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _previewNote!,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.navy,
+                        ),
+                      ),
+                    ],
+                    if (_myCodes.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Sana tanımlı çekler',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final c in _myCodes)
+                            ActionChip(
+                              label: Text('${c['code']}'),
+                              onPressed: () {
+                                _codeCtrl.text = '${c['code']}';
+                                _previewCode();
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
                   ],
                   if (widget.product == 'event') ...[
                     const SizedBox(height: 8),

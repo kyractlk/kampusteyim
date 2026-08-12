@@ -29,6 +29,7 @@ import '../features/commerce/my_tickets_screen.dart';
 import '../features/commerce/org_invite_screen.dart';
 import '../features/jobs/staj_ai_screen.dart';
 import '../features/legal/account_delete_screen.dart';
+import '../features/market/market_screen.dart';
 import '../features/notifications/notification_settings_screen.dart';
 import '../features/notifications/notifications_screen.dart';
 import '../features/privacy/privacy_settings_screen.dart';
@@ -287,6 +288,11 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/profile/settings',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (context, state) => const ProfileSettingsScreen(),
+      ),
+      GoRoute(
+        path: '/market',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (context, state) => const MarketScreen(),
       ),
       GoRoute(
         path: '/profile/notifications',

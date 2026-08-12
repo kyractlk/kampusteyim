@@ -55,6 +55,14 @@
           "destination": "/sales.html"
         },
         {
+          "source": "/shipping",
+          "destination": "/shipping.html"
+        },
+        {
+          "source": "/returns",
+          "destination": "/returns.html"
+        },
+        {
           "source": "/delete-account",
           "destination": "/delete-account.html"
         },

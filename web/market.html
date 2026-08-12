@@ -298,6 +298,7 @@
       <div class="nav-links">
         <a href="#merch">Ürünler</a>
         <a href="#plus">Plus</a>
+        <a href="#legal">Yasal</a>
         <span class="pill">Market</span>
       </div>
     </div>
@@ -307,11 +308,11 @@
     <section class="hero">
       <div>
         <h1>Kampüs marketi.<br />Giy, kullan, Plus’la öne çık.</h1>
-        <p>Ürün detayına gir, beden seç, hesabınla giriş yap — IBAN ile güvenli ödeme.</p>
+        <p>Ürün seç, hesabınla giriş yap — <strong>Kart ile güvenle öde</strong> (PayTR).</p>
         <div class="hero-stats">
           <div class="stat"><b>4+</b> Merch ürün</div>
           <div class="stat"><b>Plus</b> Dijital üyelik</div>
-          <div class="stat"><b>IBAN</b> Havale / EFT</div>
+          <div class="stat"><b>PayTR</b> Kart ile güvenle öde</div>
         </div>
       </div>
       <aside class="hero-card">
@@ -336,7 +337,54 @@
         <span>Detay için ürüne dokun</span>
       </div>
       <div class="grid" id="productGrid"></div>
-      <p class="note">Merch siparişlerinde KampüsteyimAPP hesabınla giriş zorunlu. Havale açıklamasını aynen yaz; “Ödeme tamamlandı” de — admin onayından sonra kargo hazırlanır.</p>
+      <p class="note">Merch siparişlerinde KampüsteyimAPP hesabınla giriş zorunlu. PayTR ile kart ödemesi veya IBAN havale; kargo Adana çıkışlıdır.</p>
+    </section>
+
+    <section class="card" id="legal" style="margin-top:1.25rem">
+      <div class="section-head" style="margin-bottom:.85rem">
+        <h2 style="margin:0">Mağaza bilgileri &amp; yasal</h2>
+        <span>PayTR canlı öncesi zorunlu</span>
+      </div>
+      <div style="display:grid;gap:.85rem">
+        <div style="padding:1rem;border:1px solid var(--line);border-radius:14px;background:rgba(11,31,58,.03)">
+          <strong style="display:block;margin-bottom:.35rem">İletişim</strong>
+          <div style="color:var(--muted);font-size:.9rem;line-height:1.55">
+            <div>AYS Tech · KampüsteyimAPP Market</div>
+            <div><a href="mailto:payments@kampusteyim.app">payments@kampusteyim.app</a> · <a href="mailto:info@kampusteyim.app">info@kampusteyim.app</a></div>
+            <div><a href="tel:+905551405501">+90 555 140 55 01</a></div>
+          </div>
+        </div>
+        <div style="padding:1rem;border:1px solid var(--line);border-radius:14px;background:rgba(11,31,58,.03)">
+          <strong style="display:block;margin-bottom:.35rem">Adres</strong>
+          <div style="color:var(--muted);font-size:.9rem;line-height:1.55">PTT Mah. No:8, Yüreğir / Adana, Türkiye</div>
+        </div>
+        <div style="padding:1rem;border:1px solid var(--line);border-radius:14px;background:rgba(11,31,58,.03)">
+          <strong style="display:block;margin-bottom:.35rem">Teslimat ve kargo</strong>
+          <div style="color:var(--muted);font-size:.9rem;line-height:1.55">
+            Fiziksel ürünler ödeme onayından sonra 1–3 iş günü içinde kargoya verilir; Türkiye içi tahmini 2–5 iş günü.
+            <a href="./shipping.html">Kargo koşullarının tamamı →</a>
+          </div>
+        </div>
+        <div style="padding:1rem;border:1px solid var(--line);border-radius:14px;background:rgba(11,31,58,.03)">
+          <strong style="display:block;margin-bottom:.35rem">Satış sözleşmesi</strong>
+          <div style="color:var(--muted);font-size:.9rem;line-height:1.55">
+            Mesafeli satış / dijital hizmet ve market ürünleri için sözleşme.
+            <a href="./sales.html">Satış politikasını oku →</a>
+          </div>
+        </div>
+        <div style="padding:1rem;border:1px solid var(--line);border-radius:14px;background:rgba(11,31,58,.03)">
+          <strong style="display:block;margin-bottom:.35rem">İptal ve iade</strong>
+          <div style="color:var(--muted);font-size:.9rem;line-height:1.55">
+            Plus / dijital ürünlerde ifaya derhal başlandığı için rutin iade yoktur.
+            Merch ürünlerde kullanılmamış hallerde 14 gün cayma hakkı.
+            <a href="./returns.html">İade koşulları →</a>
+          </div>
+        </div>
+      </div>
+      <p style="margin:.9rem 0 0;font-size:.8rem;color:var(--muted)">
+        Ödeme sırasında <a href="./privacy.html">Gizlilik</a>,
+        <a href="./terms.html">Kullanım şartları</a> ve yukarıdaki koşulları kabul etmiş sayılırsınız.
+      </p>
     </section>
 
     <section class="card" id="shopCard" style="margin-top:1.25rem">
@@ -348,7 +396,9 @@
         <h2>Plus · dijital ürün</h2>
         <div class="plans" id="plans" role="listbox" aria-label="Plus süreleri"></div>
         <p style="margin:.25rem 0 0;font-size:.82rem;color:var(--muted)">Kaydırarak seç · fiyat admin panelindeki aylık tutardan hesaplanır.</p>
-        <button class="btn cyan" id="buyBtn" type="button">Satın al</button>
+        <button class="btn cyan" id="buyBtn" type="button">Kart ile güvenle öde</button>
+        <label for="plusCode" style="margin-top:.75rem">Kampanya kodu</label>
+        <input id="plusCode" type="text" placeholder="Varsa kodunu yaz" autocomplete="off" style="text-transform:uppercase" />
         <div id="shopMsg" class="msg hidden"></div>
         <div id="ibanBox" class="iban-box hidden"></div>
       </div>
@@ -374,11 +424,14 @@
       <div><strong>İletişim</strong></div>
       <div><a href="mailto:payments@kampusteyim.app">payments@kampusteyim.app</a></div>
       <div><a href="tel:+905551405501">+90 555 140 55 01</a></div>
-      <div>PTT Mh. No:8, Adana / Yüreğir</div>
+      <div>PTT Mah. No:8, Yüreğir / Adana</div>
     </div>
     <div style="margin-top:.55rem">
-      <a href="https://app.kampusteyim.app/privacy.html">Gizlilik</a> ·
-      <a href="https://app.kampusteyim.app/sales.html">Mesafeli satış</a> ·
+      <a href="./privacy.html">Gizlilik</a> ·
+      <a href="./terms.html">Şartlar</a> ·
+      <a href="./sales.html">Satış sözleşmesi</a> ·
+      <a href="./shipping.html">Kargo</a> ·
+      <a href="./returns.html">İade</a> ·
       <a href="https://app.kampusteyim.app">Uygulama</a>
     </div>
   </footer>
@@ -402,7 +455,9 @@
         <input id="dShipName" type="text" placeholder="Ad Soyad" />
         <label for="dCity">Şehir</label>
         <input id="dCity" type="text" placeholder="Gaziantep" />
-        <button class="btn cyan" id="dBuy" type="button">Satın al</button>
+        <label for="dCode">Kampanya kodu</label>
+        <input id="dCode" type="text" placeholder="Opsiyonel" style="text-transform:uppercase" />
+        <button class="btn cyan" id="dBuy" type="button">Kart ile güvenle öde</button>
         <div id="dMsg" class="msg hidden"></div>
       </div>
     </div>
@@ -678,6 +733,7 @@
     var prev = btn.textContent;
     btn.innerHTML = '<span class="spin"></span> Sipariş…';
     try {
+      var preferPaytr = state.cfg && state.cfg.paytrReady && state.cfg.merchPaytrEnabled !== false;
       var order = await callFn(
         'createPaymentOrder',
         {
@@ -687,7 +743,8 @@
           city: ($('dCity').value || '').trim(),
           shipName: ($('dShipName').value || '').trim(),
           source: 'market_web',
-          provider: 'iban',
+          provider: preferPaytr ? 'paytr' : 'iban',
+          discountCode: ($('dCode').value || '').trim().toUpperCase() || undefined,
         },
         state.idToken,
       );
@@ -695,6 +752,14 @@
         merchName: CATALOG[state.merchSku].name,
         size: state.merchSize,
       });
+      if (order.provider === 'paytr' && (order.payUrl || order.iframeUrl)) {
+        location.href = order.payUrl || order.iframeUrl;
+        return;
+      }
+      if (order.provider === 'shopier' && order.payUrl) {
+        location.href = order.payUrl;
+        return;
+      }
       closeDetail();
       $('stepLogin').classList.remove('on');
       $('stepPay').classList.add('on');
@@ -800,12 +865,16 @@
     try {
       var order = await callFn(
         'createPaymentOrder',
-        { product: 'plus', months: state.selected.months, source: 'market_web' },
+        { product: 'plus', months: state.selected.months, source: 'market_web', discountCode: ($('plusCode').value || '').trim().toUpperCase() || undefined },
         state.idToken,
       );
       hideAuth();
-      if (order.provider === 'paytr' && order.iframeUrl) {
-        location.href = order.iframeUrl; return;
+      if (order.provider === 'free') {
+        show($('shopMsg'), 'ok', order.message || 'Kampanya uygulandı');
+        return;
+      }
+      if (order.provider === 'paytr' && (order.payUrl || order.iframeUrl)) {
+        location.href = order.payUrl || order.iframeUrl; return;
       }
       if (order.provider === 'shopier' && order.payUrl) {
         location.href = order.payUrl; return;

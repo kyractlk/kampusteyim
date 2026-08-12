@@ -73,9 +73,22 @@ class PaymentsPublicConfig {
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
   }
+
+  List<Map<String, dynamic>> get merch {
+    final rawMerch = raw['merch'];
+    if (rawMerch is! List) return const [];
+    return rawMerch
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
   bool get paytrReady => raw['paytrReady'] == true;
+  bool get paytrTestMode => raw['paytrTestMode'] != false;
   bool get shopierReady => raw['shopierReady'] == true;
   bool get ibanReady => raw['ibanReady'] == true;
+  bool get marketInAppVisible => raw['marketInAppVisible'] != false;
+  bool get merchPaytrEnabled => raw['merchPaytrEnabled'] != false;
 }
 
 class PaymentOrderResult {
@@ -92,6 +105,9 @@ class PaymentOrderResult {
   String? get ibanBank => raw['ibanBank']?.toString();
   String? get transferDescription => raw['transferDescription']?.toString();
   String? get note => raw['note']?.toString();
+  String? get message => raw['message']?.toString();
+  double get discountAmount =>
+      (raw['discountAmount'] as num?)?.toDouble() ?? 0;
 }
 
 class PaymentsService {
@@ -115,6 +131,28 @@ class PaymentsService {
     return PaymentsPublicConfig(_map(res.data));
   }
 
+  static Future<List<Map<String, dynamic>>> myCampaigns() async {
+    final res = await _fn.httpsCallable('getMyMarketCampaigns').call();
+    final data = _map(res.data);
+    return (data['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  static Future<Map<String, dynamic>> previewCampaign({
+    required String code,
+    required String product,
+    required double amount,
+  }) async {
+    final res = await _fn.httpsCallable('previewMarketCampaign').call({
+      'code': code,
+      'product': product,
+      'amount': amount,
+    });
+    return _map(res.data);
+  }
+
   static Future<PaymentOrderResult> createOrder({
     String product = 'plus',
     String? provider,
@@ -123,6 +161,10 @@ class PaymentsService {
     String? eventId,
     String? tierLabel,
     String? discountCode,
+    String? sku,
+    String? size,
+    String? city,
+    String? shipName,
     String source = 'app',
   }) async {
     final res = await _fn.httpsCallable('createPaymentOrder').call({
@@ -132,7 +174,12 @@ class PaymentsService {
       if (months != null) 'months': months,
       if (eventId != null) 'eventId': eventId,
       if (tierLabel != null) 'tierLabel': tierLabel,
-      if (discountCode != null) 'discountCode': discountCode,
+      if (discountCode != null && discountCode.trim().isNotEmpty)
+        'discountCode': discountCode.trim().toUpperCase(),
+      if (sku != null) 'sku': sku,
+      if (size != null) 'size': size,
+      if (city != null) 'city': city,
+      if (shipName != null) 'shipName': shipName,
       'source': source,
     });
     return PaymentOrderResult(_map(res.data));

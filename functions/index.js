@@ -7344,10 +7344,27 @@ exports.trackAdEmailOpen = _orgGrowth.trackAdEmailOpen;
 exports.trackAdEmailClick = _orgGrowth.trackAdEmailClick;
 
 const { paymentsModule } = require('./payments');
+const { marketCampaignsModule } = require('./market_campaigns');
+const _campaigns = marketCampaignsModule({
+  db,
+  onCall,
+  HttpsError,
+  assertPlatformAdmin,
+  sanitizePlainText,
+  FieldValue,
+});
+exports.upsertMarketCampaign = _campaigns.upsertMarketCampaign;
+exports.listMarketCampaigns = _campaigns.listMarketCampaigns;
+exports.assignMarketCampaign = _campaigns.assignMarketCampaign;
+exports.setMarketCampaignActive = _campaigns.setMarketCampaignActive;
+exports.getMyMarketCampaigns = _campaigns.getMyMarketCampaigns;
+exports.previewMarketCampaign = _campaigns.previewMarketCampaign;
+
 const _payments = paymentsModule({
   db,
   onCall,
   onRequest,
+  onSchedule,
   HttpsError,
   assertPlatformAdmin,
   assertAdminPermission,
@@ -7355,6 +7372,9 @@ const _payments = paymentsModule({
   fulfillEventOrder: _commerce.fulfillEventOrder,
   fulfillAdOrder: _commerce.fulfillAdOrder,
   applyDiscountAmount: _commerce.applyDiscountAmount,
+  applyMarketCampaign: _campaigns.applyMarketCampaign,
+  recordCampaignUse: _campaigns.recordCampaignUse,
+  sendMail,
 });
 exports.updatePaymentsConfig = _payments.updatePaymentsConfig;
 exports.getPaymentsAdmin = _payments.getPaymentsAdmin;
@@ -7365,5 +7385,9 @@ exports.adminReviewPaymentOrder = _payments.adminReviewPaymentOrder;
 exports.paytrCallback = _payments.paytrCallback;
 exports.shopierCallback = _payments.shopierCallback;
 exports.shopierPayPage = _payments.shopierPayPage;
+exports.paytrPayPage = _payments.paytrPayPage;
+if (_payments.plusExpiryReminders) {
+  exports.plusExpiryReminders = _payments.plusExpiryReminders;
+}
 exports.adminReviewEvent = _payments.adminReviewEvent;
 exports.adminDeleteEvent = _payments.adminDeleteEvent;

@@ -132,6 +132,12 @@ class ProfileSettingsScreen extends StatelessWidget {
           const PlusPrivilegesCard(),
           const SizedBox(height: 12),
           _tile(
+            svg: MtIcons.ticket,
+            title: 'Market',
+            subtitle: 'Merch ürünleri ve kampüs koleksiyonu',
+            onTap: () => context.push('/market'),
+          ),
+          _tile(
             svg: MtIcons.follow,
             title: 'Gelen istekler',
             subtitle: incoming > 0

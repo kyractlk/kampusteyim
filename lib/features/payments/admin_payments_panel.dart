@@ -36,6 +36,8 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
   String _active = 'iban';
   final Set<String> _enabled = {'iban', 'paytr', 'shopier'};
   bool _paytrTest = true;
+  bool _marketInApp = true;
+  bool _merchPaytr = true;
   bool _loading = true;
   bool _saving = false;
   bool _paytrKeySet = false;
@@ -103,6 +105,8 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
     _ibanNote.text = cfg.ibanNote;
     _paytrMerchantId.text = cfg.paytrMerchantId;
     _paytrTest = cfg.paytrTestMode;
+    _marketInApp = cfg.raw['marketInAppVisible'] != false;
+    _merchPaytr = cfg.raw['merchPaytrEnabled'] != false;
     _paytrKey.clear();
     _paytrSalt.clear();
     _shopierKey.clear();
@@ -143,6 +147,8 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
         'ibanNote': _ibanNote.text.trim(),
         'paytrMerchantId': _paytrMerchantId.text.trim(),
         'paytrTestMode': _paytrTest,
+        'marketInAppVisible': _marketInApp,
+        'merchPaytrEnabled': _merchPaytr,
         'shopierWebsiteIndex': int.tryParse(_shopierIndex.text.trim()) ?? 1,
         'plusProductName': _productName.text.trim(),
         'plusAmount':
@@ -401,6 +407,20 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
           subtitle: const Text('Canlıya alınca kapat'),
           value: _paytrTest,
           onChanged: (v) => setState(() => _paytrTest = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Uygulama içi Market görünür'),
+          subtitle: const Text('Kapalıysa Ayarlar → Market gizlenir / web kalır'),
+          value: _marketInApp,
+          onChanged: (v) => setState(() => _marketInApp = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Merch için PayTR'),
+          subtitle: const Text('Kapalıysa merch yalnızca IBAN'),
+          value: _merchPaytr,
+          onChanged: (v) => setState(() => _merchPaytr = v),
         ),
         const SizedBox(height: 12),
         _section('Shopier'),
