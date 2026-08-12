@@ -6,10 +6,11 @@
   <meta name="description" content="KampüsteyimAPP Market — Plus üyelik, tişört, şapka ve kampüs ürünleri." />
   <meta name="theme-color" content="#0B1F3A" />
   <title>KampüsteyimAPP Market</title>
-  <link rel="icon" href="./kampusteyim_icon.png" type="image/png" />
+  <link rel="icon" href="./kampusteyim_icon.png?v=4" type="image/png" />
+  <link rel="apple-touch-icon" href="./kampusteyim_icon.png?v=4" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,800&display=swap" rel="stylesheet" />
   <style>
     :root {
       --navy: #0B1F3A; --navy2: #061426; --cyan: #00D4C8; --lime: #89C741;
@@ -17,8 +18,8 @@
       --ok: #0a8f6c; --err: #C8102E;
       --pad: max(1rem, env(safe-area-inset-left));
       --pad-r: max(1rem, env(safe-area-inset-right));
-      --font-d: "Syne", system-ui, sans-serif;
-      --font-b: "Instrument Sans", system-ui, sans-serif;
+      --font-d: "Fraunces", Georgia, serif;
+      --font-b: "DM Sans", system-ui, sans-serif;
       --max: 1080px;
     }
     *, *::before, *::after { box-sizing: border-box; }
@@ -307,18 +308,23 @@
   <main class="wrap">
     <section class="hero">
       <div>
-        <h1>Kampüs marketi.<br />Giy, kullan, Plus’la öne çık.</h1>
-        <p>Ürün seç, hesabınla giriş yap — <strong>Kart ile güvenle öde</strong> (PayTR).</p>
+        <p class="kicker" style="font-size:.78rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--navy);margin:0 0 .55rem">Kampüsteyim<span style="color:var(--cyan)">APP</span> Market</p>
+        <h1>Kampüsün vitrini.<br />Ürün, Plus ve bilet.</h1>
+        <p>Merch, dijital üyelik ve etkinlik biletleri — tek yerden, PayTR güvencesiyle.</p>
         <div class="hero-stats">
-          <div class="stat"><b>4+</b> Merch ürün</div>
+          <div class="stat"><b>Merch</b> Giyim &amp; aksesuar</div>
           <div class="stat"><b>Plus</b> Dijital üyelik</div>
-          <div class="stat"><b>PayTR</b> Kart ile güvenle öde</div>
+          <div class="stat"><b>Bilet</b> Etkinlikler</div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:.55rem;margin-top:1.1rem">
+          <a class="btn cyan sm" href="#merch" style="width:auto;padding:.7rem 1rem">Ürünlere bak</a>
+          <a class="btn ghost sm" href="#events" style="width:auto;padding:.7rem 1rem;background:#fff">Etkinlik biletleri</a>
         </div>
       </div>
       <aside class="hero-card">
-        <div class="kicker">Öne çıkan</div>
-        <h2>Kampüsteyim Plus</h2>
-        <p>Yeşil tick, CV-AI ayrıcalıkları ve kampüs öncelikli deneyim.</p>
+        <div class="kicker">Kart ile güvenle öde</div>
+        <h2>PayTR · Kampüsteyim</h2>
+        <p>Kart bilgilerin Kampüsteyim sunucularında saklanmaz. Ödeme yalnızca Market üzerinden.</p>
         <a class="btn cyan sm" href="#plus" style="margin-top:.9rem;width:auto;padding:.7rem 1rem">Plus’a git</a>
       </aside>
     </section>
@@ -327,8 +333,9 @@
 
     <div class="tabs" role="tablist">
       <button class="tab active" type="button" data-tab="all">Tümü</button>
-      <button class="tab" type="button" data-tab="merch">Giyim &amp; Aksesuar</button>
-      <button class="tab" type="button" data-tab="digital">Dijital</button>
+      <button class="tab" type="button" data-tab="merch">Giyim</button>
+      <button class="tab" type="button" data-tab="events">Etkinlikler</button>
+      <button class="tab" type="button" data-tab="digital">Plus</button>
     </div>
 
     <section id="merch">
@@ -337,7 +344,16 @@
         <span>Detay için ürüne dokun</span>
       </div>
       <div class="grid" id="productGrid"></div>
-      <p class="note">Merch siparişlerinde KampüsteyimAPP hesabınla giriş zorunlu. PayTR ile kart ödemesi veya IBAN havale; kargo Adana çıkışlıdır.</p>
+      <p class="note">Merch siparişlerinde KampüsteyimAPP hesabınla giriş zorunlu. Ödeme yalnızca PayTR ile kart üzerinden yapılır.</p>
+    </section>
+
+    <section id="events" style="margin-top:1.4rem">
+      <div class="section-head">
+        <h2>Etkinlik biletleri</h2>
+        <span>Stok bitince veya tarih geçince bilet kapanır</span>
+      </div>
+      <div class="grid" id="eventGrid"></div>
+      <p class="note" id="eventEmpty" style="display:none">Şu an satışta etkinlik bileti yok.</p>
     </section>
 
     <section class="card" id="legal" style="margin-top:1.25rem">
@@ -610,6 +626,47 @@
     } catch (e) {}
   }
 
+  function renderEvents() {
+    var grid = $('eventGrid');
+    var empty = $('eventEmpty');
+    if (!grid) return;
+    grid.innerHTML = '';
+    var list = (state.cfg && state.cfg.eventTickets) || [];
+    if (!list.length) {
+      if (empty) empty.style.display = '';
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    list.forEach(function (t) {
+      var soldOut = t.available === false;
+      var art = document.createElement('article');
+      art.className = 'product';
+      art.setAttribute('data-cat', 'events');
+      art.innerHTML =
+        '<div class="media" style="background:linear-gradient(145deg,#0B1F3A,#12345a);display:grid;place-items:center;color:#fff;padding:1rem;text-align:center">' +
+        '<div style="font-size:.72rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--cyan)">Etkinlik bileti</div>' +
+        '<div style="font-family:var(--font-d);font-weight:800;font-size:1.15rem;margin-top:.35rem;line-height:1.2">' + (t.eventTitle || t.name) + '</div>' +
+        (t.city ? '<div style="opacity:.75;font-size:.8rem;margin-top:.35rem">' + t.city + '</div>' : '') +
+        '</div>' +
+        '<div class="body"><h3>' + (t.tierLabel || 'Bilet') + '</h3>' +
+        '<p class="desc">' + (soldOut ? (t.statusLabel || 'Stok bitti') : (t.remaining != null ? ('Kalan: ' + t.remaining) : 'Satışta')) + '</p>' +
+        '<div class="row"><div class="price">' + money(t.amount) + '</div>' +
+        (soldOut
+          ? '<span class="hint" style="color:var(--err);font-weight:800">Stok bitti</span>'
+          : '<span class="hint">Uygulamadan al</span>') +
+        '</div></div>';
+      if (!soldOut && t.eventId) {
+        art.style.cursor = 'pointer';
+        art.addEventListener('click', function () {
+          location.href = 'https://app.kampusteyim.app/?event=' + encodeURIComponent(t.eventId);
+        });
+      } else {
+        art.style.opacity = soldOut ? '.72' : '1';
+      }
+      grid.appendChild(art);
+    });
+  }
+
   function renderGrid() {
     var grid = $('productGrid');
     grid.innerHTML = '';
@@ -630,13 +687,14 @@
     feat.className = 'featured';
     feat.setAttribute('data-cat', 'digital');
     feat.innerHTML =
-      '<div class="media"><div><div class="badge-xl"><img src="./kampusteyim_icon.png" alt="" /></div>' +
+      '<div class="media"><div><div class="badge-xl"><img src="./kampusteyim_icon.png?v=4" alt="" /></div>' +
       '<h3>Kampüsteyim Plus</h3><p>Dijital üyelik · anında hesabına işlenir</p></div></div>' +
       '<div class="body"><h3 style="margin:0 0 .35rem;font-size:1.15rem">Plus üyelik</h3>' +
       '<p class="desc" style="font-size:.9rem">CV-AI ayrıcalıkları, yeşil tick ve kampüs öncelikli deneyim.</p>' +
       '<ul class="features"><li>Yeşil tick ve öncelikli görünürlük</li><li>CV-AI / dosya limitleri</li><li>Uygulama içi satışla senkron</li></ul>' +
       '<a class="btn cyan" href="#plus">Süreyi seç ve satın al</a></div>';
     grid.appendChild(feat);
+    renderEvents();
   }
 
   function openDetail(sku) {
@@ -733,7 +791,7 @@
     var prev = btn.textContent;
     btn.innerHTML = '<span class="spin"></span> Sipariş…';
     try {
-      var preferPaytr = state.cfg && state.cfg.paytrReady && state.cfg.merchPaytrEnabled !== false;
+      var preferPaytr = true;
       var order = await callFn(
         'createPaymentOrder',
         {
@@ -743,7 +801,7 @@
           city: ($('dCity').value || '').trim(),
           shipName: ($('dShipName').value || '').trim(),
           source: 'market_web',
-          provider: preferPaytr ? 'paytr' : 'iban',
+          provider: 'paytr',
           discountCode: ($('dCode').value || '').trim().toUpperCase() || undefined,
         },
         state.idToken,
@@ -876,34 +934,7 @@
       if (order.provider === 'paytr' && (order.payUrl || order.iframeUrl)) {
         location.href = order.payUrl || order.iframeUrl; return;
       }
-      if (order.provider === 'shopier' && order.payUrl) {
-        location.href = order.payUrl; return;
-      }
-      if (order.provider === 'iban') {
-        state.merchOrder = order;
-        renderPayBox(Object.assign({}, order, { merchName: 'Kampüsteyim Plus' }));
-        $('payForm').classList.remove('hidden');
-        $('paySuccess').classList.add('hidden');
-        $('stepPay').classList.add('on');
-        $('stepDone').classList.remove('on');
-        show($('pMsg'), '', '');
-        $('paySheet').classList.remove('hidden');
-        // Plus confirm uses same button — override once
-        $('pConfirm').onclick = async function () {
-          try {
-            await callFn('confirmIbanTransfer', { orderId: order.orderId }, state.idToken);
-            $('payForm').classList.add('hidden');
-            $('paySuccess').classList.remove('hidden');
-            $('stepDone').classList.add('on');
-            $('paySuccessText').textContent =
-              'Ödeme tamamlandı olarak bildirildi. Admin onayından sonra Plus hesabına işlenir.';
-          } catch (err) {
-            show($('pMsg'), 'err', String(err.message || err));
-          }
-        };
-        return;
-      }
-      show($('shopMsg'), 'err', 'Ödeme yöntemi hazır değil');
+      show($('shopMsg'), 'err', 'PayTR ödeme bağlantısı alınamadı');
     } catch (e) {
       var msg = String(e.message || e);
       if (/unauthenticated|Giriş gerekli/i.test(msg)) { clearSession(); showAuth(false); return; }
@@ -924,11 +955,14 @@
           CATALOG[m.sku].name = m.name || CATALOG[m.sku].name;
         }
       });
-      renderGrid();
     }
+    renderGrid();
     renderPlans();
     if (!(Number(cfg.plusAmount) > 0)) {
-      show($('banner'), 'info', 'Plus fiyatı henüz girilmemiş. Merch satışları IBAN ile açık.');
+      show($('banner'), 'info', 'Plus fiyatı henüz girilmemiş.');
+    }
+    if (cfg.paytrTestMode) {
+      show($('banner'), 'info', 'PayTR test modu açık — canlı tahsilat yok.');
     }
   }
 
@@ -955,10 +989,24 @@
       document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
       tab.classList.add('active');
       var key = tab.getAttribute('data-tab');
-      document.querySelectorAll('#productGrid [data-cat]').forEach(function (el) {
+      document.querySelectorAll('#productGrid [data-cat], #eventGrid [data-cat]').forEach(function (el) {
         var cat = el.getAttribute('data-cat');
         el.style.display = (key === 'all' || key === cat) ? '' : 'none';
       });
+      var merchSec = document.getElementById('merch');
+      var evSec = document.getElementById('events');
+      var plusSec = document.getElementById('plus');
+      if (merchSec) merchSec.style.display = (key === 'all' || key === 'merch' || key === 'digital') ? '' : 'none';
+      if (evSec) evSec.style.display = (key === 'all' || key === 'events') ? '' : 'none';
+      if (plusSec && plusSec.closest('section')) {
+        /* plus stays in shopCard */
+      }
+      if (key === 'digital') {
+        document.getElementById('plus').scrollIntoView({ behavior: 'smooth' });
+      }
+      if (key === 'events') {
+        document.getElementById('events').scrollIntoView({ behavior: 'smooth' });
+      }
     });
   });
 

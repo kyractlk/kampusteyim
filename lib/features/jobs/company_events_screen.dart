@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -138,6 +139,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
     final capacity = TextEditingController(text: '100');
     final priceLabel = TextEditingController(text: 'Erken kayıt');
     final priceAmount = TextEditingController(text: '0');
+    final ticketStock = TextEditingController(text: '100');
     var city = MockData.cities.first;
     var startsAt = DateTime.now().add(const Duration(days: 14));
     DateTime? deadline;
@@ -324,6 +326,15 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: ticketStock,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Bilet stoku',
+                        helperText: 'Market’te stok bitince “Stok bitti” görünür',
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     FilledButton(
                       onPressed: () => Navigator.pop(ctx, true),
@@ -349,6 +360,8 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
     }
 
     final amount = double.tryParse(priceAmount.text.replaceAll(',', '.')) ?? 0;
+    final stock =
+        int.tryParse(ticketStock.text.trim()) ?? int.tryParse(capacity.text) ?? 100;
     final event = CampusEvent(
       id: 'evt_${const Uuid().v4().substring(0, 10)}',
       title: title.text.trim(),
@@ -373,6 +386,8 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                     ? 'Bilet'
                     : priceLabel.text.trim(),
                 amount: amount,
+                stock: stock,
+                saleEndsAt: deadline ?? startsAt,
               ),
             ]
           : const [],
@@ -386,10 +401,18 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
       SetOptions(merge: true),
     );
 
+    if (amount > 0) {
+      try {
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('syncEventMarketTickets')
+            .call({'eventId': event.id});
+      } catch (_) {}
+    }
+
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Etkinlik admin onayına gönderildi'),
+        content: Text('Etkinlik admin onayına gönderildi · bilet Market’e işlendi'),
       ),
     );
   }

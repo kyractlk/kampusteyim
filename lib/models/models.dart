@@ -1378,21 +1378,47 @@ class EventPriceTier {
     required this.label,
     required this.amount,
     this.currency = 'TRY',
+    this.stock,
+    this.soldCount = 0,
+    this.saleEndsAt,
   });
 
   final String label;
   final double amount;
   final String currency;
+  final int? stock;
+  final int soldCount;
+  final DateTime? saleEndsAt;
+
+  bool get isSoldOut {
+    if (saleEndsAt != null && saleEndsAt!.isBefore(DateTime.now())) {
+      return true;
+    }
+    if (stock == null) return false;
+    return soldCount >= stock!;
+  }
+
+  int? get remaining {
+    if (stock == null) return null;
+    final left = stock! - soldCount;
+    return left < 0 ? 0 : left;
+  }
 
   Map<String, dynamic> toMap() => {
-    'label': label,
-    'amount': amount,
-    'currency': currency,
-  };
+        'label': label,
+        'amount': amount,
+        'currency': currency,
+        if (stock != null) 'stock': stock,
+        'soldCount': soldCount,
+        if (saleEndsAt != null) 'saleEndsAt': saleEndsAt!.toIso8601String(),
+      };
 
   factory EventPriceTier.fromMap(Map<String, dynamic> m) => EventPriceTier(
-    label: '${m['label'] ?? ''}',
-    amount: (m['amount'] as num?)?.toDouble() ?? 0,
-    currency: '${m['currency'] ?? 'TRY'}',
-  );
+        label: '${m['label'] ?? ''}',
+        amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        currency: '${m['currency'] ?? 'TRY'}',
+        stock: (m['stock'] as num?)?.toInt(),
+        soldCount: (m['soldCount'] as num?)?.toInt() ?? 0,
+        saleEndsAt: DateTime.tryParse('${m['saleEndsAt'] ?? ''}'),
+      );
 }

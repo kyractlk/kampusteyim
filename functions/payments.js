@@ -29,6 +29,9 @@ function paymentsModule({
   applyDiscountAmount,
   applyMarketCampaign,
   recordCampaignUse,
+  listPublicEventTickets,
+  assertEventTicketAvailable,
+  syncEventTicketsForEvent,
   sendMail,
 }) {
   const PAYMENTS_DOC = 'app_config/payments';
@@ -51,7 +54,7 @@ function paymentsModule({
           'Havale/EFT açıklamasına yalnızca sistemin verdiği kodu yazın.',
       ).trim(),
       paytrMerchantId: String(d.paytrMerchantId || '').trim(),
-      paytrTestMode: d.paytrTestMode !== false,
+      paytrTestMode: d.paytrTestMode === true,
       shopierWebsiteIndex: Number(d.shopierWebsiteIndex || 1),
       currency: String(d.currency || 'TL'),
       plusProductName: String(d.plusProductName || 'KampüsteyimPlus').trim(),
@@ -363,14 +366,22 @@ function paymentsModule({
     { region: 'europe-west1' },
     async () => {
       const cfg = await readPaymentsConfig();
+      let eventTickets = [];
+      try {
+        if (typeof listPublicEventTickets === 'function') {
+          eventTickets = await listPublicEventTickets();
+        }
+      } catch (e) {
+        console.error('[getPaymentsPublic] eventTickets', e);
+      }
       return {
         ok: true,
-        activeProvider: cfg.activeProvider,
-        enabledProviders: cfg.enabledProviders,
-        iban: cfg.iban,
-        ibanHolder: cfg.ibanHolder,
-        ibanBank: cfg.ibanBank,
-        ibanNote: cfg.ibanNote,
+        activeProvider: 'paytr',
+        enabledProviders: ['paytr'],
+        iban: '',
+        ibanHolder: '',
+        ibanBank: '',
+        ibanNote: '',
         plusProductName: cfg.plusProductName,
         plusAmount: cfg.plusAmount,
         plusDays: cfg.plusDays,
@@ -383,11 +394,11 @@ function paymentsModule({
         paytrReady: Boolean(
           cfg.paytrMerchantId && cfg.paytrMerchantKey && cfg.paytrMerchantSalt,
         ),
-        paytrTestMode: cfg.paytrTestMode !== false,
-        shopierReady: Boolean(cfg.shopierApiKey && cfg.shopierApiSecret),
-        ibanReady: Boolean(cfg.iban && cfg.ibanHolder),
+        paytrTestMode: cfg.paytrTestMode === true,
+        shopierReady: false,
+        ibanReady: false,
         marketInAppVisible: cfg.marketInAppVisible !== false,
-        merchPaytrEnabled: cfg.merchPaytrEnabled !== false,
+        merchPaytrEnabled: true,
         seller: {
           name: cfg.sellerName,
           email: cfg.sellerEmail,
@@ -400,7 +411,10 @@ function paymentsModule({
           amount: m.amount,
           sizes: m.sizes,
           short: m.short,
+          type: 'merch',
+          available: true,
         })),
+        eventTickets,
       };
     },
   );
@@ -414,26 +428,18 @@ function paymentsModule({
       const amountIn = Number(request.data?.amount);
       const cfg = await readPaymentsConfig();
       let provider = sanitizePlainText(
-        request.data?.provider || cfg.activeProvider,
+        request.data?.provider || 'paytr',
         20,
       ).toLowerCase();
-      // Merch: PayTR açıksa kart; değilse IBAN (kargo + manuel onay).
-      if (product === 'merch') {
-        const paytrOk =
-          cfg.merchPaytrEnabled !== false &&
-          Boolean(cfg.paytrMerchantId && cfg.paytrMerchantKey && cfg.paytrMerchantSalt) &&
-          (cfg.enabledProviders || []).includes('paytr');
-        if (provider === 'paytr' && !paytrOk) {
-          provider = 'iban';
+      // Market / Plus / etkinlik: yalnızca PayTR
+      if (['merch', 'plus', 'event'].includes(product)) {
+        const paytrOk = Boolean(
+          cfg.paytrMerchantId && cfg.paytrMerchantKey && cfg.paytrMerchantSalt,
+        );
+        if (!paytrOk) {
+          throw new HttpsError('failed-precondition', 'PayTR yapılandırılmamış');
         }
-        if (!provider || (provider === 'paytr' && !paytrOk)) {
-          provider = paytrOk && cfg.activeProvider === 'paytr' ? 'paytr' : 'iban';
-        }
-        if (provider === 'paytr' && !paytrOk) provider = 'iban';
-        if (provider === 'iban' && (!cfg.iban || !cfg.ibanHolder)) {
-          if (paytrOk) provider = 'paytr';
-          else throw new HttpsError('failed-precondition', 'IBAN yapılandırılmamış');
-        }
+        provider = 'paytr';
       } else if (!cfg.enabledProviders.includes(provider)) {
         throw new HttpsError('failed-precondition', 'Bu ödeme yöntemi kapalı');
       }
@@ -462,7 +468,7 @@ function paymentsModule({
         amount = Math.round((Number(cfg.plusAmount) || 0) * months * 100) / 100;
       }
       const eventId = sanitizePlainText(request.data?.eventId || '', 80);
-      const tierLabel = sanitizePlainText(request.data?.tierLabel || '', 80);
+      let tierLabel = sanitizePlainText(request.data?.tierLabel || '', 80);
       const discountCode = sanitizePlainText(
         request.data?.discountCode || '',
         32,
@@ -551,11 +557,12 @@ function paymentsModule({
           throw new HttpsError('failed-precondition', 'Etkinlik onaylı değil');
         }
         const tiers = Array.isArray(ev.priceTiers) ? ev.priceTiers : [];
+        let tier =
+          tiers.find((t) => String(t.label || '') === tierLabel) || tiers[0];
         let base = 0;
         if (tiers.length) {
-          const tier =
-            tiers.find((t) => String(t.label || '') === tierLabel) || tiers[0];
           base = Number(tier?.amount) || 0;
+          if (!tierLabel) tierLabel = String(tier?.label || 'Bilet');
         } else {
           base = Number(amountIn) || 0;
         }
@@ -564,6 +571,19 @@ function paymentsModule({
             'failed-precondition',
             'Ücretsiz etkinlik — ödeme gerekmez, başvuru yap',
           );
+        }
+        if (typeof assertEventTicketAvailable === 'function') {
+          await assertEventTicketAvailable(eventId, tierLabel);
+        } else {
+          const sold = Number(tier?.soldCount) || 0;
+          const stock = Number(tier?.stock);
+          const ends = tier?.saleEndsAt || ev.applicationDeadline || ev.startsAt;
+          if (ends && new Date(ends).getTime() < Date.now()) {
+            throw new HttpsError('failed-precondition', 'Stok bitti');
+          }
+          if (Number.isFinite(stock) && stock >= 0 && sold >= stock) {
+            throw new HttpsError('failed-precondition', 'Stok bitti');
+          }
         }
         if (typeof applyDiscountAmount === 'function' && discountCode) {
           const disc = await applyDiscountAmount(eventId, discountCode, base);
@@ -799,7 +819,7 @@ function paymentsModule({
           payUrl,
           amount,
           title: basketTitle,
-          testMode: cfg.paytrTestMode !== false,
+          testMode: cfg.paytrTestMode === true,
           okUrl: cfg.okUrl,
           failUrl: cfg.failUrl,
         };
@@ -956,7 +976,7 @@ ${fields}
           maximumFractionDigits: 2,
         });
         const testBadge =
-          cfg.paytrTestMode !== false
+          cfg.paytrTestMode === true
             ? '<span class="badge">TEST MODU</span>'
             : '';
         const iframeSrc = escapeHtml(
@@ -1353,6 +1373,14 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
         },
         { merge: true },
       );
+      if (status === 'approved' && typeof syncEventTicketsForEvent === 'function') {
+        try {
+          const snap = await db.collection('events').doc(eventId).get();
+          await syncEventTicketsForEvent(eventId, snap.data() || {});
+        } catch (e) {
+          console.error('[adminReviewEvent] market sync', e);
+        }
+      }
       return { ok: true };
     },
   );

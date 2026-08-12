@@ -24,7 +24,7 @@ class PaymentsAdminConfig {
   String get ibanBank => '${raw['ibanBank'] ?? ''}';
   String get ibanNote => '${raw['ibanNote'] ?? ''}';
   String get paytrMerchantId => '${raw['paytrMerchantId'] ?? ''}';
-  bool get paytrTestMode => raw['paytrTestMode'] != false;
+  bool get paytrTestMode => raw['paytrTestMode'] == true;
   bool get paytrKeySet => raw['paytrKeySet'] == true;
   bool get paytrSaltSet => raw['paytrSaltSet'] == true;
   String get shopierApiKeyMasked => '${raw['shopierApiKey'] ?? ''}';
@@ -83,8 +83,17 @@ class PaymentsPublicConfig {
         .toList();
   }
 
+  List<Map<String, dynamic>> get eventTickets {
+    final rawTickets = raw['eventTickets'];
+    if (rawTickets is! List) return const [];
+    return rawTickets
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
   bool get paytrReady => raw['paytrReady'] == true;
-  bool get paytrTestMode => raw['paytrTestMode'] != false;
+  bool get paytrTestMode => raw['paytrTestMode'] == true;
   bool get shopierReady => raw['shopierReady'] == true;
   bool get ibanReady => raw['ibanReady'] == true;
   bool get marketInAppVisible => raw['marketInAppVisible'] != false;

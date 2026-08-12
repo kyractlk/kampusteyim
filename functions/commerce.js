@@ -203,7 +203,7 @@ function commerceModule({
     };
     await ticketRef.set(ticket);
 
-    // Başvuru / kontenjan
+    // Başvuru / kontenjan + market stok
     const apps = Array.isArray(event.applications) ? [...event.applications] : [];
     const existingIdx = apps.findIndex((a) => a && a.userId === uid);
     const appRow = {
@@ -217,14 +217,45 @@ function commerceModule({
     };
     if (existingIdx >= 0) apps[existingIdx] = { ...apps[existingIdx], ...appRow };
     else apps.push(appRow);
+
+    const label = tierLabel || 'Bilet';
+    const tiers = Array.isArray(event.priceTiers)
+      ? event.priceTiers.map((t) => ({ ...t }))
+      : [];
+    const ti = tiers.findIndex((t) => String(t.label || '') === String(label));
+    if (ti >= 0) {
+      tiers[ti].soldCount = (Number(tiers[ti].soldCount) || 0) + 1;
+    }
     await eventRef.set(
       {
         applications: apps,
         applicantCount: apps.length,
+        priceTiers: tiers.length ? tiers : event.priceTiers || [],
         updatedAt: nowIso(),
       },
       { merge: true },
     );
+
+    try {
+      const slug =
+        String(label)
+          .toLowerCase()
+          .replace(/[^a-z0-9ğüşıöç]+/gi, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 32) || 'bilet';
+      await db
+        .collection('market_products')
+        .doc(`evt_${eventId}_${slug}`)
+        .set(
+          {
+            soldCount: FieldValue.increment(1),
+            updatedAt: nowIso(),
+          },
+          { merge: true },
+        );
+    } catch (e) {
+      console.error('[fulfillEvent] market stock', e);
+    }
 
     // İndirim kullanım sayacı
     if (discountCode) {

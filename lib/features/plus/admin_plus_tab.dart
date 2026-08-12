@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../admin/admin_market_campaigns_panel.dart';
+import '../admin/admin_market_products_panel.dart';
 import '../admin/admin_user_search_field.dart';
 import '../payments/admin_payments_panel.dart';
 import 'plus_config.dart';
@@ -301,6 +302,8 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
         const AdminPlusPaymentReviewsPanel(),
         const Divider(height: 36),
         const AdminPaymentsPanel(),
+        const Divider(height: 36),
+        const AdminMarketProductsPanel(),
         const Divider(height: 36),
         const AdminMarketCampaignsPanel(),
         const Divider(height: 36),

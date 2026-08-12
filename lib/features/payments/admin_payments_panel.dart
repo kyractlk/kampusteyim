@@ -33,9 +33,9 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
   final _shopierCb = TextEditingController();
   final _shopierPay = TextEditingController();
 
-  String _active = 'iban';
-  final Set<String> _enabled = {'iban', 'paytr', 'shopier'};
-  bool _paytrTest = true;
+  String _active = 'paytr';
+  final Set<String> _enabled = {'paytr'};
+  bool _paytrTest = false;
   bool _marketInApp = true;
   bool _merchPaytr = true;
   bool _loading = true;

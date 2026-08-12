@@ -7345,6 +7345,7 @@ exports.trackAdEmailClick = _orgGrowth.trackAdEmailClick;
 
 const { paymentsModule } = require('./payments');
 const { marketCampaignsModule } = require('./market_campaigns');
+const createMarketProducts = require('./market_products');
 const _campaigns = marketCampaignsModule({
   db,
   onCall,
@@ -7360,6 +7361,15 @@ exports.setMarketCampaignActive = _campaigns.setMarketCampaignActive;
 exports.getMyMarketCampaigns = _campaigns.getMyMarketCampaigns;
 exports.previewMarketCampaign = _campaigns.previewMarketCampaign;
 
+const _marketProducts = createMarketProducts({
+  db,
+  assertPlatformAdmin,
+});
+exports.listMarketProducts = _marketProducts.listMarketProducts;
+exports.upsertMarketProduct = _marketProducts.upsertMarketProduct;
+exports.deleteMarketProduct = _marketProducts.deleteMarketProduct;
+exports.syncEventMarketTickets = _marketProducts.syncEventMarketTickets;
+
 const _payments = paymentsModule({
   db,
   onCall,
@@ -7374,6 +7384,9 @@ const _payments = paymentsModule({
   applyDiscountAmount: _commerce.applyDiscountAmount,
   applyMarketCampaign: _campaigns.applyMarketCampaign,
   recordCampaignUse: _campaigns.recordCampaignUse,
+  listPublicEventTickets: _marketProducts.listPublicEventTickets,
+  assertEventTicketAvailable: _marketProducts.assertEventTicketAvailable,
+  syncEventTicketsForEvent: _marketProducts.syncEventTicketsForEvent,
   sendMail,
 });
 exports.updatePaymentsConfig = _payments.updatePaymentsConfig;

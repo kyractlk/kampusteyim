@@ -254,6 +254,12 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                             orElse: () => tiers.first,
                           );
                     final amount = tier?.amount ?? 0;
+                    if (tier != null && tier.isSoldOut) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Stok bitti')),
+                      );
+                      return;
+                    }
                     if (amount <= 0) {
                       final err = await feed.applyToEvent(
                         event.id,
@@ -281,7 +287,11 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               applied
                   ? 'Başvuruldu / biletin var'
                   : (blocked.isEmpty
-                      ? (isFree ? 'Başvur' : 'Bilet al / öde')
+                      ? (isFree
+                          ? 'Başvur'
+                          : (tiers.any((t) => !t.isSoldOut)
+                              ? 'Bilet al / öde'
+                              : 'Stok bitti'))
                       : blocked),
             ),
           ),
