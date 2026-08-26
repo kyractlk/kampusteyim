@@ -17,6 +17,7 @@ class StoryItem {
     this.archived = false,
     this.deletedAt,
     this.reportCount = 0,
+    this.overlays = const [],
   });
 
   final String id;
@@ -34,6 +35,7 @@ class StoryItem {
   final bool archived;
   final DateTime? deletedAt;
   final int reportCount;
+  final List<Map<String, dynamic>> overlays;
 
   bool get isDeleted => deletedAt != null;
 
@@ -61,6 +63,7 @@ class StoryItem {
     bool? archived,
     DateTime? deletedAt,
     int? reportCount,
+    List<Map<String, dynamic>>? overlays,
     bool clearDeleted = false,
   }) {
     return StoryItem(
@@ -78,6 +81,7 @@ class StoryItem {
       archived: archived ?? this.archived,
       deletedAt: clearDeleted ? null : (deletedAt ?? this.deletedAt),
       reportCount: reportCount ?? this.reportCount,
+      overlays: overlays ?? this.overlays,
     );
   }
 
@@ -95,10 +99,12 @@ class StoryItem {
         'archived': archived,
         'deletedAt': deletedAt?.toIso8601String(),
         'reportCount': reportCount,
+        'overlays': overlays,
       };
 
   factory StoryItem.fromFirestore(String id, Map<String, dynamic> m) {
     final typeName = '${m['mediaType'] ?? 'image'}';
+    final ov = m['overlays'];
     return StoryItem(
       id: id,
       authorId: '${m['authorId'] ?? ''}',
@@ -117,6 +123,12 @@ class StoryItem {
       reportCount: (m['reportCount'] is num)
           ? (m['reportCount'] as num).toInt()
           : int.tryParse('${m['reportCount'] ?? 0}') ?? 0,
+      overlays: ov is List
+          ? ov
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : const [],
     );
   }
 

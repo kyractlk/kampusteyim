@@ -199,6 +199,11 @@ class MediaUpload {
 
   static String _docMime(String ext) {
     switch (ext) {
+      case 'm4a':
+      case 'aac':
+        return 'audio/mp4';
+      case 'mp3':
+        return 'audio/mpeg';
       case 'pdf':
         return 'application/pdf';
       case 'doc':

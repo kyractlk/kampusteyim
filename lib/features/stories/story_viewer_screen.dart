@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../core/storage/media_disk_cache.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/app_nav.dart';
 import '../../core/widgets/media_load_pulse.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
@@ -19,6 +20,7 @@ import '../notifications/notification_provider.dart';
 import '../plus/plus_widgets.dart';
 import 'stories_provider.dart';
 import 'story_models.dart';
+import 'story_overlay.dart';
 
 class StoryViewerScreen extends StatefulWidget {
   const StoryViewerScreen({super.key, required this.userId});
@@ -601,6 +603,20 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                 child: media,
               ),
             ),
+            if (item.overlays.isNotEmpty)
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: false,
+                  child: StoryOverlayLayer(
+                    overlays: item.overlays
+                        .map(StoryOverlay.fromMap)
+                        .toList(growable: false),
+                    onTapPost: (postId) {
+                      AppNav.openPost(context, postId);
+                    },
+                  ),
+                ),
+              ),
             Positioned(
               top: 8,
               left: 8,

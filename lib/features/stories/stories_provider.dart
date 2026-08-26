@@ -290,6 +290,7 @@ class StoriesProvider extends ChangeNotifier {
     required XFile file,
     bool isVideo = false,
     void Function(double progress)? onProgress,
+    List<Map<String, dynamic>> overlays = const [],
   }) async {
     if (author.isSpectatorMode) {
       return 'İzleyici modunda hikâye paylaşamazsın.';
@@ -319,6 +320,7 @@ class StoriesProvider extends ChangeNotifier {
         mediaType: isVideo ? MediaType.video : MediaType.image,
         createdAt: now,
         expiresAt: now.add(const Duration(hours: 24)),
+        overlays: overlays,
       );
       await doc.set(item.toFirestore());
       // Optimistic — snapshot gelmeden halkada saniyelik görünsün.

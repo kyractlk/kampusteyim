@@ -37,8 +37,10 @@ import '../plus/plus_provider.dart';
 import '../plus/plus_widgets.dart';
 import '../reels/reels_provider.dart';
 import '../stories/story_ring_bar.dart';
+import '../study/music_link_meta.dart';
 import '../study/study_models.dart';
 import 'feed_provider.dart';
+import 'post_rich_widgets.dart';
 import 'suggested_people_rail.dart';
 
 class FeedScreen extends StatelessWidget {
@@ -261,7 +263,7 @@ class FeedScreen extends StatelessWidget {
                       ),
                     );
                   },
-                  onSubmit: (text, media) async {
+                  onSubmit: (text, media, {music, location, poll}) async {
                     final u = auth.user!;
                     if (!u.canPost || !u.communityCanPublish) {
                       return 'Paylaşım yapılamıyor';
@@ -276,6 +278,9 @@ class FeedScreen extends StatelessWidget {
                       directory: auth.directory,
                       authorCity: u.city,
                       authorUniversity: u.university,
+                      music: music,
+                      location: location,
+                      poll: poll,
                     );
                     if (!context.mounted) return result;
                     if (result != null) {
@@ -404,7 +409,14 @@ class _ComposerCard extends StatefulWidget {
     required this.lockMessage,
   });
 
-  final Future<String?> Function(String text, List<MediaItem> media) onSubmit;
+  final Future<String?> Function(
+    String text,
+    List<MediaItem> media, {
+    Map<String, dynamic>? music,
+    Map<String, dynamic>? location,
+    Map<String, dynamic>? poll,
+  })
+  onSubmit;
   final bool enabled;
   final VoidCallback onTapLocked;
   final String lockMessage;
@@ -422,6 +434,9 @@ class _ComposerCardState extends State<_ComposerCard> {
   bool _busy = false;
   String? _mentionQuery;
   List<AppUser> _mentionHits = const [];
+  MusicLinkMeta? _music;
+  Map<String, dynamic>? _location;
+  Map<String, dynamic>? _poll;
 
   bool _pickingMention = false;
 
@@ -544,6 +559,215 @@ class _ComposerCardState extends State<_ComposerCard> {
     if (f != null) setState(() => _docFile = f);
   }
 
+  Future<void> _attachMusic() async {
+    if (!widget.enabled) {
+      widget.onTapLocked();
+      return;
+    }
+    final ctrl = TextEditingController(text: _controller.text);
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Spotify / Apple Music'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Şarkı linkini yapıştır',
+            prefixIcon: Icon(Icons.music_note_rounded),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Ekle'),
+          ),
+        ],
+      ),
+    );
+    if (url == null || url.isEmpty) return;
+    final musicUrl = firstMusicUrl(url) ?? (isMusicUrl(url) ? url : null);
+    if (musicUrl == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Geçerli Spotify veya Apple Music linki gir')),
+        );
+      }
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final meta = await resolveMusicLink(musicUrl);
+      if (!mounted) return;
+      if (meta == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Şarkı bilgisi alınamadı')),
+        );
+        return;
+      }
+      setState(() => _music = meta);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _attachLocation() async {
+    if (!widget.enabled) {
+      widget.onTapLocked();
+      return;
+    }
+    final labelCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Konum paylaş'),
+        content: TextField(
+          controller: labelCtrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Yer adı / kampüs noktası',
+            hintText: 'Örn. Merkez Kütüphane',
+            prefixIcon: Icon(Icons.place_outlined),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ekle'),
+          ),
+        ],
+      ),
+    );
+    final label = labelCtrl.text.trim();
+    if (ok != true || label.isEmpty) return;
+    setState(() {
+      _location = {
+        'label': label,
+        'mapsUrl':
+            'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(label)}',
+      };
+    });
+  }
+
+  Future<void> _attachPoll() async {
+    if (!widget.enabled) {
+      widget.onTapLocked();
+      return;
+    }
+    final qCtrl = TextEditingController();
+    final o1 = TextEditingController();
+    final o2 = TextEditingController();
+    final o3 = TextEditingController();
+    final o4 = TextEditingController();
+    var multi = false;
+    var timed = false;
+    var hours = 24;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Oylama oluştur'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: qCtrl,
+                  decoration: const InputDecoration(labelText: 'Soru'),
+                ),
+                TextField(
+                  controller: o1,
+                  decoration: const InputDecoration(labelText: 'Seçenek 1'),
+                ),
+                TextField(
+                  controller: o2,
+                  decoration: const InputDecoration(labelText: 'Seçenek 2'),
+                ),
+                TextField(
+                  controller: o3,
+                  decoration:
+                      const InputDecoration(labelText: 'Seçenek 3 (opsiyonel)'),
+                ),
+                TextField(
+                  controller: o4,
+                  decoration:
+                      const InputDecoration(labelText: 'Seçenek 4 (opsiyonel)'),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Çok seçimli'),
+                  value: multi,
+                  onChanged: (v) => setLocal(() => multi = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Süreli'),
+                  value: timed,
+                  onChanged: (v) => setLocal(() => timed = v),
+                ),
+                if (timed)
+                  DropdownButtonFormField<int>(
+                    // ignore: deprecated_member_use
+                    value: hours,
+                    decoration: const InputDecoration(labelText: 'Süre'),
+                    items: const [
+                      DropdownMenuItem(value: 1, child: Text('1 saat')),
+                      DropdownMenuItem(value: 6, child: Text('6 saat')),
+                      DropdownMenuItem(value: 24, child: Text('24 saat')),
+                      DropdownMenuItem(value: 72, child: Text('3 gün')),
+                    ],
+                    onChanged: (v) => setLocal(() => hours = v ?? 24),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Ekle'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final opts = [o1, o2, o3, o4]
+        .map((c) => c.text.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (qCtrl.text.trim().isEmpty || opts.length < 2) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Soru ve en az 2 seçenek gerekli')),
+        );
+      }
+      return;
+    }
+    setState(() {
+      _poll = {
+        'question': qCtrl.text.trim(),
+        'options': opts,
+        'multi': multi,
+        if (timed)
+          'endsAt': DateTime.now()
+              .add(Duration(hours: hours))
+              .toIso8601String(),
+      };
+    });
+  }
+
   Future<void> _publish() async {
     if (!widget.enabled) {
       widget.onTapLocked();
@@ -553,7 +777,10 @@ class _ComposerCardState extends State<_ComposerCard> {
     if (text.isEmpty &&
         _imageFile == null &&
         _videoFile == null &&
-        _docFile == null) {
+        _docFile == null &&
+        _music == null &&
+        _location == null &&
+        _poll == null) {
       return;
     }
     final auth = context.read<AuthProvider>();
@@ -606,7 +833,13 @@ class _ComposerCardState extends State<_ComposerCard> {
           MediaItem(url: url, type: MediaType.file, fileName: _docFile!.name),
         );
       }
-      final result = await widget.onSubmit(text, media);
+      final result = await widget.onSubmit(
+        text,
+        media,
+        music: _music?.toMap(),
+        location: _location,
+        poll: _poll,
+      );
       final blocked = result != null && !result.startsWith('WARN:');
       if (!blocked) {
         _controller.clear();
@@ -615,6 +848,9 @@ class _ComposerCardState extends State<_ComposerCard> {
           _imageFile = null;
           _videoFile = null;
           _docFile = null;
+          _music = null;
+          _location = null;
+          _poll = null;
           _mentionQuery = null;
           _mentionHits = const [];
         });
@@ -738,11 +974,17 @@ class _ComposerCardState extends State<_ComposerCard> {
                     },
                   ),
                 ),
-              if (_imageFile != null || _videoFile != null || _docFile != null)
+              if (_imageFile != null ||
+                  _videoFile != null ||
+                  _docFile != null ||
+                  _music != null ||
+                  _location != null ||
+                  _poll != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Wrap(
                     spacing: 8,
+                    runSpacing: 6,
                     children: [
                       if (_imageFile != null)
                         Chip(
@@ -758,6 +1000,24 @@ class _ComposerCardState extends State<_ComposerCard> {
                         Chip(
                           label: Text('Dosya · ${_docFile!.name}'),
                           onDeleted: () => setState(() => _docFile = null),
+                        ),
+                      if (_music != null)
+                        Chip(
+                          avatar: const Icon(Icons.music_note, size: 16),
+                          label: Text(_music!.title, overflow: TextOverflow.ellipsis),
+                          onDeleted: () => setState(() => _music = null),
+                        ),
+                      if (_location != null)
+                        Chip(
+                          avatar: const Icon(Icons.place, size: 16),
+                          label: Text('${_location!['label']}'),
+                          onDeleted: () => setState(() => _location = null),
+                        ),
+                      if (_poll != null)
+                        Chip(
+                          avatar: const Icon(Icons.poll, size: 16),
+                          label: Text('${_poll!['question']}'),
+                          onDeleted: () => setState(() => _poll = null),
                         ),
                     ],
                   ),
@@ -801,6 +1061,36 @@ class _ComposerCardState extends State<_ComposerCard> {
                     icon: Icon(
                       Icons.attach_file_rounded,
                       color: _docFile != null
+                          ? AppColors.navy
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Spotify / Apple Music',
+                    onPressed: _busy ? null : _attachMusic,
+                    icon: Icon(
+                      Icons.library_music_outlined,
+                      color: _music != null
+                          ? AppColors.cyan
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Konum',
+                    onPressed: _busy ? null : _attachLocation,
+                    icon: Icon(
+                      Icons.place_outlined,
+                      color: _location != null
+                          ? AppColors.crimson
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Oylama',
+                    onPressed: _busy ? null : _attachPoll,
+                    icon: Icon(
+                      Icons.poll_outlined,
+                      color: _poll != null
                           ? AppColors.navy
                           : AppColors.textSecondary,
                     ),
@@ -1143,6 +1433,18 @@ class PostCard extends StatelessWidget {
                 if (post.content.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   HashtagText(text: post.content),
+                ],
+                if (post.music != null) ...[
+                  const SizedBox(height: 12),
+                  PostMusicCard(meta: MusicLinkMeta.fromMap(post.music!)),
+                ],
+                if (post.location != null) ...[
+                  const SizedBox(height: 12),
+                  PostLocationCard(location: post.location!),
+                ],
+                if (post.poll != null) ...[
+                  const SizedBox(height: 12),
+                  PostPollCard(post: post),
                 ],
                 if (post.media.isNotEmpty) ...[
                   const SizedBox(height: 12),

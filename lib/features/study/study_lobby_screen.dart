@@ -26,6 +26,7 @@ class _StudyLobbyScreenState extends State<StudyLobbyScreen> {
   final _code = TextEditingController();
   bool _busy = false;
   bool _announce = true;
+  String _roomMode = 'voice';
 
   @override
   void dispose() {
@@ -48,6 +49,7 @@ class _StudyLobbyScreenState extends State<StudyLobbyScreen> {
         minutes: _minutes,
         title: _title.text,
         announce: _announce,
+        roomMode: _roomMode,
       );
       if (!mounted) return;
       context.push('/study/${room.id}');
@@ -160,6 +162,48 @@ class _StudyLobbyScreenState extends State<StudyLobbyScreen> {
             subtitle: const Text('Diğerleri posttan katılabilsin'),
             value: _announce,
             onChanged: (v) => setState(() => _announce = v),
+          ),
+          const SizedBox(height: 8),
+          const Text('Oda tipi', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final e in [
+                ('voice', 'Sesli', Icons.mic_rounded),
+                ('text', 'Yazılı', Icons.forum_rounded),
+                ('silent', 'Sessiz', Icons.hearing_disabled_rounded),
+              ])
+                ChoiceChip(
+                  avatar: Icon(e.$3, size: 16),
+                  label: Text(
+                    e.$2,
+                    style: TextStyle(
+                      color: _roomMode == e.$1
+                          ? Colors.white
+                          : AppColors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  selected: _roomMode == e.$1,
+                  selectedColor: AppColors.navy,
+                  onSelected: (_) => setState(() => _roomMode = e.$1),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _roomMode == 'voice'
+                ? 'Bas-konuş ses kayıtları odada saklanır; Spotify/Apple linki, konum, oylama.'
+                : _roomMode == 'silent'
+                    ? 'Sohbet ve ses kapalı — sadece odak sayacı.'
+                    : 'Klasik yazılı sohbet + zengin paylaşımlar.',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12.5,
+              height: 1.35,
+            ),
           ),
           const SizedBox(height: 8),
           FilledButton(

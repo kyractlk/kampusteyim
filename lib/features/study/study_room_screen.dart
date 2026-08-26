@@ -1,19 +1,27 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../core/storage/media_upload.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/app_nav.dart';
 import '../../core/utils/auth_gate.dart';
 import '../auth/data/auth_provider.dart';
+import '../moderation/moderation_models.dart';
+import '../moderation/report_sheet.dart';
+import 'room_side_panel.dart';
+import 'livekit_voice_session.dart';
 import 'study_models.dart';
 
-/// Paylaşımlı çalışma odası: senkron sayaç + collapsible realtime chat.
+/// Paylaşımlı çalışma odası: senkron sayaç + açılır oda paneli + LiveKit ses.
 class StudyRoomScreen extends StatefulWidget {
   const StudyRoomScreen({super.key, required this.roomId});
 
@@ -28,15 +36,20 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   final _player = AudioPlayer();
   final _scroll = ScrollController();
 
-  bool _chatOpenUi = true;
+  bool _chatOpenUi = false;
   bool _joining = false;
   bool _sending = false;
   bool _playedEnd = false;
   bool _warned5min = false;
   bool _intentionalLeave = false;
   bool _isHostSession = false;
+  bool _recording = false;
   String? _sessionUserId;
   Timer? _uiTick;
+  final _recorder = AudioRecorder();
+  DateTime? _recordStarted;
+  final _liveVoice = LiveKitVoiceSession();
+  bool _liveVoiceBusy = false;
 
   @override
   void initState() {
@@ -61,6 +74,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     _chatCtrl.dispose();
     _player.dispose();
     _scroll.dispose();
+    unawaited(_recorder.dispose());
+    unawaited(_liveVoice.disconnect());
     if (!_intentionalLeave && _isHostSession && _sessionUserId != null) {
       unawaited(
         StudyRoomService.markHostLeft(widget.roomId, _sessionUserId!),
@@ -82,8 +97,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     setState(() => _joining = true);
     try {
       final room = await StudyRoomService.get(widget.roomId);
-      if (room == null) throw StateError('Oda bulunamadı');
-      if (room.isKicked(user.id)) throw StateError('Bu odadan çıkarıldın');
+      if (room == null) throw StateError('Oda bulunamadÄ±');
+      if (room.isKicked(user.id)) throw StateError('Bu odadan Ã§Ä±karÄ±ldÄ±n');
       if (!room.isMember(user.id) && !room.isPending(user.id)) {
         await StudyRoomService.join(widget.roomId, user);
       }
@@ -123,9 +138,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       context: context,
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
-        title: const Text('5 dakika kaldı'),
+        title: const Text('5 dakika kaldÄ±'),
         content: const Text(
-          'Odak seansı bitmek üzere. İstersen süreye uzun basarak uzatabilirsin.',
+          'Odak seansÄ± bitmek Ã¼zere. Ä°stersen sÃ¼reye uzun basarak uzatabilirsin.',
         ),
         actions: [
           TextButton(
@@ -142,20 +157,20 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final mins = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Süreyi uzat'),
+        title: const Text('SÃ¼reyi uzat'),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
           autofocus: true,
           decoration: const InputDecoration(
-            labelText: 'Kaç dakika eklensin?',
+            labelText: 'KaÃ§ dakika eklensin?',
             hintText: '5',
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Vazgeç'),
+            child: const Text('VazgeÃ§'),
           ),
           FilledButton(
             onPressed: () {
@@ -190,10 +205,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Odadan çık'),
+        title: const Text('Odadan Ã§Ä±k'),
         content: const Text(
-          'Odak seansından ayrılmak istiyor musun?\n\n'
-          'Oturum sahibiysen 1 saat içinde geri dönmezsen oda otomatik kapanır.',
+          'Odak seansÄ±ndan ayrÄ±lmak istiyor musun?\n\n'
+          'Oturum sahibiysen 1 saat iÃ§inde geri dÃ¶nmezsen oda otomatik kapanÄ±r.',
         ),
         actions: [
           TextButton(
@@ -202,7 +217,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Çık'),
+            child: const Text('Ã‡Ä±k'),
           ),
         ],
       ),
@@ -228,12 +243,12 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final auth = context.read<AuthProvider>();
     final user = auth.user;
     if (user == null) {
-      AuthGate.requireAuth(context, message: 'Chat için giriş yap.');
+      AuthGate.requireAuth(context, message: 'Chat iÃ§in giriÅŸ yap.');
       return;
     }
     if (room.isMuted(user.id)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sessize alındın — mesaj gönderemezsin.')),
+        const SnackBar(content: Text('Sessize alÄ±ndÄ±n â€” mesaj gÃ¶nderemezsin.')),
       );
       return;
     }
@@ -259,7 +274,6 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
-    final wide = MediaQuery.sizeOf(context).width >= 900;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return PopScope(
@@ -286,7 +300,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
-                      'Bu odadan çıkarıldın',
+                      'Bu odadan Ã§Ä±karÄ±ldÄ±n',
                       style: TextStyle(color: Colors.white, fontSize: 18),
                     ),
                     const SizedBox(height: 12),
@@ -310,7 +324,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           if (room.status == 'active') {
             display = room.remaining ?? Duration.zero;
             statusLabel =
-                display == Duration.zero ? 'Süre doldu' : 'Çalışıyorsunuz';
+                display == Duration.zero ? 'SÃ¼re doldu' : 'Ã‡alÄ±ÅŸÄ±yorsunuz';
             if (display == Duration.zero) {
               unawaited(_playEnd());
             } else {
@@ -321,7 +335,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             statusLabel = 'Oturum bitti';
           } else {
             display = Duration(minutes: room.minutes);
-            statusLabel = isPending ? 'Onay bekleniyor…' : 'Hazır';
+            statusLabel = isPending ? 'Onay bekleniyorâ€¦' : 'HazÄ±r';
           }
 
           if (isPending && !isHost) {
@@ -337,7 +351,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         const CircularProgressIndicator(color: AppColors.cyan),
                         const SizedBox(height: 20),
                         const Text(
-                          'Katılma isteğin gönderildi',
+                          'KatÄ±lma isteÄŸin gÃ¶nderildi',
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w800,
@@ -347,7 +361,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '${room.hostName} onaylayınca odaya gireceksin.',
+                          '${room.hostName} onaylayÄ±nca odaya gireceksin.',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.65),
                           ),
@@ -356,7 +370,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         const SizedBox(height: 20),
                         TextButton(
                           onPressed: () => AppNav.back(context),
-                          child: const Text('Geri dön'),
+                          child: const Text('Geri dÃ¶n'),
                         ),
                       ],
                     ),
@@ -372,23 +386,48 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               body: Center(
                 child: FilledButton(
                   onPressed: _ensureJoined,
-                  child: const Text('Katılma isteği gönder'),
+                  child: const Text('KatÄ±lma isteÄŸi gÃ¶nder'),
                 ),
               ),
             );
           }
 
-          final chatPanel = _ChatPanel(
+          final chatPanel = RoomSidePanel(
             room: room,
-            chatOpenUi: _chatOpenUi,
-            onToggleUi: () => setState(() => _chatOpenUi = !_chatOpenUi),
+            onClose: () => setState(() => _chatOpenUi = false),
             controller: _chatCtrl,
             sending: _sending,
+            recording: _recording,
             onSend: () => _send(room),
+            onStartVoice: () => _startVoice(room),
+            onStopVoice: () => _stopVoice(room),
+            onToggleLiveVoice: () => _toggleLiveVoice(room),
+            liveVoiceConnected: _liveVoice.isConnected,
+            liveVoiceBusy: _liveVoiceBusy,
             scroll: _scroll,
             isHost: isHost,
             userId: user?.id,
             muted: user != null && room.isMuted(user.id),
+            selfVoiceMuted:
+                user != null && room.isVoiceSelfMuted(user.id),
+            onToggleSelfMute: () async {
+              if (user == null) return;
+              final nextMuted = !room.isVoiceSelfMuted(user.id);
+              await StudyRoomService.setSelfVoiceMute(
+                roomId: room.id,
+                userId: user.id,
+                muted: nextMuted,
+              );
+              await _liveVoice.setMicEnabled(!nextMuted);
+            },
+            onReportUser: (uid, name) {
+              showReportSheet(
+                context: context,
+                targetType: ReportTargetType.account,
+                targetId: uid,
+                snapshotAuthor: name,
+              );
+            },
           );
 
           final timerPanel = _TimerPanel(
@@ -461,19 +500,45 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             body: Padding(
               padding: EdgeInsets.only(bottom: bottomInset),
               child: SafeArea(
-                // Chat her zaman sağda (mobil + geniş ekran).
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                child: Stack(
                   children: [
-                    Expanded(flex: wide ? 3 : 2, child: timerPanel),
-                    if (_chatOpenUi)
-                      SizedBox(
-                        width: wide ? 360 : 168,
-                        child: chatPanel,
-                      )
-                    else
-                      _ChatRail(
-                        onOpen: () => setState(() => _chatOpenUi = true),
+                    Positioned.fill(child: timerPanel),
+                    // AÃ§Ä±lÄ±r oda paneli â€” dar sÃ¼tun yerine overlay.
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      top: 8,
+                      bottom: 8,
+                      right: _chatOpenUi ? 8 : -_panelWidth - 20,
+                      width: _panelWidth,
+                      child: chatPanel,
+                    ),
+                    if (!_chatOpenUi)
+                      Positioned(
+                        right: 12,
+                        bottom: 16,
+                        child: FloatingActionButton.extended(
+                          heroTag: 'study_room_panel',
+                          backgroundColor: AppColors.cyan,
+                          foregroundColor: AppColors.navy,
+                          onPressed: () =>
+                              setState(() => _chatOpenUi = true),
+                          icon: Icon(
+                            room.isSilent
+                                ? Icons.hearing_disabled_rounded
+                                : room.roomMode == 'voice'
+                                    ? Icons.mic_rounded
+                                    : Icons.forum_rounded,
+                          ),
+                          label: Text(
+                            room.isSilent
+                                ? 'Oda'
+                                : room.roomMode == 'voice'
+                                    ? 'Ses & oda'
+                                    : 'Sohbet',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -484,36 +549,120 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       ),
     );
   }
-}
 
-class _ChatRail extends StatelessWidget {
-  const _ChatRail({required this.onOpen});
+  double get _panelWidth {
+    final w = MediaQuery.sizeOf(context).width;
+    if (w >= 900) return 380;
+    return (w * 0.48).clamp(280.0, 360.0);
+  }
 
-  final VoidCallback onOpen;
+  Future<void> _startVoice(StudyRoom room) async {
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+    if (user == null || room.isMuted(user.id) || room.isSilent) return;
+    if (room.isVoiceSelfMuted(user.id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ã–nce mikronu aÃ§')),
+      );
+      return;
+    }
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ses kaydÄ± mobil uygulamada')),
+      );
+      return;
+    }
+    final ok = await _recorder.hasPermission();
+    if (!ok) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mikrofon izni gerekli')),
+      );
+      return;
+    }
+    final dir = await getTemporaryDirectory();
+    final path =
+        '${dir.path}/study_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _recorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: path,
+    );
+    _recordStarted = DateTime.now();
+    setState(() => _recording = true);
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF0C1E33),
-      child: InkWell(
-        onTap: onOpen,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 16),
-          child: RotatedBox(
-            quarterTurns: 3,
-            child: Text(
-              "Chat'i aç",
-              style: TextStyle(
-                color: Colors.white70,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+  Future<void> _stopVoice(StudyRoom room) async {
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+    if (!_recording || user == null) return;
+    final path = await _recorder.stop();
+    final started = _recordStarted;
+    setState(() {
+      _recording = false;
+      _recordStarted = null;
+    });
+    if (path == null || path.isEmpty || started == null) return;
+    final ms = DateTime.now().difference(started).inMilliseconds;
+    if (ms < 400) return;
+    try {
+      final url = await MediaUpload.uploadXFile(
+        file: XFile(path),
+        folder: 'study_voice/${room.id}',
+        firstName: user.firstName,
+        lastName: user.lastName,
+        studentNo: user.studentNo,
+        isVideo: false,
+        isFile: true,
+      );
+      await StudyRoomService.sendVoiceNote(
+        roomId: room.id,
+        sender: user,
+        audioUrl: url,
+        durationMs: ms,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<void> _toggleLiveVoice(StudyRoom room) async {
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+    if (user == null) return;
+    if (_liveVoice.isConnected) {
+      await _liveVoice.disconnect();
+      if (mounted) setState(() {});
+      return;
+    }
+    setState(() => _liveVoiceBusy = true);
+    try {
+      await _liveVoice.connect(
+        studyRoomId: room.id,
+        displayName: user.fullName,
+        micEnabled: !room.isVoiceSelfMuted(user.id),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Canlı ses odasına bağlandın')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().contains('LiveKit yapılandırılmamış')
+                ? 'Canlı ses henüz sunucuda yapılandırılmadı (LiveKit).'
+                : 'Canlı sese bağlanılamadı: $e',
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      if (mounted) setState(() => _liveVoiceBusy = false);
+    }
   }
 }
+
 
 class _TimerPanel extends StatelessWidget {
   const _TimerPanel({
@@ -583,7 +732,7 @@ class _TimerPanel extends StatelessWidget {
             ],
           ),
           Text(
-            '${room.hostName} · ${room.title}',
+            '${room.hostName} ┬╖ ${room.title}',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -592,8 +741,8 @@ class _TimerPanel extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            'Çalışma odası · ${room.participantIds.length} kişi'
-            '${room.pendingIds.isNotEmpty ? ' · ${room.pendingIds.length} bekliyor' : ''}',
+            '├çal─▒┼ƒma odas─▒ ┬╖ ${room.participantIds.length} ki┼ƒi'
+            '${room.pendingIds.isNotEmpty ? ' ┬╖ ${room.pendingIds.length} bekliyor' : ''}',
             style: TextStyle(color: AppColors.cyan.withValues(alpha: 0.9)),
           ),
           const Spacer(),
@@ -616,7 +765,7 @@ class _TimerPanel extends StatelessWidget {
                   ),
                   if (onExtend != null)
                     Text(
-                      'Uzun bas → süre uzat',
+                      'Uzun bas ΓåÆ s├╝re uzat',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.35),
                         fontSize: 11,
@@ -629,7 +778,7 @@ class _TimerPanel extends StatelessWidget {
           const SizedBox(height: 8),
           Center(
             child: Text(
-              joining ? 'Katılınıyor…' : statusLabel,
+              joining ? 'Kat─▒l─▒n─▒yorΓÇª' : statusLabel,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
             ),
           ),
@@ -642,7 +791,7 @@ class _TimerPanel extends StatelessWidget {
                 minimumSize: const Size.fromHeight(44),
               ),
               onPressed: onStart,
-              child: Text('Başlat · ${room.minutes} dk'),
+              child: Text('Ba┼ƒlat ┬╖ ${room.minutes} dk'),
             ),
           if (isHost && room.status == 'active')
             OutlinedButton(
@@ -699,7 +848,7 @@ class _TimerPanel extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: PopupMenuButton<String>(
-                          tooltip: 'Üye işlemleri',
+                          tooltip: '├£ye i┼ƒlemleri',
                           onSelected: (v) {
                             final name =
                                 auth.findUser(uid)?.fullName ?? uid;
@@ -713,7 +862,7 @@ class _TimerPanel extends StatelessWidget {
                               value: 'mute',
                               child: Text(
                                 room.isMuted(uid)
-                                    ? 'Sessizi aç'
+                                    ? 'Sessizi a├º'
                                     : 'Sessize al',
                               ),
                             ),
@@ -756,187 +905,3 @@ class _TimerPanel extends StatelessWidget {
   }
 }
 
-class _ChatPanel extends StatelessWidget {
-  const _ChatPanel({
-    required this.room,
-    required this.chatOpenUi,
-    required this.onToggleUi,
-    required this.controller,
-    required this.sending,
-    required this.onSend,
-    required this.scroll,
-    required this.isHost,
-    required this.userId,
-    required this.muted,
-  });
-
-  final StudyRoom room;
-  final bool chatOpenUi;
-  final VoidCallback onToggleUi;
-  final TextEditingController controller;
-  final bool sending;
-  final VoidCallback onSend;
-  final ScrollController scroll;
-  final bool isHost;
-  final String? userId;
-  final bool muted;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF0C1E33),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-            child: Row(
-              children: [
-                const Icon(Icons.forum_outlined, color: AppColors.cyan, size: 18),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Oda sohbeti',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                if (isHost)
-                  IconButton(
-                    tooltip: room.chatOpen ? 'Chat’i kapat' : 'Chat’i aç',
-                    onPressed: () async {
-                      if (userId == null) return;
-                      await StudyRoomService.setChatOpen(
-                        roomId: room.id,
-                        hostId: userId!,
-                        open: !room.chatOpen,
-                      );
-                    },
-                    icon: Icon(
-                      room.chatOpen
-                          ? Icons.mark_chat_read_outlined
-                          : Icons.mark_chat_unread_outlined,
-                      color: Colors.white70,
-                    ),
-                  ),
-                IconButton(
-                  tooltip: 'Chat’i gizle',
-                  onPressed: onToggleUi,
-                  icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white70),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: Colors.white12),
-          Expanded(
-            child: StreamBuilder<List<StudyChatMessage>>(
-              stream: StudyRoomService.watchMessages(room.id),
-              builder: (context, snap) {
-                final msgs = snap.data ?? const [];
-                if (msgs.isEmpty) {
-                  return Center(
-                    child: Text(
-                      room.chatOpen
-                          ? 'Sohbete başla · @aystechbot sorabilirsin'
-                          : 'Chat kapalı',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.45),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                }
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (scroll.hasClients) {
-                    scroll.jumpTo(scroll.position.maxScrollExtent);
-                  }
-                });
-                return ListView.builder(
-                  controller: scroll,
-                  padding: const EdgeInsets.all(12),
-                  itemCount: msgs.length,
-                  itemBuilder: (context, i) {
-                    final m = msgs[i];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            m.isAi ? 'AYS Guard' : m.senderName,
-                            style: TextStyle(
-                              color: m.isAi
-                                  ? AppColors.cyan
-                                  : Colors.white.withValues(alpha: 0.65),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
-                          Text(
-                            m.text,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-          if (room.chatOpen && room.status != 'ended')
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: controller,
-                      enabled: !muted,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: muted ? 'Sessize alındın' : 'Mesaj…',
-                        hintStyle: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.35),
-                        ),
-                        filled: true,
-                        fillColor: Colors.white.withValues(alpha: 0.08),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                      ),
-                      onSubmitted: muted ? null : (_) => onSend(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: (sending || muted) ? null : onSend,
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppColors.cyan,
-                      foregroundColor: AppColors.navy,
-                    ),
-                    icon: sending
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send_rounded),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}

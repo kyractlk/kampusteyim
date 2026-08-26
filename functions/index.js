@@ -4474,6 +4474,71 @@ exports.maintenanceTick = onSchedule(
 );
 
 /** Çalışma odası chat AI (AYS Guard). */
+
+/** LiveKit JWT — canlı çok kişili ses (çalışma odası). app_secrets/runtime */
+exports.getLiveKitToken = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    }
+    const secrets = await loadSecrets();
+    const apiKey = String(
+      secrets.livekit_api_key || process.env.LIVEKIT_API_KEY || '',
+    ).trim();
+    const apiSecret = String(
+      secrets.livekit_api_secret || process.env.LIVEKIT_API_SECRET || '',
+    ).trim();
+    const livekitUrl = String(
+      secrets.livekit_url || process.env.LIVEKIT_URL || '',
+    ).trim();
+    if (!apiKey || !apiSecret || !livekitUrl) {
+      throw new HttpsError(
+        'failed-precondition',
+        'LiveKit yapılandırılmamış. app_secrets/runtime içine livekit_* yazın.',
+      );
+    }
+    const roomName = String(request.data?.roomName || '').trim();
+    const displayName = String(request.data?.displayName || 'Öğrenci').trim().slice(0, 64);
+    if (!roomName || !/^study_[A-Za-z0-9_\-]{4,80}$/.test(roomName)) {
+      throw new HttpsError('invalid-argument', 'Geçersiz oda adı');
+    }
+    const studyId = roomName.replace(/^study_/, '');
+    const roomSnap = await db.collection('study_rooms').doc(studyId).get();
+    if (!roomSnap.exists) {
+      throw new HttpsError('not-found', 'Çalışma odası yok');
+    }
+    const room = roomSnap.data() || {};
+    const uid = request.auth.uid;
+    const parts = Array.isArray(room.participantIds) ? room.participantIds : [];
+    const kicked = Array.isArray(room.kickedIds) ? room.kickedIds : [];
+    if (kicked.includes(uid)) {
+      throw new HttpsError('permission-denied', 'Çıkarıldın');
+    }
+    if (room.hostId !== uid && !parts.includes(uid)) {
+      throw new HttpsError('permission-denied', 'Üye değilsin');
+    }
+    if (room.status === 'ended') {
+      throw new HttpsError('failed-precondition', 'Oda kapandı');
+    }
+    const { AccessToken } = require('livekit-server-sdk');
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity: uid,
+      name: displayName,
+      ttl: '2h',
+    });
+    at.addGrant({
+      roomJoin: true,
+      room: roomName,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+    const token = await at.toJwt();
+    return { token, url: livekitUrl, roomName };
+  },
+);
+
 exports.studyChatAi = onCall(
   { region: 'europe-west1', timeoutSeconds: 60 },
   async (request) => {

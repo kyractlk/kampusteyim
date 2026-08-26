@@ -33,6 +33,9 @@ async function main() {
     smtp_port: process.env.SMTP_PORT || '465',
     smtp_user: process.env.SMTP_USER || 'info@kampusteyim.app',
     smtp_pass: process.env.SMTP_PASS || '',
+    livekit_url: process.env.LIVEKIT_URL || '',
+    livekit_api_key: process.env.LIVEKIT_API_KEY || '',
+    livekit_api_secret: process.env.LIVEKIT_API_SECRET || '',
     updated_at: new Date().toISOString(),
   };
 

@@ -10,6 +10,7 @@ import '../../core/utils/mention_utils.dart';
 import '../../models/models.dart';
 import '../notifications/notification_models.dart';
 import '../notifications/notification_provider.dart';
+import '../study/music_link_meta.dart';
 
 /// Akış filtresi — Firestore stream canlı kalır; filtre client tarafında uygulanır.
 enum FeedScope {
@@ -575,9 +576,26 @@ class FeedProvider extends ChangeNotifier {
     bool skipReelMirror = false,
     String authorCity = '',
     String authorUniversity = '',
+    Map<String, dynamic>? music,
+    Map<String, dynamic>? location,
+    Map<String, dynamic>? poll,
   }) async {
     final text = content.trim();
-    if (text.isEmpty && media.isEmpty) return 'Boş gönderi';
+    var musicMeta = music;
+    if (musicMeta == null) {
+      final musicUrl = firstMusicUrl(text);
+      if (musicUrl != null) {
+        final resolved = await resolveMusicLink(musicUrl);
+        if (resolved != null) musicMeta = resolved.toMap();
+      }
+    }
+    if (text.isEmpty &&
+        media.isEmpty &&
+        musicMeta == null &&
+        location == null &&
+        poll == null) {
+      return 'Boş gönderi';
+    }
 
     // Yerel Guard — OpenAI kotası olmasa da nefret/şiddet engeli
     final fileNames = media
@@ -602,6 +620,24 @@ class FeedProvider extends ChangeNotifier {
     final uni = authorUniversity.trim().isNotEmpty
         ? authorUniversity.trim()
         : (author?.university ?? '');
+    Map<String, dynamic>? pollMeta;
+    if (poll != null) {
+      final q = '${poll['question'] ?? ''}'.trim();
+      final opts = (poll['options'] as List? ?? const [])
+          .map((e) => '$e'.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (q.isNotEmpty && opts.length >= 2) {
+        pollMeta = {
+          'question': q,
+          'options': opts,
+          'multi': poll['multi'] == true,
+          if (poll['endsAt'] != null) 'endsAt': poll['endsAt'],
+          'votes': <String, dynamic>{},
+          'createdAt': DateTime.now().toIso8601String(),
+        };
+      }
+    }
     final post = Post(
       id: 'p_${DateTime.now().millisecondsSinceEpoch}',
       authorId: authorId,
@@ -614,6 +650,9 @@ class FeedProvider extends ChangeNotifier {
       isCommunity: isCommunity,
       authorCity: city,
       authorUniversity: uni,
+      music: musicMeta,
+      location: location,
+      poll: pollMeta,
     );
 
     // AYS Tech Guard: içerik + link + dosya denetimi
@@ -641,6 +680,14 @@ class FeedProvider extends ChangeNotifier {
           _notifyMentions(
             content: text,
             postId: post.id,
+            actorId: authorId,
+            actorName: authorName,
+            directory: directory,
+          ),
+        );
+        unawaited(
+          _notifyPostExtras(
+            post: post,
             actorId: authorId,
             actorName: authorName,
             directory: directory,
@@ -676,6 +723,14 @@ class FeedProvider extends ChangeNotifier {
         directory: directory,
       ),
     );
+    unawaited(
+      _notifyPostExtras(
+        post: post,
+        actorId: authorId,
+        actorName: authorName,
+        directory: directory,
+      ),
+    );
     if (!skipReelMirror) {
       unawaited(
         _mirrorVideoToReels(
@@ -688,6 +743,63 @@ class FeedProvider extends ChangeNotifier {
       );
     }
     return null;
+  }
+
+  Future<void> _notifyPostExtras({
+    required Post post,
+    required String actorId,
+    required String actorName,
+    required List<AppUser> directory,
+  }) async {
+    String? title;
+    String? body;
+    String emoji = '📣';
+    String type = 'post';
+    if (post.poll != null) {
+      title = 'Yeni oylama';
+      body = '${post.poll!['question'] ?? 'Oylama'}';
+      emoji = '📊';
+      type = 'post_poll';
+    } else if (post.music != null) {
+      title = 'Müzik paylaşıldı';
+      body = '${post.music!['title'] ?? 'Şarkı'}';
+      emoji = '🎵';
+      type = 'post_music';
+    } else if (post.location != null) {
+      title = 'Konum paylaşıldı';
+      body = '${post.location!['label'] ?? 'Konum'}';
+      emoji = '📍';
+      type = 'post_location';
+    } else {
+      return;
+    }
+
+    AppUser? author;
+    for (final u in directory) {
+      if (u.id == actorId) {
+        author = u;
+        break;
+      }
+    }
+    final targets = <String>{...(author?.followers ?? const [])}
+      ..remove(actorId);
+    for (final uid in targets.take(80)) {
+      try {
+        final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('dispatchPush');
+        await callable.call({
+          'toUserId': uid,
+          'title': title,
+          'body': '$actorName: $body',
+          'emoji': emoji,
+          'type': type,
+          'actorId': actorId,
+          'targetId': post.id,
+        });
+      } catch (e) {
+        debugPrint('[feed] extra push: $e');
+      }
+    }
   }
 
   /// Akışa video post → Kampüs Reels’e de düşer.

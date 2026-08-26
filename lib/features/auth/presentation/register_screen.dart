@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 import '../../../core/storage/student_doc_upload.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_widgets.dart';
-import '../../../data/mock/mock_data.dart';
+import '../../../data/campus_catalog.dart';
 import '../../legal/consent_check_row.dart';
 import '../../legal/legal_consent_models.dart';
 import '../data/auth_provider.dart';
@@ -36,8 +36,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _sendingCode = false;
   bool _verifyingCode = false;
 
-  String? _city = MockData.cities.first;
-  String? _university = MockData.universities.first;
+  String? _city;
+  String? _university;
+  String? _faculty;
+  String? _department;
+  CampusCatalog? _catalog;
+  bool _campusLoading = true;
   bool _obscure = true;
   int _step = 0;
   bool _kvkk = false;
@@ -72,6 +76,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void initState() {
     super.initState();
+    CampusCatalog.load().then((c) {
+      if (!mounted) return;
+      setState(() {
+        _catalog = c;
+        _campusLoading = false;
+        _city ??= c.cities.isNotEmpty ? c.cities.first : null;
+        final unis = c.universitiesForCity(_city);
+        _university ??= unis.isNotEmpty ? unis.first : null;
+      });
+    });
     LegalConsentTexts.load().then((t) {
       if (mounted) setState(() => _legal = t);
     });
@@ -187,6 +201,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       phone: _phone.text,
       city: _city ?? '',
       university: _university ?? '',
+      faculty: _faculty ?? '',
+      department: _department ?? '',
       username: _username.text,
       emailTicket: _emailTicket!,
       kvkkAccepted: _kvkk,
@@ -602,31 +618,131 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              // ignore: deprecated_member_use
-              value: _city,
-              decoration: const InputDecoration(
-                labelText: 'İl',
-                prefixIcon: Icon(Icons.location_city_outlined),
+            if (_campusLoading || _catalog == null)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else ...[
+              DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
+                value: _city,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'İl',
+                  prefixIcon: Icon(Icons.location_city_outlined),
+                ),
+                items: _catalog!.cities
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) {
+                  final unis = _catalog!.universitiesForCity(v);
+                  setState(() {
+                    _city = v;
+                    _university = unis.isNotEmpty ? unis.first : null;
+                    _faculty = null;
+                    _department = null;
+                  });
+                },
               ),
-              items: MockData.cities
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                  .toList(),
-              onChanged: (v) => setState(() => _city = v),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              // ignore: deprecated_member_use
-              value: _university,
-              decoration: const InputDecoration(
-                labelText: 'Üniversite',
-                prefixIcon: Icon(Icons.school_outlined),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
+                value: _university,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Üniversite',
+                  prefixIcon: Icon(Icons.school_outlined),
+                ),
+                items: _catalog!
+                    .universitiesForCity(_city)
+                    .map(
+                      (u) => DropdownMenuItem(
+                        value: u,
+                        child: Text(u, overflow: TextOverflow.ellipsis),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) {
+                  final facs = _catalog!.facultiesFor(v);
+                  setState(() {
+                    _university = v;
+                    _faculty = facs.isNotEmpty ? facs.first.name : null;
+                    final deps = _catalog!.departmentsFor(
+                      universityName: v,
+                      facultyName: _faculty,
+                    );
+                    _department = deps.isNotEmpty ? deps.first : null;
+                  });
+                },
               ),
-              items: MockData.universities
-                  .map((u) => DropdownMenuItem(value: u, child: Text(u)))
-                  .toList(),
-              onChanged: (v) => setState(() => _university = v),
-            ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
+                value: _faculty ?? '',
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Fakülte / birim',
+                  prefixIcon: Icon(Icons.apartment_outlined),
+                ),
+                items: [
+                  const DropdownMenuItem(
+                    value: '',
+                    child: Text('Seçilmedi (opsiyonel)'),
+                  ),
+                  ..._catalog!.facultiesFor(_university).map(
+                        (f) => DropdownMenuItem(
+                          value: f.name,
+                          child: Text(
+                            f.name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                ],
+                onChanged: (v) {
+                  final fac = (v == null || v.isEmpty) ? null : v;
+                  final deps = _catalog!.departmentsFor(
+                    universityName: _university,
+                    facultyName: fac,
+                  );
+                  setState(() {
+                    _faculty = fac;
+                    _department = deps.isNotEmpty ? deps.first : null;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
+                value: _department ?? '',
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Bölüm / program',
+                  prefixIcon: Icon(Icons.menu_book_outlined),
+                ),
+                items: [
+                  const DropdownMenuItem(
+                    value: '',
+                    child: Text('Seçilmedi (opsiyonel)'),
+                  ),
+                  ..._catalog!
+                      .departmentsFor(
+                        universityName: _university,
+                        facultyName: _faculty,
+                      )
+                      .map(
+                        (d) => DropdownMenuItem(
+                          value: d,
+                          child: Text(d, overflow: TextOverflow.ellipsis),
+                        ),
+                      ),
+                ],
+                onChanged: (v) => setState(
+                  () => _department = (v == null || v.isEmpty) ? null : v,
+                ),
+              ),
+            ],
           ],
         );
       case 'docs':

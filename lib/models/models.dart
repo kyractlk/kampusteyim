@@ -119,6 +119,8 @@ class AppUser {
     required this.phone,
     required this.city,
     required this.university,
+    this.faculty = '',
+    this.department = '',
     this.bio = '',
     this.photoUrl,
     this.links = const [],
@@ -183,6 +185,8 @@ class AppUser {
   final String phone;
   final String city;
   final String university;
+  final String faculty;
+  final String department;
   final String bio;
   final String? photoUrl;
   final List<ProfileLink> links;
@@ -428,6 +432,8 @@ class AppUser {
     String? firstName,
     String? lastName,
     String? phone,
+    String? faculty,
+    String? department,
     bool? isCommunity,
     UserRole? role,
     String? communityLogoUrl,
@@ -494,6 +500,8 @@ class AppUser {
       phone: phone ?? this.phone,
       city: city,
       university: university,
+      faculty: faculty ?? this.faculty,
+      department: department ?? this.department,
       bio: bio ?? this.bio,
       photoUrl: clearPhoto ? null : (photoUrl ?? this.photoUrl),
       links: links ?? this.links,
@@ -728,6 +736,9 @@ class Post {
     this.hiddenFromFeed = false,
     this.authorCity = '',
     this.authorUniversity = '',
+    this.music,
+    this.location,
+    this.poll,
   });
 
   final String id;
@@ -764,6 +775,15 @@ class Post {
   final String authorCity;
   final String authorUniversity;
 
+  /// Spotify / Apple Music meta (kapak + play).
+  final Map<String, dynamic>? music;
+
+  /// Konum paylaşımı.
+  final Map<String, dynamic>? location;
+
+  /// Tek/çok seçimli · süreli/süresiz oylama.
+  final Map<String, dynamic>? poll;
+
   bool get isStudyRoomInvite {
     if (studyRoomId != null && studyRoomId!.trim().isNotEmpty) return true;
     return content.contains('Çalışma odası açıldı');
@@ -795,6 +815,9 @@ class Post {
     bool? hiddenFromFeed,
     String? authorCity,
     String? authorUniversity,
+    Map<String, dynamic>? music,
+    Map<String, dynamic>? location,
+    Map<String, dynamic>? poll,
     bool clearDeleted = false,
   }) {
     return Post(
@@ -827,6 +850,9 @@ class Post {
       hiddenFromFeed: hiddenFromFeed ?? this.hiddenFromFeed,
       authorCity: authorCity ?? this.authorCity,
       authorUniversity: authorUniversity ?? this.authorUniversity,
+      music: music ?? this.music,
+      location: location ?? this.location,
+      poll: poll ?? this.poll,
     );
   }
 
@@ -856,6 +882,9 @@ class Post {
     'hiddenFromFeed': hiddenFromFeed,
     'authorCity': authorCity,
     'authorUniversity': authorUniversity,
+    if (music != null) 'music': music,
+    if (location != null) 'location': location,
+    if (poll != null) 'poll': poll,
     'media': media
         .map(
           (m) => {
@@ -949,6 +978,15 @@ class Post {
       hiddenFromFeed: m['hiddenFromFeed'] == true,
       authorCity: '${m['authorCity'] ?? ''}',
       authorUniversity: '${m['authorUniversity'] ?? ''}',
+      music: m['music'] is Map
+          ? Map<String, dynamic>.from(m['music'] as Map)
+          : null,
+      location: m['location'] is Map
+          ? Map<String, dynamic>.from(m['location'] as Map)
+          : null,
+      poll: m['poll'] is Map
+          ? Map<String, dynamic>.from(m['poll'] as Map)
+          : null,
     );
   }
 }

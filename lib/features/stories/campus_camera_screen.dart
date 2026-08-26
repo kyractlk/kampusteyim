@@ -16,9 +16,11 @@ import '../../core/utils/mention_utils.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
+import '../feed/feed_provider.dart';
 import '../reels/reels_provider.dart';
 import 'camera_mirror.dart';
 import 'stories_provider.dart';
+import 'story_overlay.dart';
 
 enum CampusShareMode { story, reels, choose }
 
@@ -145,6 +147,7 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
   XFile? _captured;
   bool _isVideo = false;
   final _captionCtrl = TextEditingController();
+  final List<StoryOverlay> _storyOverlays = [];
 
   CampusShareMode get _mode {
     if (widget.mode != CampusShareMode.choose) return widget.mode;
@@ -381,8 +384,145 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
       _captured = null;
       _isVideo = false;
       _captionCtrl.clear();
+      _storyOverlays.clear();
     });
     await _initCamera();
+  }
+
+  Future<void> _addStoryText() async {
+    final ctrl = TextEditingController();
+    var font = 'bold';
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Yazı ekle'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: ctrl, autofocus: true, maxLines: 3),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                children: [
+                  for (final f in [
+                    ('bold', 'Kalın'),
+                    ('serif', 'Serif'),
+                    ('handwritten', 'El yazısı'),
+                    ('outline', 'Kontur'),
+                  ])
+                    ChoiceChip(
+                      label: Text(f.$2),
+                      selected: font == f.$1,
+                      onSelected: (_) => setLocal(() => font = f.$1),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Ekle'),
+            ),
+          ],
+        ),
+      ),
+    );
+    ctrl.dispose();
+    if (text == null || text.isEmpty) return;
+    setState(() {
+      _storyOverlays.add(
+        StoryOverlay(
+          id: 't_${DateTime.now().millisecondsSinceEpoch}',
+          type: 'text',
+          x: 0.5,
+          y: 0.35 + (_storyOverlays.length * 0.08),
+          text: text,
+          fontStyle: font,
+        ),
+      );
+    });
+  }
+
+  Future<void> _addStoryLocation() async {
+    final ctrl = TextEditingController();
+    final label = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Konum ekle'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(hintText: 'Kampüs / yer'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Ekle'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (label == null || label.isEmpty) return;
+    setState(() {
+      _storyOverlays.add(
+        StoryOverlay(
+          id: 'l_${DateTime.now().millisecondsSinceEpoch}',
+          type: 'location',
+          x: 0.5,
+          y: 0.75,
+          locationLabel: label,
+        ),
+      );
+    });
+  }
+
+  Future<void> _addStoryPostSticker() async {
+    final feed = context.read<FeedProvider>();
+    final posts = feed.posts.take(20).toList();
+    if (posts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Eklenecek gönderi yok')),
+      );
+      return;
+    }
+    final picked = await showModalBottomSheet<Post>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => ListView.builder(
+        itemCount: posts.length,
+        itemBuilder: (ctx, i) {
+          final p = posts[i];
+          return ListTile(
+            title: Text(p.authorName, style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text(p.content, maxLines: 2, overflow: TextOverflow.ellipsis),
+            onTap: () => Navigator.pop(ctx, p),
+          );
+        },
+      ),
+    );
+    if (picked == null) return;
+    setState(() {
+      _storyOverlays.add(
+        StoryOverlay(
+          id: 'p_${DateTime.now().millisecondsSinceEpoch}',
+          type: 'post',
+          x: 0.5,
+          y: 0.55,
+          postId: picked.id,
+          postPreview: picked.content,
+        ),
+      );
+    });
   }
 
   Future<void> _publish({required bool asReel}) async {
@@ -420,6 +560,7 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
             file: file,
             isVideo: _isVideo,
             onProgress: onProg,
+            overlays: _storyOverlays.map((e) => e.toMap()).toList(),
           );
     }
     if (!mounted) return;
@@ -479,7 +620,62 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
         fit: StackFit.expand,
         children: [
           if (hasFile)
-            _CapturedPreview(file: _captured!, isVideo: _isVideo)
+            Stack(
+              fit: StackFit.expand,
+              children: [
+                _CapturedPreview(file: _captured!, isVideo: _isVideo),
+                if (_mode != CampusShareMode.reels)
+                  StoryOverlayLayer(
+                    overlays: _storyOverlays,
+                    interactive: true,
+                    onMove: (id, x, y) {
+                      final i = _storyOverlays.indexWhere((e) => e.id == id);
+                      if (i < 0) return;
+                      setState(() {
+                        final o = _storyOverlays[i];
+                        _storyOverlays[i] = StoryOverlay(
+                          id: o.id,
+                          type: o.type,
+                          x: x,
+                          y: y,
+                          scale: o.scale,
+                          rotation: o.rotation,
+                          text: o.text,
+                          fontStyle: o.fontStyle,
+                          colorHex: o.colorHex,
+                          postId: o.postId,
+                          postPreview: o.postPreview,
+                          locationLabel: o.locationLabel,
+                        );
+                      });
+                    },
+                  ),
+                if (_mode != CampusShareMode.reels)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    top: MediaQuery.paddingOf(context).top + 56,
+                    child: Row(
+                      children: [
+                        _StoryToolBtn(
+                          icon: Icons.text_fields_rounded,
+                          onTap: _addStoryText,
+                        ),
+                        const SizedBox(width: 8),
+                        _StoryToolBtn(
+                          icon: Icons.place_outlined,
+                          onTap: _addStoryLocation,
+                        ),
+                        const SizedBox(width: 8),
+                        _StoryToolBtn(
+                          icon: Icons.sticky_note_2_outlined,
+                          onTap: _addStoryPostSticker,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            )
           else if (_ready && _cam != null && _cam!.value.isInitialized)
             _CameraPreviewFill(controller: _cam!)
           else
@@ -1279,6 +1475,24 @@ class _CaptionQuickChip extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StoryToolBtn extends StatelessWidget {
+  const _StoryToolBtn({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black54,
+      shape: const CircleBorder(),
+      child: IconButton(
+        onPressed: onTap,
+        icon: Icon(icon, color: Colors.white),
       ),
     );
   }
