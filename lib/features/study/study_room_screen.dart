@@ -4,24 +4,19 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:record/record.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import '../../core/storage/media_upload.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/app_nav.dart';
-import '../../core/utils/auth_gate.dart';
 import '../auth/data/auth_provider.dart';
 import '../moderation/moderation_models.dart';
 import '../moderation/report_sheet.dart';
-import 'room_side_panel.dart';
 import 'livekit_voice_session.dart';
+import 'room_side_panel.dart';
 import 'study_models.dart';
 
-/// Paylaşımlı çalışma odası: senkron sayaç + açılır oda paneli + LiveKit ses.
+/// Paylaşımlı çalışma odası: senkron sayaç + canlı ses (LiveKit) veya sessiz.
 class StudyRoomScreen extends StatefulWidget {
   const StudyRoomScreen({super.key, required this.roomId});
 
@@ -32,22 +27,16 @@ class StudyRoomScreen extends StatefulWidget {
 }
 
 class _StudyRoomScreenState extends State<StudyRoomScreen> {
-  final _chatCtrl = TextEditingController();
   final _player = AudioPlayer();
-  final _scroll = ScrollController();
 
-  bool _chatOpenUi = false;
+  bool _panelOpen = false;
   bool _joining = false;
-  bool _sending = false;
   bool _playedEnd = false;
   bool _warned5min = false;
   bool _intentionalLeave = false;
   bool _isHostSession = false;
-  bool _recording = false;
   String? _sessionUserId;
   Timer? _uiTick;
-  final _recorder = AudioRecorder();
-  DateTime? _recordStarted;
   final _liveVoice = LiveKitVoiceSession();
   bool _liveVoiceBusy = false;
 
@@ -71,10 +60,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   @override
   void dispose() {
     _uiTick?.cancel();
-    _chatCtrl.dispose();
     _player.dispose();
-    _scroll.dispose();
-    unawaited(_recorder.dispose());
     unawaited(_liveVoice.disconnect());
     if (!_intentionalLeave && _isHostSession && _sessionUserId != null) {
       unawaited(
@@ -84,7 +70,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     if (!kIsWeb) {
       unawaited(WakelockPlus.disable());
       SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
     super.dispose();
   }
@@ -97,8 +83,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     setState(() => _joining = true);
     try {
       final room = await StudyRoomService.get(widget.roomId);
-      if (room == null) throw StateError('Oda bulunamadÄ±');
-      if (room.isKicked(user.id)) throw StateError('Bu odadan Ã§Ä±karÄ±ldÄ±n');
+      if (room == null) throw StateError('Oda bulunamadı');
+      if (room.isKicked(user.id)) throw StateError('Bu odadan çıkarıldın');
       if (!room.isMember(user.id) && !room.isPending(user.id)) {
         await StudyRoomService.join(widget.roomId, user);
       }
@@ -138,9 +124,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       context: context,
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
-        title: const Text('5 dakika kaldÄ±'),
+        title: const Text('5 dakika kaldı'),
         content: const Text(
-          'Odak seansÄ± bitmek Ã¼zere. Ä°stersen sÃ¼reye uzun basarak uzatabilirsin.',
+          'Odak seansı bitmek üzere. İstersen süreye uzun basarak uzatabilirsin.',
         ),
         actions: [
           TextButton(
@@ -157,20 +143,20 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final mins = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('SÃ¼reyi uzat'),
+        title: const Text('Süreyi uzat'),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
           autofocus: true,
           decoration: const InputDecoration(
-            labelText: 'KaÃ§ dakika eklensin?',
+            labelText: 'Kaç dakika eklensin?',
             hintText: '5',
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('VazgeÃ§'),
+            child: const Text('Vazgeç'),
           ),
           FilledButton(
             onPressed: () {
@@ -205,10 +191,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Odadan Ã§Ä±k'),
+        title: const Text('Odadan çık'),
         content: const Text(
-          'Odak seansÄ±ndan ayrÄ±lmak istiyor musun?\n\n'
-          'Oturum sahibiysen 1 saat iÃ§inde geri dÃ¶nmezsen oda otomatik kapanÄ±r.',
+          'Odak seansından ayrılmak istiyor musun?\n\n'
+          'Oturum sahibiysen 1 saat içinde geri dönmezsen oda otomatik kapanır.',
         ),
         actions: [
           TextButton(
@@ -217,7 +203,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ã‡Ä±k'),
+            child: const Text('Çık'),
           ),
         ],
       ),
@@ -237,37 +223,6 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       }
     }
     if (mounted) AppNav.back(context);
-  }
-
-  Future<void> _send(StudyRoom room) async {
-    final auth = context.read<AuthProvider>();
-    final user = auth.user;
-    if (user == null) {
-      AuthGate.requireAuth(context, message: 'Chat iÃ§in giriÅŸ yap.');
-      return;
-    }
-    if (room.isMuted(user.id)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sessize alÄ±ndÄ±n â€” mesaj gÃ¶nderemezsin.')),
-      );
-      return;
-    }
-    final text = _chatCtrl.text.trim();
-    if (text.isEmpty || _sending) return;
-    setState(() => _sending = true);
-    try {
-      await StudyRoomService.sendMessage(
-        roomId: widget.roomId,
-        sender: user,
-        text: text,
-      );
-      _chatCtrl.clear();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
   }
 
   @override
@@ -300,7 +255,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
-                      'Bu odadan Ã§Ä±karÄ±ldÄ±n',
+                      'Bu odadan çıkarıldın',
                       style: TextStyle(color: Colors.white, fontSize: 18),
                     ),
                     const SizedBox(height: 12),
@@ -324,7 +279,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           if (room.status == 'active') {
             display = room.remaining ?? Duration.zero;
             statusLabel =
-                display == Duration.zero ? 'SÃ¼re doldu' : 'Ã‡alÄ±ÅŸÄ±yorsunuz';
+                display == Duration.zero ? 'Süre doldu' : 'Çalışıyorsunuz';
             if (display == Duration.zero) {
               unawaited(_playEnd());
             } else {
@@ -335,7 +290,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             statusLabel = 'Oturum bitti';
           } else {
             display = Duration(minutes: room.minutes);
-            statusLabel = isPending ? 'Onay bekleniyorâ€¦' : 'HazÄ±r';
+            statusLabel = isPending ? 'Onay bekleniyor…' : 'Hazır';
           }
 
           if (isPending && !isHost) {
@@ -351,7 +306,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         const CircularProgressIndicator(color: AppColors.cyan),
                         const SizedBox(height: 20),
                         const Text(
-                          'KatÄ±lma isteÄŸin gÃ¶nderildi',
+                          'Katılma isteğin gönderildi',
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w800,
@@ -361,7 +316,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '${room.hostName} onaylayÄ±nca odaya gireceksin.',
+                          '${room.hostName} onaylayınca odaya gireceksin.',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.65),
                           ),
@@ -370,7 +325,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         const SizedBox(height: 20),
                         TextButton(
                           onPressed: () => AppNav.back(context),
-                          child: const Text('Geri dÃ¶n'),
+                          child: const Text('Geri dön'),
                         ),
                       ],
                     ),
@@ -386,7 +341,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               body: Center(
                 child: FilledButton(
                   onPressed: _ensureJoined,
-                  child: const Text('KatÄ±lma isteÄŸi gÃ¶nder'),
+                  child: const Text('Katılma isteği gönder'),
                 ),
               ),
             );
@@ -394,20 +349,12 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 
           final chatPanel = RoomSidePanel(
             room: room,
-            onClose: () => setState(() => _chatOpenUi = false),
-            controller: _chatCtrl,
-            sending: _sending,
-            recording: _recording,
-            onSend: () => _send(room),
-            onStartVoice: () => _startVoice(room),
-            onStopVoice: () => _stopVoice(room),
+            onClose: () => setState(() => _panelOpen = false),
             onToggleLiveVoice: () => _toggleLiveVoice(room),
             liveVoiceConnected: _liveVoice.isConnected,
             liveVoiceBusy: _liveVoiceBusy,
-            scroll: _scroll,
             isHost: isHost,
             userId: user?.id,
-            muted: user != null && room.isMuted(user.id),
             selfVoiceMuted:
                 user != null && room.isVoiceSelfMuted(user.id),
             onToggleSelfMute: () async {
@@ -503,17 +450,17 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                 child: Stack(
                   children: [
                     Positioned.fill(child: timerPanel),
-                    // AÃ§Ä±lÄ±r oda paneli â€” dar sÃ¼tun yerine overlay.
+                    // Açılır oda paneli — dar sütun yerine overlay.
                     AnimatedPositioned(
                       duration: const Duration(milliseconds: 260),
                       curve: Curves.easeOutCubic,
                       top: 8,
                       bottom: 8,
-                      right: _chatOpenUi ? 8 : -_panelWidth - 20,
+                      right: _panelOpen ? 8 : -_panelWidth - 20,
                       width: _panelWidth,
                       child: chatPanel,
                     ),
-                    if (!_chatOpenUi)
+                    if (!_panelOpen)
                       Positioned(
                         right: 12,
                         bottom: 16,
@@ -522,20 +469,14 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                           backgroundColor: AppColors.cyan,
                           foregroundColor: AppColors.navy,
                           onPressed: () =>
-                              setState(() => _chatOpenUi = true),
+                              setState(() => _panelOpen = true),
                           icon: Icon(
                             room.isSilent
                                 ? Icons.hearing_disabled_rounded
-                                : room.roomMode == 'voice'
-                                    ? Icons.mic_rounded
-                                    : Icons.forum_rounded,
+                                : Icons.mic_rounded,
                           ),
                           label: Text(
-                            room.isSilent
-                                ? 'Oda'
-                                : room.roomMode == 'voice'
-                                    ? 'Ses & oda'
-                                    : 'Sohbet',
+                            room.isSilent ? 'Oda' : 'Ses',
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ),
@@ -554,76 +495,6 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final w = MediaQuery.sizeOf(context).width;
     if (w >= 900) return 380;
     return (w * 0.48).clamp(280.0, 360.0);
-  }
-
-  Future<void> _startVoice(StudyRoom room) async {
-    final auth = context.read<AuthProvider>();
-    final user = auth.user;
-    if (user == null || room.isMuted(user.id) || room.isSilent) return;
-    if (room.isVoiceSelfMuted(user.id)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ã–nce mikronu aÃ§')),
-      );
-      return;
-    }
-    if (kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ses kaydÄ± mobil uygulamada')),
-      );
-      return;
-    }
-    final ok = await _recorder.hasPermission();
-    if (!ok) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mikrofon izni gerekli')),
-      );
-      return;
-    }
-    final dir = await getTemporaryDirectory();
-    final path =
-        '${dir.path}/study_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.aacLc),
-      path: path,
-    );
-    _recordStarted = DateTime.now();
-    setState(() => _recording = true);
-  }
-
-  Future<void> _stopVoice(StudyRoom room) async {
-    final auth = context.read<AuthProvider>();
-    final user = auth.user;
-    if (!_recording || user == null) return;
-    final path = await _recorder.stop();
-    final started = _recordStarted;
-    setState(() {
-      _recording = false;
-      _recordStarted = null;
-    });
-    if (path == null || path.isEmpty || started == null) return;
-    final ms = DateTime.now().difference(started).inMilliseconds;
-    if (ms < 400) return;
-    try {
-      final url = await MediaUpload.uploadXFile(
-        file: XFile(path),
-        folder: 'study_voice/${room.id}',
-        firstName: user.firstName,
-        lastName: user.lastName,
-        studentNo: user.studentNo,
-        isVideo: false,
-        isFile: true,
-      );
-      await StudyRoomService.sendVoiceNote(
-        roomId: room.id,
-        sender: user,
-        audioUrl: url,
-        durationMs: ms,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    }
   }
 
   Future<void> _toggleLiveVoice(StudyRoom room) async {
@@ -732,7 +603,7 @@ class _TimerPanel extends StatelessWidget {
             ],
           ),
           Text(
-            '${room.hostName} ┬╖ ${room.title}',
+            '${room.hostName} · ${room.title}',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -741,8 +612,8 @@ class _TimerPanel extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            '├çal─▒┼ƒma odas─▒ ┬╖ ${room.participantIds.length} ki┼ƒi'
-            '${room.pendingIds.isNotEmpty ? ' ┬╖ ${room.pendingIds.length} bekliyor' : ''}',
+            'çalışma odası · ${room.participantIds.length} kişi'
+            '${room.pendingIds.isNotEmpty ? ' · ${room.pendingIds.length} bekliyor' : ''}',
             style: TextStyle(color: AppColors.cyan.withValues(alpha: 0.9)),
           ),
           const Spacer(),
@@ -765,7 +636,7 @@ class _TimerPanel extends StatelessWidget {
                   ),
                   if (onExtend != null)
                     Text(
-                      'Uzun bas ΓåÆ s├╝re uzat',
+                      'Uzun bas → süre uzat',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.35),
                         fontSize: 11,
@@ -778,7 +649,7 @@ class _TimerPanel extends StatelessWidget {
           const SizedBox(height: 8),
           Center(
             child: Text(
-              joining ? 'Kat─▒l─▒n─▒yorΓÇª' : statusLabel,
+              joining ? 'Katılınıyor…' : statusLabel,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
             ),
           ),
@@ -791,7 +662,7 @@ class _TimerPanel extends StatelessWidget {
                 minimumSize: const Size.fromHeight(44),
               ),
               onPressed: onStart,
-              child: Text('Ba┼ƒlat ┬╖ ${room.minutes} dk'),
+              child: Text('Başlat · ${room.minutes} dk'),
             ),
           if (isHost && room.status == 'active')
             OutlinedButton(
@@ -848,7 +719,7 @@ class _TimerPanel extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: PopupMenuButton<String>(
-                          tooltip: '├£ye i┼ƒlemleri',
+                          tooltip: 'Üye işlemleri',
                           onSelected: (v) {
                             final name =
                                 auth.findUser(uid)?.fullName ?? uid;
@@ -862,7 +733,7 @@ class _TimerPanel extends StatelessWidget {
                               value: 'mute',
                               child: Text(
                                 room.isMuted(uid)
-                                    ? 'Sessizi a├º'
+                                    ? 'Sessizi aç'
                                     : 'Sessize al',
                               ),
                             ),

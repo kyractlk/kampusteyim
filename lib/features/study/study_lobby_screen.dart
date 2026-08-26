@@ -172,7 +172,6 @@ class _StudyLobbyScreenState extends State<StudyLobbyScreen> {
             children: [
               for (final e in [
                 ('voice', 'Sesli', Icons.mic_rounded),
-                ('text', 'Yazılı', Icons.forum_rounded),
                 ('silent', 'Sessiz', Icons.hearing_disabled_rounded),
               ])
                 ChoiceChip(
@@ -195,10 +194,8 @@ class _StudyLobbyScreenState extends State<StudyLobbyScreen> {
           const SizedBox(height: 6),
           Text(
             _roomMode == 'voice'
-                ? 'Bas-konuş ses kayıtları odada saklanır; Spotify/Apple linki, konum, oylama.'
-                : _roomMode == 'silent'
-                    ? 'Sohbet ve ses kapalı — sadece odak sayacı.'
-                    : 'Klasik yazılı sohbet + zengin paylaşımlar.',
+                ? 'Canlı çok kişili ses (LiveKit). Yazılı sohbet yok.'
+                : 'Sessiz odak — mikrofon kapalı, sadece sayaç.',
             style: const TextStyle(
               color: AppColors.textSecondary,
               fontSize: 12.5,

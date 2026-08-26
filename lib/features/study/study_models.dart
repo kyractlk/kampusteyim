@@ -554,7 +554,7 @@ class StudyRoomService {
     required String hostId,
     required String mode,
   }) async {
-    final m = ['voice', 'text', 'silent'].contains(mode) ? mode : 'voice';
+    final m = ['voice', 'silent'].contains(mode) ? mode : 'voice';
     final snap = await _db.collection('study_rooms').doc(roomId).get();
     if (!snap.exists) return;
     final room = StudyRoom.fromMap(snap.id, snap.data()!);
@@ -568,9 +568,7 @@ class StudyRoomService {
       'senderName': 'Sistem',
       'text': m == 'silent'
           ? 'Oda sessiz moda alındı'
-          : m == 'voice'
-              ? 'Sesli oda aktif · bas-konuş kayıtları tutulur'
-              : 'Yazılı sohbet aktif',
+          : 'Sesli oda aktif · canlı çok kişili ses',
       'type': 'system',
       'createdAt': DateTime.now().toIso8601String(),
       'isAi': false,

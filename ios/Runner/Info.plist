@@ -79,7 +79,11 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>KampüsteyimAPP öğrenci belgesi, medya ve hikâye paylaşımı için fotoğraf kütüphanene erişir.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>KampüsteyimAPP video hikâye ve medya kaydı için mikrofona erişir.</string>
+	<string>KampüsteyimAPP canlı sesli odak odası ve medya kaydı için mikrofona erişir.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>KampüsteyimAPP gönderilerde canlı konum paylaşımı için konumuna erişir.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>KampüsteyimAPP gönderilerde canlı konum paylaşımı için konumuna erişir.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

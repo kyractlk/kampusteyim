@@ -40,6 +40,7 @@ import '../stories/story_ring_bar.dart';
 import '../study/music_link_meta.dart';
 import '../study/study_models.dart';
 import 'feed_provider.dart';
+import 'location_picker_sheet.dart';
 import 'post_rich_widgets.dart';
 import 'suggested_people_rail.dart';
 
@@ -559,60 +560,18 @@ class _ComposerCardState extends State<_ComposerCard> {
     if (f != null) setState(() => _docFile = f);
   }
 
-  Future<void> _attachMusic() async {
-    if (!widget.enabled) {
-      widget.onTapLocked();
+  Future<void> _detectMusicFromText(String text) async {
+    final url = firstMusicUrl(text);
+    if (url == null) {
+      if (_music != null) setState(() => _music = null);
       return;
     }
-    final ctrl = TextEditingController(text: _controller.text);
-    final url = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Spotify / Apple Music'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Şarkı linkini yapıştır',
-            prefixIcon: Icon(Icons.music_note_rounded),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('Ekle'),
-          ),
-        ],
-      ),
-    );
-    if (url == null || url.isEmpty) return;
-    final musicUrl = firstMusicUrl(url) ?? (isMusicUrl(url) ? url : null);
-    if (musicUrl == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Geçerli Spotify veya Apple Music linki gir')),
-        );
-      }
-      return;
-    }
-    setState(() => _busy = true);
+    if (_music != null && _music!.url == url) return;
     try {
-      final meta = await resolveMusicLink(musicUrl);
+      final meta = await resolveMusicLink(url);
       if (!mounted) return;
-      if (meta == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Şarkı bilgisi alınamadı')),
-        );
-        return;
-      }
-      setState(() => _music = meta);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+      if (meta != null) setState(() => _music = meta);
+    } catch (_) {}
   }
 
   Future<void> _attachLocation() async {
@@ -620,41 +579,9 @@ class _ComposerCardState extends State<_ComposerCard> {
       widget.onTapLocked();
       return;
     }
-    final labelCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Konum paylaş'),
-        content: TextField(
-          controller: labelCtrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Yer adı / kampüs noktası',
-            hintText: 'Örn. Merkez Kütüphane',
-            prefixIcon: Icon(Icons.place_outlined),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ekle'),
-          ),
-        ],
-      ),
-    );
-    final label = labelCtrl.text.trim();
-    if (ok != true || label.isEmpty) return;
-    setState(() {
-      _location = {
-        'label': label,
-        'mapsUrl':
-            'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(label)}',
-      };
-    });
+    final picked = await showLocationPickerSheet(context);
+    if (picked == null || !mounted) return;
+    setState(() => _location = picked);
   }
 
   Future<void> _attachPoll() async {
@@ -895,7 +822,10 @@ class _ComposerCardState extends State<_ComposerCard> {
                 enabled: widget.enabled && !_busy,
                 maxLines: 3,
                 minLines: 2,
-                onChanged: (_) => setState(() {}),
+                onChanged: (v) {
+                  setState(() {});
+                  unawaited(_detectMusicFromText(v));
+                },
                 onTapOutside: (_) {
                   // Mention listesine tıklarken kapatma.
                   if (_pickingMention ||
@@ -908,7 +838,7 @@ class _ComposerCardState extends State<_ComposerCard> {
                 onEditingComplete: _dismissCompose,
                 decoration: InputDecoration(
                   hintText: widget.enabled
-                      ? 'Kampüste neler oluyor? @etiket · #hashtag'
+                      ? 'Kampüste neler oluyor?  ·  @etiket  ·  #hashtag'
                       : widget.lockMessage,
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
@@ -1035,76 +965,102 @@ class _ComposerCardState extends State<_ComposerCard> {
                 ),
               Row(
                 children: [
-                  IconButton(
-                    tooltip: 'Fotoğraf (max 75 MB)',
-                    onPressed: _busy ? null : _pickImage,
-                    icon: Icon(
-                      Icons.image_outlined,
-                      color: _imageFile != null
-                          ? AppColors.cyan
-                          : AppColors.textSecondary,
+                  PopupMenuButton<String>(
+                    tooltip: 'Ekle',
+                    enabled: !_busy,
+                    onSelected: (v) {
+                      switch (v) {
+                        case 'image':
+                          _pickImage();
+                        case 'video':
+                          _pickVideo();
+                        case 'doc':
+                          _pickDoc();
+                        case 'location':
+                          _attachLocation();
+                        case 'poll':
+                          _attachPoll();
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'image',
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.image_outlined),
+                          title: Text('Fotoğraf'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'video',
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.videocam_outlined),
+                          title: Text('Video'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'doc',
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.attach_file_rounded),
+                          title: Text('Dosya (Plus)'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'location',
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.place_outlined),
+                          title: Text('Konum / harita'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'poll',
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.poll_outlined),
+                          title: Text('Oylama'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                      child: Icon(
+                        Icons.attach_file_rounded,
+                        color: (_imageFile != null ||
+                                _videoFile != null ||
+                                _docFile != null ||
+                                _location != null ||
+                                _poll != null ||
+                                _music != null)
+                            ? AppColors.navy
+                            : AppColors.textSecondary,
+                      ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Video (max 45 sn)',
-                    onPressed: _busy ? null : _pickVideo,
-                    icon: Icon(
-                      Icons.videocam_outlined,
-                      color: _videoFile != null
-                          ? AppColors.lime
-                          : AppColors.textSecondary,
+                  if (_music != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Icon(Icons.music_note_rounded, color: AppColors.cyan, size: 20),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: 'Dosya / ders notu (Plus)',
-                    onPressed: _busy ? null : _pickDoc,
-                    icon: Icon(
-                      Icons.attach_file_rounded,
-                      color: _docFile != null
-                          ? AppColors.navy
-                          : AppColors.textSecondary,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Spotify / Apple Music',
-                    onPressed: _busy ? null : _attachMusic,
-                    icon: Icon(
-                      Icons.library_music_outlined,
-                      color: _music != null
-                          ? AppColors.cyan
-                          : AppColors.textSecondary,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Konum',
-                    onPressed: _busy ? null : _attachLocation,
-                    icon: Icon(
-                      Icons.place_outlined,
-                      color: _location != null
-                          ? AppColors.crimson
-                          : AppColors.textSecondary,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Oylama',
-                    onPressed: _busy ? null : _attachPoll,
-                    icon: Icon(
-                      Icons.poll_outlined,
-                      color: _poll != null
-                          ? AppColors.navy
-                          : AppColors.textSecondary,
-                    ),
-                  ),
                   const Spacer(),
                   FilledButton(
                     style: liquid
                         ? liquidFilledButtonStyle(
                             dark: false,
-                            minimumSize: const Size(88, 40),
+                            minimumSize: const Size(96, 40),
                           )
                         : FilledButton.styleFrom(
                             backgroundColor: AppColors.navy,
                             foregroundColor: Colors.white,
+                            minimumSize: const Size(96, 40),
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
