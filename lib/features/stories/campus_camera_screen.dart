@@ -658,64 +658,126 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
               ),
             ),
           if (_busy)
-            ColoredBox(
-              color: Colors.black87,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 36),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0, end: _uploadProgress),
-                        duration: const Duration(milliseconds: 180),
-                        builder: (context, value, _) {
-                          return SizedBox(
-                            width: 72,
-                            height: 72,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                CircularProgressIndicator(
-                                  value: value <= 0 ? null : value,
-                                  strokeWidth: 4,
-                                  color: AppColors.cyan,
-                                  backgroundColor: Colors.white12,
-                                ),
-                                Text(
-                                  value <= 0
-                                      ? '…'
-                                      : '%${(value * 100).round()}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                  ),
+            Positioned.fill(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 280),
+                builder: (context, fade, child) =>
+                    Opacity(opacity: fade, child: child),
+                child: ColoredBox(
+                  color: const Color(0xE6081424),
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 108,
+                            height: 108,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  AppColors.cyan.withValues(alpha: 0.35),
+                                  AppColors.navy.withValues(alpha: 0.9),
+                                ],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.cyan.withValues(alpha: 0.25),
+                                  blurRadius: 28,
+                                  spreadRadius: 2,
                                 ),
                               ],
                             ),
-                          );
-                        },
+                            padding: const EdgeInsets.all(6),
+                            child: TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0, end: _uploadProgress),
+                              duration: const Duration(milliseconds: 220),
+                              builder: (context, value, _) {
+                                return Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    SizedBox.expand(
+                                      child: CircularProgressIndicator(
+                                        value: value <= 0.02 ? null : value,
+                                        strokeWidth: 3.5,
+                                        color: AppColors.cyan,
+                                        backgroundColor: Colors.white12,
+                                      ),
+                                    ),
+                                    Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          _mode == CampusShareMode.reels
+                                              ? Icons.movie_filter_rounded
+                                              : Icons.auto_awesome_rounded,
+                                          color: Colors.white,
+                                          size: 26,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          value <= 0.02
+                                              ? '…'
+                                              : '%${(value * 100).round()}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          Text(
+                            _status ??
+                                (_mode == CampusShareMode.reels
+                                    ? 'Kampüs Reels yükleniyor…'
+                                    : 'Hikâye yükleniyor…'),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              height: 1.3,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Kısaca bekle — medyan kampüse aktarılıyor',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.65),
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: SizedBox(
+                              width: 220,
+                              child: LinearProgressIndicator(
+                                value: _uploadProgress <= 0.02
+                                    ? null
+                                    : _uploadProgress,
+                                minHeight: 5,
+                                color: AppColors.lime,
+                                backgroundColor: Colors.white12,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _status ?? 'Yükleniyor…',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: LinearProgressIndicator(
-                          value: _uploadProgress <= 0 ? null : _uploadProgress,
-                          minHeight: 6,
-                          color: AppColors.lime,
-                          backgroundColor: Colors.white12,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -1129,7 +1191,11 @@ class _PublishPanelState extends State<_PublishPanel> {
                         ? AppColors.lime
                         : AppColors.cyan,
                     foregroundColor: AppColors.navy,
-                    minimumSize: const Size.fromHeight(48),
+                    minimumSize: const Size.fromHeight(46),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                   onPressed: widget.onModePublish,
                   child: Text(
@@ -1144,7 +1210,10 @@ class _PublishPanelState extends State<_PublishPanel> {
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.cyan,
                     foregroundColor: AppColors.navy,
-                    minimumSize: const Size.fromHeight(48),
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                   onPressed: widget.onStory,
                   child: const Text(
@@ -1157,7 +1226,10 @@ class _PublishPanelState extends State<_PublishPanel> {
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.lime,
                     foregroundColor: AppColors.navy,
-                    minimumSize: const Size.fromHeight(48),
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                   onPressed: widget.onReels,
                   child: Text(

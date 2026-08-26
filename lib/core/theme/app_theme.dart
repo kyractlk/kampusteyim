@@ -123,18 +123,20 @@ class AppTheme {
           foregroundColor: filledFg,
           elevation: 0,
           shadowColor: Colors.transparent,
-          minimumSize: const Size.fromHeight(48),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          minimumSize: const Size(64, 42),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(liquid ? 24 : 14),
+            borderRadius: BorderRadius.circular(liquid ? 18 : 12),
             side: liquid
                 ? BorderSide(
                     color: Colors.white.withValues(alpha: isDark ? 0.28 : 0.35),
                   )
                 : BorderSide.none,
           ),
-          textStyle:
-              textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          textStyle: textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.1,
+          ),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -142,12 +144,12 @@ class AppTheme {
           backgroundColor: filledBg,
           foregroundColor: filledFg,
           elevation: 0,
-          minimumSize: const Size.fromHeight(48),
+          minimumSize: const Size(64, 42),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(liquid ? 24 : 14),
+            borderRadius: BorderRadius.circular(liquid ? 18 : 12),
           ),
-          textStyle:
-              textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -156,19 +158,26 @@ class AppTheme {
           backgroundColor: liquid
               ? Colors.white.withValues(alpha: isDark ? 0.08 : 0.35)
               : null,
-          minimumSize: const Size.fromHeight(48),
+          minimumSize: const Size(64, 42),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           side: BorderSide(
             color: liquid
                 ? Colors.white.withValues(alpha: isDark ? 0.32 : 0.55)
                 : border,
+            width: 1,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(liquid ? 24 : 14),
+            borderRadius: BorderRadius.circular(liquid ? 18 : 12),
           ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: AppColors.cyan),
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.cyan,
+          minimumSize: const Size(48, 36),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: liquid
@@ -187,18 +196,22 @@ class AppTheme {
         backgroundColor: liquid
             ? Colors.white.withValues(alpha: 0.45)
             : surfaceMuted,
-        selectedColor: liquid
-            ? AppColors.navy.withValues(alpha: 0.88)
-            : AppColors.cyan.withValues(alpha: 0.18),
-        labelStyle: textTheme.labelLarge!,
-        secondaryLabelStyle: textTheme.labelLarge?.copyWith(color: Colors.white),
-        side: liquid
-            ? BorderSide(color: Colors.white.withValues(alpha: 0.55))
-            : BorderSide.none,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(liquid ? 22 : 20),
+        selectedColor: AppColors.navy,
+        disabledColor: surfaceMuted,
+        labelStyle: textTheme.labelLarge!.copyWith(
+          color: textPrimary,
+          fontWeight: FontWeight.w700,
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        secondaryLabelStyle: textTheme.labelLarge?.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+        ),
+        checkmarkColor: Colors.white,
+        side: BorderSide(color: border),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(liquid ? 18 : 14),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       ),
       cardTheme: CardThemeData(
         color: liquid ? Colors.white.withValues(alpha: 0.62) : surface,

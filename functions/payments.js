@@ -135,6 +135,7 @@ function paymentsModule({
       amount: 349,
       sizes: ['S', 'M', 'L', 'XL'],
       short: 'Beyaz pamuk · göğüs logo baskı · unisex',
+      imageUrl: 'https://app.kampusteyim.app/market/merch_tshirt_white.jpg',
     },
     hoodie: {
       sku: 'hoodie',
@@ -142,6 +143,7 @@ function paymentsModule({
       amount: 799,
       sizes: ['S', 'M', 'L', 'XL'],
       short: 'Siyah sweatshirt · büyük logo · kışlık',
+      imageUrl: 'https://app.kampusteyim.app/market/merch_hoodie_black.jpg',
     },
     cap: {
       sku: 'cap',
@@ -149,6 +151,7 @@ function paymentsModule({
       amount: 249,
       sizes: ['Tek beden'],
       short: 'Lacivert baseball · önde logo · ayarlı',
+      imageUrl: 'https://app.kampusteyim.app/market/merch_cap_navy.jpg',
     },
     tote: {
       sku: 'tote',
@@ -156,8 +159,14 @@ function paymentsModule({
       amount: 199,
       sizes: ['Tek beden'],
       short: 'Bej kanvas · logo baskı · ders / stand',
+      imageUrl: 'https://app.kampusteyim.app/market/merch_tote_beige.jpg',
     },
   };
+
+  function defaultMerchImage(sku) {
+    const hit = MERCH_CATALOG[String(sku || '').toLowerCase()];
+    return hit?.imageUrl || null;
+  }
 
   async function createOrderDoc({ uid, email, amount, product, provider, meta }) {
     const ref = db.collection(ORDERS).doc();
@@ -432,6 +441,7 @@ function paymentsModule({
           amount: m.amount,
           sizes: m.sizes,
           short: m.short,
+          imageUrl: m.imageUrl || null,
           type: 'merch',
           available: true,
         }));
@@ -442,6 +452,7 @@ function paymentsModule({
           amount: m.amount,
           sizes: m.sizes?.length ? m.sizes : ['Tek beden'],
           short: m.short || '',
+          imageUrl: m.imageUrl || defaultMerchImage(m.sku || m.id),
           type: 'merch',
           available: m.available !== false,
           remaining: m.remaining,

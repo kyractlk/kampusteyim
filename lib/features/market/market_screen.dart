@@ -5,11 +5,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/widgets/liquid_glass.dart';
-import '../../models/models.dart';
+import '../../core/widgets/web_safe_image.dart';
 import '../auth/data/auth_provider.dart';
 import '../payments/payment_checkout_sheet.dart';
 import '../payments/payments_service.dart';
 import 'delivery_address_form.dart';
+import 'market_product_detail_screen.dart';
+import 'merch_images.dart';
 
 /// Uygulama içi Market — merch, Plus, kodlarım.
 class MarketScreen extends StatefulWidget {
@@ -111,160 +113,17 @@ class _MarketScreenState extends State<MarketScreen>
     await _load();
   }
 
-  Future<void> _openMerch(Map<String, dynamic> item) async {
+  Future<void> _openProduct(Map<String, dynamic> item) async {
     if (!AuthGate.requireAuth(context)) return;
-    final auth = context.read<AuthProvider>();
-    if ((auth.user?.deliveryAddresses.isEmpty ?? true)) {
-      await _ensureDeliveryAddress(force: true);
-      if ((auth.user?.deliveryAddresses.isEmpty ?? true)) return;
-    }
-    final sizes = (item['sizes'] as List? ?? const [])
-        .map((e) => '$e')
-        .toList();
-    if (sizes.isEmpty) return;
-
-    final addresses = List<DeliveryAddress>.from(
-      auth.user?.deliveryAddresses ?? const [],
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => MarketProductDetailScreen(
+          item: item,
+          paytrReady: _cfg?.paytrReady == true,
+          merchPaytrEnabled: _cfg?.merchPaytrEnabled != false,
+        ),
+      ),
     );
-    var selectedId = auth.user?.defaultDeliveryAddress?.id ?? addresses.first.id;
-    final codeCtrl = TextEditingController();
-    var size = sizes.first;
-
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            bottom: MediaQuery.viewInsetsOf(ctx).bottom + 16,
-            top: 8,
-          ),
-          child: StatefulBuilder(
-            builder: (ctx, setLocal) {
-              final selected = addresses.firstWhere(
-                (a) => a.id == selectedId,
-                orElse: () => addresses.first,
-              );
-              return SingleChildScrollView(
-                child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    '${item['name']}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
-                    ),
-                  ),
-                  Text(
-                    '${(item['amount'] as num?)?.toStringAsFixed(0) ?? '—'} TL',
-                    style: const TextStyle(
-                      color: AppColors.cyan,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final s in sizes)
-                        ChoiceChip(
-                          label: Text(s),
-                          selected: size == s,
-                          onSelected: (_) => setLocal(() => size = s),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Teslimat adresi',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 6),
-                  ...addresses.map((a) {
-                    final selectedNow = a.id == selectedId;
-                    return ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      selected: selectedNow,
-                      leading: Icon(
-                        selectedNow
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_off,
-                        color: AppColors.navy,
-                      ),
-                      title: Text(
-                        a.title,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      subtitle: Text('${a.fullName}\n${a.summaryLine}'),
-                      onTap: () => setLocal(() => selectedId = a.id),
-                    );
-                  }),
-                  TextButton.icon(
-                    onPressed: () async {
-                      final addr = await showDeliveryAddressEditor(ctx);
-                      if (addr == null) return;
-                      await auth.upsertDeliveryAddress(addr);
-                      setLocal(() {
-                        addresses
-                          ..clear()
-                          ..addAll(auth.user?.deliveryAddresses ?? [addr]);
-                        selectedId = addr.id;
-                      });
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('Yeni adres ekle'),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: codeCtrl,
-                    textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
-                      labelText: 'Kampanya kodu (opsiyonel)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: Text('Kart ile güvenle öde · ${selected.city}'),
-                  ),
-                ],
-              ),
-              );
-            },
-          ),
-        );
-      },
-    );
-    if (ok != true || !mounted) return;
-    final ship = addresses.firstWhere(
-      (a) => a.id == selectedId,
-      orElse: () => addresses.first,
-    );
-    await openPaymentCheckout(
-      context,
-      product: 'merch',
-      amount: (item['amount'] as num?)?.toDouble(),
-      sku: '${item['sku']}',
-      size: size,
-      city: ship.city,
-      shipName: ship.fullName,
-      shipAddress: ship.line1,
-      shipDistrict: ship.district,
-      shipPhone: ship.phone,
-      discountCode: codeCtrl.text.trim().isEmpty ? null : codeCtrl.text.trim(),
-      provider: (_cfg?.paytrReady == true && _cfg?.merchPaytrEnabled == true)
-          ? 'paytr'
-          : null,
-    );
-    codeCtrl.dispose();
     await _load();
   }
 
@@ -273,15 +132,20 @@ class _MarketScreenState extends State<MarketScreen>
     final glass = LiquidGlass.enabled(context);
     final cfg = _cfg;
     final visible = cfg?.marketInAppVisible != false;
-    final scheme = Theme.of(context).colorScheme;
+    final merch = (cfg?.merch ?? const <Map<String, dynamic>>[])
+        .where((m) => m['available'] != false)
+        .toList();
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: NestedScrollView(
         headerSliverBuilder: (context, _) {
           return [
             SliverAppBar(
               pinned: true,
-              expandedHeight: 148,
+              expandedHeight: 132,
+              backgroundColor: AppColors.navy,
+              foregroundColor: Colors.white,
               title: const Text('Market'),
               actions: [
                 IconButton(
@@ -297,25 +161,20 @@ class _MarketScreenState extends State<MarketScreen>
               ],
               flexibleSpace: FlexibleSpaceBar(
                 background: Container(
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: glass
-                          ? [
-                              scheme.primary.withValues(alpha: 0.35),
-                              AppColors.navy.withValues(alpha: 0.85),
-                            ]
-                          : [
-                              AppColors.navy,
-                              AppColors.navySoft,
-                              AppColors.cyan.withValues(alpha: 0.55),
-                            ],
+                      colors: [
+                        AppColors.navy,
+                        AppColors.navySoft,
+                        Color(0xFF0A4A52),
+                      ],
                     ),
                   ),
                   child: SafeArea(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 52, 20, 12),
+                      padding: const EdgeInsets.fromLTRB(20, 48, 20, 8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -330,11 +189,12 @@ class _MarketScreenState extends State<MarketScreen>
                           const SizedBox(height: 4),
                           Text(
                             cfg?.paytrReady == true
-                                ? 'Kart ile güvenle öde · PayTR'
+                                ? 'Görsel · detay · kart ile güvenli ödeme'
                                 : 'Ödeme yakında',
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.85),
+                              color: Colors.white.withValues(alpha: 0.82),
                               fontWeight: FontWeight.w600,
+                              fontSize: 13,
                             ),
                           ),
                         ],
@@ -348,6 +208,7 @@ class _MarketScreenState extends State<MarketScreen>
                 labelColor: Colors.white,
                 unselectedLabelColor: Colors.white70,
                 indicatorColor: AppColors.cyan,
+                indicatorWeight: 2.5,
                 tabs: const [
                   Tab(text: 'Ürünler'),
                   Tab(text: 'Plus'),
@@ -365,7 +226,11 @@ class _MarketScreenState extends State<MarketScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(_error!),
-                        FilledButton(onPressed: _load, child: const Text('Yenile')),
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          onPressed: _load,
+                          child: const Text('Yenile'),
+                        ),
                       ],
                     ),
                   )
@@ -376,41 +241,75 @@ class _MarketScreenState extends State<MarketScreen>
                         children: [
                           RefreshIndicator(
                             onRefresh: _load,
-                            child: ListView(
-                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                              children: [
-                                for (final m
-                                    in cfg?.merch ??
-                                        const <Map<String, dynamic>>[])
-                                  _MerchTile(
-                                    item: m,
-                                    glass: glass,
-                                    onTap: () => _openMerch(m),
+                            child: merch.isEmpty
+                                ? ListView(
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    children: const [
+                                      SizedBox(height: 120),
+                                      Center(
+                                        child: Text(
+                                          'Ürün yok',
+                                          style: TextStyle(
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : GridView.builder(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      14,
+                                      16,
+                                      14,
+                                      32,
+                                    ),
+                                    gridDelegate:
+                                        const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      mainAxisSpacing: 12,
+                                      crossAxisSpacing: 12,
+                                      childAspectRatio: 0.72,
+                                    ),
+                                    itemCount: merch.length + 1,
+                                    itemBuilder: (context, i) {
+                                      if (i == merch.length) {
+                                        return const Align(
+                                          alignment: Alignment.topLeft,
+                                          child: Padding(
+                                            padding: EdgeInsets.only(top: 4),
+                                            child: _LegalLinks(),
+                                          ),
+                                        );
+                                      }
+                                      return _MerchCard(
+                                        item: merch[i],
+                                        onTap: () => _openProduct(merch[i]),
+                                      );
+                                    },
                                   ),
-                                const SizedBox(height: 12),
-                                _LegalLinks(),
-                              ],
-                            ),
                           ),
                           RefreshIndicator(
                             onRefresh: _load,
                             child: ListView(
-                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 16, 16, 32),
                               children: [
                                 _PlusHero(
                                   cfg: cfg,
                                   glass: glass,
                                   onBuy: (months) => _buyPlus(months: months),
                                 ),
-                                const SizedBox(height: 12),
-                                _LegalLinks(),
+                                const SizedBox(height: 16),
+                                const _LegalLinks(),
                               ],
                             ),
                           ),
                           RefreshIndicator(
                             onRefresh: _load,
                             child: ListView(
-                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 16, 16, 32),
                               children: [
                                 if (_myCodes.isEmpty)
                                   const Padding(
@@ -426,24 +325,36 @@ class _MarketScreenState extends State<MarketScreen>
                                   )
                                 else
                                   for (final c in _myCodes)
-                                    Card(
-                                      child: ListTile(
-                                        title: Text(
-                                          '${c['code']}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w900,
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 10),
+                                      child: Material(
+                                        color: AppColors.surface,
+                                        borderRadius: BorderRadius.circular(16),
+                                        child: ListTile(
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                            side: const BorderSide(
+                                              color: AppColors.border,
+                                            ),
                                           ),
-                                        ),
-                                        subtitle: Text(
-                                          '${c['label']} · '
-                                          '${c['type'] == 'fixed' ? '${c['value']} TL' : '%${c['value']}'}'
-                                          '${c['remainingForMe'] != null ? ' · kalan ${c['remainingForMe']}' : ''}',
-                                        ),
-                                        trailing: FilledButton.tonal(
-                                          onPressed: () => _buyPlus(
-                                            code: '${c['code']}',
+                                          title: Text(
+                                            '${c['code']}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                            ),
                                           ),
-                                          child: const Text('Uygula'),
+                                          subtitle: Text(
+                                            '${c['label']} · '
+                                            '${c['type'] == 'fixed' ? '${c['value']} TL' : '%${c['value']}'}'
+                                            '${c['remainingForMe'] != null ? ' · kalan ${c['remainingForMe']}' : ''}',
+                                          ),
+                                          trailing: TextButton(
+                                            onPressed: () => _buyPlus(
+                                              code: '${c['code']}',
+                                            ),
+                                            child: const Text('Uygula'),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -457,84 +368,110 @@ class _MarketScreenState extends State<MarketScreen>
   }
 }
 
-class _MerchTile extends StatelessWidget {
-  const _MerchTile({
-    required this.item,
-    required this.glass,
-    required this.onTap,
-  });
+class _MerchCard extends StatelessWidget {
+  const _MerchCard({required this.item, required this.onTap});
 
   final Map<String, dynamic> item;
-  final bool glass;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: glass
-            ? Colors.white.withValues(alpha: 0.55)
-            : Theme.of(context).colorScheme.surface,
-        elevation: glass ? 0 : 1,
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.navy.withValues(alpha: 0.9),
-                        AppColors.cyan.withValues(alpha: 0.7),
-                      ],
-                    ),
-                  ),
-                  child: const Icon(Icons.shopping_bag_outlined, color: Colors.white),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
+    final img = merchImageUrl(item);
+    final amount = (item['amount'] as num?)?.toStringAsFixed(0) ?? '—';
+    final short = '${item['short'] ?? ''}';
+
+    return Material(
+      color: AppColors.surface,
+      elevation: 0,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 5,
+                child: img != null
+                    ? webSafeNetworkImage(
+                        img,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _placeholder(),
+                      )
+                    : _placeholder(),
+              ),
+              Expanded(
+                flex: 4,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         '${item['name']}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${item['short'] ?? ''}',
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
                         ),
+                      ),
+                      if (short.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          short,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11.5,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                      const Spacer(),
+                      Row(
+                        children: [
+                          Text(
+                            '$amount₺',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.navy,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const Spacer(),
+                          Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 12,
+                            color: AppColors.navy.withValues(alpha: 0.45),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                Text(
-                  '${(item['amount'] as num?)?.toStringAsFixed(0) ?? '—'}₺',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.navy,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder() {
+    return Container(
+      color: AppColors.surfaceMuted,
+      child: const Center(
+        child: Icon(
+          Icons.shopping_bag_outlined,
+          color: AppColors.textSecondary,
+          size: 36,
         ),
       ),
     );
@@ -556,17 +493,31 @@ class _PlusHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final plans = cfg?.plusPlans ?? const [];
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
         gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
           colors: glass
               ? [
-                  AppColors.navy.withValues(alpha: 0.88),
-                  AppColors.cyan.withValues(alpha: 0.55),
+                  AppColors.navy.withValues(alpha: 0.92),
+                  const Color(0xFF0E3A4A),
+                  AppColors.cyan.withValues(alpha: 0.65),
                 ]
-              : [AppColors.navy, const Color(0xFF0E3A4A)],
+              : const [
+                  AppColors.navy,
+                  Color(0xFF0E3A4A),
+                  Color(0xFF0A5A5E),
+                ],
         ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.navy.withValues(alpha: 0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -576,20 +527,32 @@ class _PlusHero extends StatelessWidget {
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w900,
-              fontSize: 20,
+              fontSize: 22,
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Yeşil tick, CV-AI ve kampüs ayrıcalıkları. Kart ile güvenle öde.',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+            'Yeşil tick, CV-AI ve kampüs ayrıcalıkları.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.88),
+              height: 1.35,
+            ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           if (plans.isEmpty)
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.cyan),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.cyan,
+                foregroundColor: AppColors.navy,
+                minimumSize: const Size(0, 42),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              ),
               onPressed: () => onBuy(1),
-              child: const Text('Plus satın al'),
+              child: const Text(
+                'Plus satın al',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
             )
           else
             Wrap(
@@ -597,17 +560,34 @@ class _PlusHero extends StatelessWidget {
               runSpacing: 8,
               children: [
                 for (final p in plans)
-                  ActionChip(
-                    backgroundColor: Colors.white.withValues(alpha: 0.14),
-                    label: Text(
-                      '${p['label']} · ${(p['amount'] as num?)?.toStringAsFixed(0) ?? '—'}₺',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
+                  Material(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(22),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(22),
+                      onTap: () =>
+                          onBuy((p['months'] as num?)?.toInt() ?? 1),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Text(
+                          '${p['label']} · ${(p['amount'] as num?)?.toStringAsFixed(0) ?? '—'}₺',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
                     ),
-                    onPressed: () =>
-                        onBuy((p['months'] as num?)?.toInt() ?? 1),
                   ),
               ],
             ),
@@ -618,23 +598,30 @@ class _PlusHero extends StatelessWidget {
 }
 
 class _LegalLinks extends StatelessWidget {
+  const _LegalLinks();
+
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: 6,
+      runSpacing: 6,
       children: [
         for (final e in [
           ('Satış', 'https://app.kampusteyim.app/sales'),
           ('Kargo', 'https://app.kampusteyim.app/shipping'),
           ('İade', 'https://app.kampusteyim.app/returns'),
         ])
-          ActionChip(
-            label: Text(e.$1),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.textSecondary,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
             onPressed: () => launchUrl(
               Uri.parse(e.$2),
               mode: LaunchMode.externalApplication,
             ),
+            child: Text(e.$1),
           ),
       ],
     );

@@ -319,16 +319,49 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                   ],
                   if (widget.product == 'plus' && (_pub?.plusPlans.isNotEmpty ?? false)) ...[
                     const SizedBox(height: 12),
+                    const Text(
+                      'Süre seç',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
+                      runSpacing: 8,
                       children: [
                         for (final p in _pub!.plusPlans)
-                          ChoiceChip(
-                            label: Text('${p['label']}'),
-                            selected: _months == (p['months'] as num?)?.toInt(),
-                            onSelected: (_) => setState(() {
-                              _months = (p['months'] as num?)?.toInt() ?? 1;
-                            }),
+                          Builder(
+                            builder: (context) {
+                              final months =
+                                  (p['months'] as num?)?.toInt() ?? 1;
+                              final selected = _months == months;
+                              return ChoiceChip(
+                                label: Text(
+                                  '${p['label']}'
+                                  '${p['amount'] != null ? ' · ${(p['amount'] as num).toStringAsFixed(0)}₺' : ''}',
+                                  style: TextStyle(
+                                    color: selected
+                                        ? Colors.white
+                                        : AppColors.textPrimary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                selected: selected,
+                                selectedColor: AppColors.navy,
+                                backgroundColor: AppColors.surfaceMuted,
+                                checkmarkColor: Colors.white,
+                                side: BorderSide(
+                                  color: selected
+                                      ? AppColors.navy
+                                      : AppColors.border,
+                                ),
+                                onSelected: (_) =>
+                                    setState(() => _months = months),
+                              );
+                            },
                           ),
                       ],
                     ),

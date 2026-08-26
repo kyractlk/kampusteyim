@@ -261,38 +261,51 @@ class _SuggestCard extends StatelessWidget {
                   const Spacer(),
                   SizedBox(
                     width: double.infinity,
-                    child: FilledButton(
-                      onPressed: following
-                          ? null
-                          : () async {
+                    height: 30,
+                    child: following
+                        ? OutlinedButton(
+                            onPressed: null,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.textSecondary,
+                              disabledForegroundColor: AppColors.textSecondary,
+                              side: const BorderSide(color: AppColors.border),
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              textStyle: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            child: const Text('Takip'),
+                          )
+                        : TextButton(
+                            onPressed: () async {
                               await auth.toggleFollow(u.id);
                             },
-                      style: FilledButton.styleFrom(
-                        backgroundColor: following
-                            ? AppColors.surfaceMuted
-                            : AppColors.navy,
-                        foregroundColor:
-                            following ? AppColors.textSecondary : Colors.white,
-                        disabledBackgroundColor: AppColors.surfaceMuted,
-                        disabledForegroundColor: AppColors.textSecondary,
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        visualDensity: VisualDensity.compact,
-                        elevation: 0,
-                        textStyle: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      child: Text(
-                        following
-                            ? 'Takip'
-                            : pending
-                                ? 'İstek'
-                                : (label.isNotEmpty ? label : 'Takip et'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
+                            style: TextButton.styleFrom(
+                              backgroundColor:
+                                  AppColors.navy.withValues(alpha: 0.08),
+                              foregroundColor: AppColors.navy,
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(9),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            child: Text(
+                              pending
+                                  ? 'İstek'
+                                  : (label.isNotEmpty ? label : 'Takip et'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                   ),
                 ],
               ),
