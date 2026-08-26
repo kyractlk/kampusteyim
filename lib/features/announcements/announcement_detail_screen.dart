@@ -32,11 +32,6 @@ class AnnouncementDetailScreen extends StatelessWidget {
         body: const Center(child: Text('Duyuru bulunamadı')),
       );
     }
-    final audienceLabel = switch (item.audience) {
-      'members' => 'Üyelere',
-      'followers' => 'Takipçilere',
-      _ => 'Tüm kampüs',
-    };
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -60,9 +55,9 @@ class AnnouncementDetailScreen extends StatelessWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          if (item.imageUrl != null)
+          if (item.imageUrl != null) ...[
             GestureDetector(
               onTap: () => openMediaViewer(
                 context,
@@ -76,19 +71,48 @@ class AnnouncementDetailScreen extends StatelessWidget {
                   child: SafeNetworkImage(
                     url: item.imageUrl!,
                     fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      color: AppColors.surfaceMuted,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.image_outlined),
+                    ),
                   ),
                 ),
               ),
             ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 18),
+          ],
+          if (item.isPinned)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.push_pin_rounded,
+                    size: 14,
+                    color: AppColors.crimson.withValues(alpha: 0.9),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Sabitlenmiş',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.crimson.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Text(
             item.title,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w900,
+                  height: 1.2,
                 ),
           ),
           if (item.communityName != null) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             AffiliationBadge(
               orgName: item.communityName!,
               logoUrl: item.communityLogoUrl,
@@ -96,21 +120,33 @@ class AnnouncementDetailScreen extends StatelessWidget {
               verifiedGold: true,
             ),
           ],
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
-            '${DateFormat('d MMM yyyy · HH:mm', 'tr').format(item.createdAt)} · $audienceLabel',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: AppColors.textSecondary),
+            '${DateFormat('d MMMM yyyy · HH:mm', 'tr').format(item.createdAt)}'
+            ' · ${item.audienceLabel}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
           ),
-          const SizedBox(height: 16),
-          HashtagText(
-            text: item.body,
-            style: Theme.of(context).textTheme.bodyLarge,
+          const SizedBox(height: 18),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: HashtagText(
+              text: item.body,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    height: 1.5,
+                  ),
+            ),
           ),
-          const SizedBox(height: 24),
-          OutlinedButton(
+          const SizedBox(height: 20),
+          TextButton(
             onPressed: () => context.go('/announcements'),
             child: const Text('Tüm duyurular'),
           ),
