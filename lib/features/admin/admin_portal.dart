@@ -27,6 +27,7 @@ import 'admin_cv_ai_limits_tab.dart';
 import 'admin_events_tab.dart';
 import 'admin_commerce_tab.dart';
 import '../plus/admin_plus_tab.dart';
+import '../plus/plus_provider.dart';
 
 class _AdminTab {
   const _AdminTab({
@@ -132,20 +133,14 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           required: const [AdminPermission.manageUsers],
           builder: () => const AdminCvAiLimitsTab(),
         ),
-      if (admin.can(me, AdminPermission.managePlus))
-        _AdminTab(
-          label: 'Plus',
-          icon: const Icon(Icons.workspace_premium_outlined),
-          required: const [AdminPermission.managePlus],
-          builder: () => const AdminPlusTab(),
-        ),
       if (admin.can(me, AdminPermission.managePlus) ||
           admin.can(me, AdminPermission.createCompany) ||
           admin.can(me, AdminPermission.reviewLeads) ||
           admin.can(me, AdminPermission.manageAds) ||
-          admin.can(me, AdminPermission.reviewPayments))
+          admin.can(me, AdminPermission.reviewPayments) ||
+          me.isSuperAdmin)
         _AdminTab(
-          label: 'Ticaret',
+          label: 'Market',
           icon: const Icon(Icons.storefront_outlined),
           required: const [
             AdminPermission.managePlus,
@@ -154,7 +149,14 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
             AdminPermission.manageAds,
             AdminPermission.reviewPayments,
           ],
-          builder: () => const AdminCommerceTab(),
+          builder: () => const AdminMarketTab(),
+        ),
+      if (admin.can(me, AdminPermission.managePlus))
+        _AdminTab(
+          label: 'Plus',
+          icon: const Icon(Icons.workspace_premium_outlined),
+          required: const [AdminPermission.managePlus],
+          builder: () => const AdminPlusTab(),
         ),
       if (admin.can(me, AdminPermission.reviewReports))
         _AdminTab(
@@ -656,6 +658,95 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           userId: u.id,
           type: 'none',
           reason: '',
+        );
+      case 'plus_grant':
+        final daysCtrl = TextEditingController(text: '30');
+        final days = await showDialog<int>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(u.plusActive ? 'Plus süre uzat' : 'Plus ver'),
+            content: TextField(
+              controller: daysCtrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Kaç gün?',
+                hintText: 'örn. 30 / 60 / 365',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Vazgeç'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final n = int.tryParse(daysCtrl.text.trim()) ?? 0;
+                  Navigator.pop(ctx, n > 0 ? n.clamp(1, 730) : null);
+                },
+                child: const Text('Ver'),
+              ),
+            ],
+          ),
+        );
+        daysCtrl.dispose();
+        if (days == null || !context.mounted) return;
+        final err = await context.read<PlusProvider>().adminGrantPlus(
+              userId: u.id,
+              days: days,
+            );
+        if (!context.mounted) return;
+        if (err == null) {
+          auth.upsertUser(
+            u.copyWith(
+              plusActive: true,
+              plusExpiresAt: DateTime.now().add(Duration(days: days)),
+            ),
+          );
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              err == null
+                  ? '${u.fullName} · Plus $days gün verildi'
+                  : 'Plus verilemedi: $err',
+            ),
+          ),
+        );
+      case 'plus_revoke':
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Plus kaldırılsın mı?'),
+            content: Text('${u.fullName} kullanıcısının Plus üyeliği kapatılacak.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Vazgeç'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Kaldır'),
+              ),
+            ],
+          ),
+        );
+        if (ok != true || !context.mounted) return;
+        final errRevoke =
+            await context.read<PlusProvider>().adminRevokePlus(userId: u.id);
+        if (!context.mounted) return;
+        if (errRevoke == null) {
+          auth.upsertUser(u.copyWith(plusActive: false, clearPlusDates: true));
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              errRevoke == null
+                  ? '${u.fullName} · Plus kaldırıldı'
+                  : 'Kaldırılamadı: $errRevoke',
+            ),
+          ),
         );
       case 'make_admin':
         final roleId = await _pickRole(context, admin);

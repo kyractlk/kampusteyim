@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_colors.dart';
+import 'payment_webview_screen.dart';
 import 'payments_service.dart';
 
 /// Plus / merch / etkinlik ödemesi — aktif provider’a göre
@@ -210,16 +210,23 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
         return;
       }
       final payLink = order.payUrl ?? order.iframeUrl;
-      if (order.provider == 'paytr' && payLink != null) {
-        await launchUrl(
-          Uri.parse(payLink),
-          mode: LaunchMode.externalApplication,
+      if ((order.provider == 'paytr' || order.provider == 'shopier') &&
+          payLink != null) {
+        if (!mounted) return;
+        // Sheet'i kapatıp uygulama içi WebView'da kart / 3D Secure.
+        final nav = Navigator.of(context);
+        nav.pop();
+        await nav.push<void>(
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => PaymentWebViewScreen(
+              payUrl: payLink,
+              orderId: order.orderId,
+              product: widget.product,
+            ),
+          ),
         );
-      } else if (order.provider == 'shopier' && order.payUrl != null) {
-        await launchUrl(
-          Uri.parse(order.payUrl!),
-          mode: LaunchMode.externalApplication,
-        );
+        return;
       }
     } catch (e) {
       setState(() => _error = '$e');
@@ -453,21 +460,28 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                     const SizedBox(height: 16),
                     Text(
                       _order!.provider == 'paytr'
-                          ? 'PayTR ödeme sayfası açıldı. Ödeme bitince uygulamaya dön.'
-                          : 'Shopier ödeme sayfası açıldı. Ödeme bitince uygulamaya dön.',
+                          ? 'Ödeme ekranı uygulamada açılır; kart bilgisini güvenle girebilirsin.'
+                          : 'Shopier ödeme ekranı uygulamada açılır.',
                     ),
                     const SizedBox(height: 12),
-                    OutlinedButton(
-                      onPressed: () {
-                        final url = _order!.iframeUrl ?? _order!.payUrl;
-                        if (url != null) {
-                          launchUrl(
-                            Uri.parse(url),
-                            mode: LaunchMode.externalApplication,
-                          );
-                        }
+                    FilledButton(
+                      onPressed: () async {
+                        final url = _order!.payUrl ?? _order!.iframeUrl;
+                        if (url == null) return;
+                        final nav = Navigator.of(context);
+                        nav.pop();
+                        await nav.push<void>(
+                          MaterialPageRoute(
+                            fullscreenDialog: true,
+                            builder: (_) => PaymentWebViewScreen(
+                              payUrl: url,
+                              orderId: _order!.orderId,
+                              product: widget.product,
+                            ),
+                          ),
+                        );
                       },
-                      child: const Text('Ödeme sayfasını tekrar aç'),
+                      child: const Text('Ödeme ekranını aç'),
                     ),
                     const SizedBox(height: 8),
                     TextButton(

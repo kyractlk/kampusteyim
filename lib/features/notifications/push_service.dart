@@ -284,8 +284,10 @@ class PushService {
         'personalize': personalize,
       });
     } catch (e) {
-      debugPrint('[push] dispatch fallback local: $e');
-      await showLocal(title: '$emoji $title', body: body);
+      // Çevrimiçi değilken / CF hata verince yerel bildirim ASLA gösterme:
+      // aksi halde beğeni/takip yapan kişi kendi telefonunda “X seni takip etti”
+      // gibi bildirim görür (alıcıya gitmesi gereken mesaj).
+      debugPrint('[push] dispatch skipped (offline/error): $e');
     }
   }
 }

@@ -32,12 +32,17 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
   final _paytrCb = TextEditingController();
   final _shopierCb = TextEditingController();
   final _shopierPay = TextEditingController();
+  final _installmentToken = TextEditingController(
+    text: 'cf322a02b0690c8492d89adcba8a56ba9d6c7117e932f9072c4e43edf2d86a86',
+  );
 
   String _active = 'paytr';
   final Set<String> _enabled = {'paytr'};
   bool _paytrTest = false;
   bool _marketInApp = true;
   bool _merchPaytr = true;
+  bool _installmentTable = false;
+  bool _installmentsDefault = true;
   bool _loading = true;
   bool _saving = false;
   bool _paytrKeySet = false;
@@ -72,6 +77,7 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
       _paytrCb,
       _shopierCb,
       _shopierPay,
+      _installmentToken,
     ]) {
       c.dispose();
     }
@@ -107,6 +113,10 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
     _paytrTest = cfg.paytrTestMode;
     _marketInApp = cfg.raw['marketInAppVisible'] != false;
     _merchPaytr = cfg.raw['merchPaytrEnabled'] != false;
+    _installmentTable = cfg.raw['installmentTableEnabled'] == true;
+    _installmentsDefault = cfg.raw['installmentsDefaultEnabled'] != false;
+    final tok = '${cfg.raw['installmentTableToken'] ?? ''}'.trim();
+    if (tok.isNotEmpty) _installmentToken.text = tok;
     _paytrKey.clear();
     _paytrSalt.clear();
     _shopierKey.clear();
@@ -149,6 +159,9 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
         'paytrTestMode': _paytrTest,
         'marketInAppVisible': _marketInApp,
         'merchPaytrEnabled': _merchPaytr,
+        'installmentTableEnabled': _installmentTable,
+        'installmentTableToken': _installmentToken.text.trim(),
+        'installmentsDefaultEnabled': _installmentsDefault,
         'shopierWebsiteIndex': int.tryParse(_shopierIndex.text.trim()) ?? 1,
         'plusProductName': _productName.text.trim(),
         'plusAmount':
@@ -210,96 +223,109 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Ödeme entegrasyonu',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+          'Ödeme ayarları',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
         ),
         const SizedBox(height: 4),
         const Text(
-          'PayTR, Shopier ve IBAN bilgilerini buraya girip kaydet. '
-          'Gizli anahtarlar Firestore’da (app_secrets) saklanır; '
-          'callback / fallback URL’leri panellerde kullanmak için aşağıda.',
+          'Market ve Plus satışları PayTR ile işlenir. Anahtarlar gizli saklanır.',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
         ),
         const SizedBox(height: 16),
-        const Text(
-          'Aktif yöntem',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final p in ['paytr', 'shopier', 'iban'])
-              ChoiceChip(
-                label: Text(p.toUpperCase()),
-                selected: _active == p,
-                onSelected: (_) => setState(() => _active = p),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Açık yöntemler',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        Wrap(
-          spacing: 4,
-          children: [
-            for (final p in ['paytr', 'shopier', 'iban'])
-              FilterChip(
-                label: Text(p.toUpperCase()),
-                selected: _enabled.contains(p),
-                onSelected: (v) => setState(() {
-                  if (v) {
-                    _enabled.add(p);
-                  } else {
-                    _enabled.remove(p);
-                  }
-                }),
-              ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _section('Plus ürünü'),
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceMuted,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
+        _card(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                'Web market vitrini',
-                style: TextStyle(fontWeight: FontWeight.w800),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _paytrTest
+                          ? const Color(0xFFFEF3C7)
+                          : const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      _paytrTest ? 'TEST MODU' : 'CANLI',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11,
+                        color: _paytrTest
+                            ? const Color(0xFF92400E)
+                            : const Color(0xFF166534),
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _paytrKeySet && _paytrSaltSet && _paytrMerchantId.text.isNotEmpty
+                        ? 'PayTR hazır'
+                        : 'PayTR eksik',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: _paytrKeySet && _paytrSaltSet
+                          ? AppColors.navy
+                          : AppColors.crimson,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              const Text(
-                'Ödeme firmalarına gösterilecek resmi satış sayfası. '
-                'Aylık tutar buradan güncellenince 1/3/6/12 ay paketleri otomatik çarpılır.',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: AppColors.textSecondary,
-                  height: 1.35,
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('PayTR test modu'),
+                subtitle: Text(
+                  _paytrTest
+                      ? 'Gerçek tahsilat yok — canlıya alınca kapat'
+                      : 'Canlı kart ödemesi açık',
                 ),
+                value: _paytrTest,
+                onChanged: (v) => setState(() => _paytrTest = v),
               ),
-              const SizedBox(height: 8),
-              SelectableText(
-                'https://app.kampusteyim.app/market',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.navy.withValues(alpha: 0.9),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Uygulama içi Market'),
+                subtitle: const Text('Kapalıysa Ayarlar → Market gizlenir'),
+                value: _marketInApp,
+                onChanged: (v) => setState(() => _marketInApp = v),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Taksit (varsayılan)'),
+                subtitle: const Text(
+                  'Kapalıysa tüm siparişlerde peşin (ürün özel açabilir)',
                 ),
+                value: _installmentsDefault,
+                onChanged: (v) => setState(() => _installmentsDefault = v),
               ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Ödeme sayfasında taksit tablosu'),
+                subtitle: const Text('PayTR taksit karşılaştırma kutusu'),
+                value: _installmentTable,
+                onChanged: (v) => setState(() => _installmentTable = v),
+              ),
+              if (_installmentTable) ...[
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _installmentToken,
+                  decoration: const InputDecoration(
+                    labelText: 'Taksit tablosu token',
+                    border: OutlineInputBorder(),
+                    helperText: 'PayTR panel → Taksit ayarları',
+                  ),
+                ),
+              ],
             ],
           ),
         ),
+        const SizedBox(height: 14),
+        _section('Plus fiyatı'),
         TextField(
           controller: _productName,
           decoration: const InputDecoration(
@@ -317,8 +343,9 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
                   decimal: true,
                 ),
                 decoration: const InputDecoration(
-                  labelText: 'Tutar (TL)',
+                  labelText: 'Aylık tutar (TL)',
                   border: OutlineInputBorder(),
+                  helperText: '1/3/6/12 ay otomatik çarpılır',
                 ),
               ),
             ),
@@ -329,49 +356,15 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: const InputDecoration(
-                  labelText: 'Plus gün',
+                  labelText: '1 ay = gün',
                   border: OutlineInputBorder(),
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 20),
-        _section('Callback / fallback URL’leri'),
-        const Text(
-          'Bunları PayTR / Shopier paneline yapıştır. Değiştirirsen kaydet.',
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 8),
-        _urlField(
-          'Başarı (ok) URL',
-          _okUrl,
-          hint: 'Kullanıcı başarılı ödemeden sonra buraya döner',
-        ),
-        _urlField(
-          'Hata (fail) URL',
-          _failUrl,
-          hint: 'Ödeme iptal / hata dönüşü',
-        ),
-        _urlField(
-          'PayTR bildirim (Callback) URL',
-          _paytrCb,
-          hint: 'PayTR Mağaza Paneli → Bildirim URL',
-          copyOnlyImportant: true,
-        ),
-        _urlField(
-          'Shopier dönüş (Callback) URL',
-          _shopierCb,
-          hint: 'Shopier → Site ayarları / API dönüş URL',
-          copyOnlyImportant: true,
-        ),
-        _urlField(
-          'Shopier ödeme formu sayfası',
-          _shopierPay,
-          hint: 'Sistem üretir; genelde değiştirmene gerek yok',
-        ),
-        const SizedBox(height: 20),
-        _section('PayTR'),
+        const SizedBox(height: 16),
+        _section('PayTR kimlik bilgileri'),
         TextField(
           controller: _paytrMerchantId,
           decoration: const InputDecoration(
@@ -401,91 +394,142 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
           ),
           obscureText: true,
         ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Test modu'),
-          subtitle: const Text('Canlıya alınca kapat'),
-          value: _paytrTest,
-          onChanged: (v) => setState(() => _paytrTest = v),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Uygulama içi Market görünür'),
-          subtitle: const Text('Kapalıysa Ayarlar → Market gizlenir / web kalır'),
-          value: _marketInApp,
-          onChanged: (v) => setState(() => _marketInApp = v),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Merch için PayTR'),
-          subtitle: const Text('Kapalıysa merch yalnızca IBAN'),
-          value: _merchPaytr,
-          onChanged: (v) => setState(() => _merchPaytr = v),
-        ),
-        const SizedBox(height: 12),
-        _section('Shopier'),
-        TextField(
-          controller: _shopierKey,
-          decoration: InputDecoration(
-            labelText: _shopierKeySet
-                ? 'API Key (kayıtlı · değiştirmek için yaz)'
-                : 'API Key',
-            border: const OutlineInputBorder(),
-          ),
-          obscureText: true,
+        const SizedBox(height: 16),
+        _section('Dönüş URL’leri'),
+        const Text(
+          'PayTR Mağaza Paneli → Bildirim URL’ye callback adresini yapıştır.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
         const SizedBox(height: 8),
-        TextField(
-          controller: _shopierSecret,
-          decoration: InputDecoration(
-            labelText: _shopierSecretSet
-                ? 'API Secret (kayıtlı · değiştirmek için yaz)'
-                : 'API Secret',
-            border: const OutlineInputBorder(),
-          ),
-          obscureText: true,
+        _urlField('Başarı (ok) URL', _okUrl),
+        _urlField('Hata (fail) URL', _failUrl),
+        _urlField(
+          'PayTR bildirim (Callback) URL',
+          _paytrCb,
+          hint: 'PayTR paneline yapıştır',
+          copyOnlyImportant: true,
         ),
         const SizedBox(height: 8),
-        TextField(
-          controller: _shopierIndex,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Website index',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _section('IBAN (havale / EFT)'),
-        TextField(
-          controller: _iban,
-          decoration: const InputDecoration(
-            labelText: 'IBAN',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _ibanHolder,
-          decoration: const InputDecoration(
-            labelText: 'Hesap sahibi',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _ibanBank,
-          decoration: const InputDecoration(
-            labelText: 'Banka',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _ibanNote,
-          maxLines: 2,
-          decoration: const InputDecoration(
-            labelText: 'Kullanıcıya not',
-            border: OutlineInputBorder(),
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text(
+              'Gelişmiş / eski yöntemler',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            subtitle: const Text(
+              'Shopier ve IBAN — Market’te kullanılmıyor',
+              style: TextStyle(fontSize: 12),
+            ),
+            children: [
+              const SizedBox(height: 4),
+              const Text('Aktif / açık yöntemler', style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final p in ['paytr', 'shopier', 'iban'])
+                    ChoiceChip(
+                      label: Text(p.toUpperCase()),
+                      selected: _active == p,
+                      onSelected: (_) => setState(() => _active = p),
+                    ),
+                ],
+              ),
+              Wrap(
+                spacing: 4,
+                children: [
+                  for (final p in ['paytr', 'shopier', 'iban'])
+                    FilterChip(
+                      label: Text(p.toUpperCase()),
+                      selected: _enabled.contains(p),
+                      onSelected: (v) => setState(() {
+                        if (v) {
+                          _enabled.add(p);
+                        } else {
+                          _enabled.remove(p);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _section('Shopier'),
+              TextField(
+                controller: _shopierKey,
+                decoration: InputDecoration(
+                  labelText: _shopierKeySet
+                      ? 'API Key (kayıtlı)'
+                      : 'API Key',
+                  border: const OutlineInputBorder(),
+                ),
+                obscureText: true,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _shopierSecret,
+                decoration: InputDecoration(
+                  labelText: _shopierSecretSet
+                      ? 'API Secret (kayıtlı)'
+                      : 'API Secret',
+                  border: const OutlineInputBorder(),
+                ),
+                obscureText: true,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _shopierIndex,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Website index',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              _urlField('Shopier callback', _shopierCb),
+              _urlField('Shopier pay page', _shopierPay),
+              const SizedBox(height: 8),
+              _section('IBAN'),
+              TextField(
+                controller: _iban,
+                decoration: const InputDecoration(
+                  labelText: 'IBAN',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _ibanHolder,
+                decoration: const InputDecoration(
+                  labelText: 'Hesap sahibi',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _ibanBank,
+                decoration: const InputDecoration(
+                  labelText: 'Banka',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _ibanNote,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Kullanıcıya not',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Merch için PayTR'),
+                subtitle: const Text('Kapalıysa merch IBAN’a düşer (önerilmez)'),
+                value: _merchPaytr,
+                onChanged: (v) => setState(() => _merchPaytr = v),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 16),
@@ -500,6 +544,19 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
               : const Text('Ödeme ayarlarını kaydet'),
         ),
       ],
+    );
+  }
+
+  Widget _card({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceMuted,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: child,
     );
   }
 

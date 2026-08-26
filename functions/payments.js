@@ -32,6 +32,8 @@ function paymentsModule({
   listPublicEventTickets,
   assertEventTicketAvailable,
   syncEventTicketsForEvent,
+  listPublicMerchProducts,
+  resolveMerchBySku,
   sendMail,
 }) {
   const PAYMENTS_DOC = 'app_config/payments';
@@ -83,6 +85,11 @@ function paymentsModule({
       marketInAppVisible: d.marketInAppVisible !== false,
       /** Merch için PayTR açık mı (kapalıysa IBAN) */
       merchPaytrEnabled: d.merchPaytrEnabled !== false,
+      /** Pay sayfasında taksit tablosu */
+      installmentTableEnabled: d.installmentTableEnabled === true,
+      installmentTableToken: String(d.installmentTableToken || '').trim(),
+      /** Varsayılan: siparişlerde taksit açılsın */
+      installmentsDefaultEnabled: d.installmentsDefaultEnabled !== false,
       sellerName: String(d.sellerName || 'AYS Tech').trim(),
       sellerEmail: String(d.sellerEmail || 'payments@kampusteyim.app').trim(),
       sellerPhone: String(d.sellerPhone || '+90 555 140 55 01').trim(),
@@ -289,6 +296,18 @@ function paymentsModule({
       if (typeof data.merchPaytrEnabled === 'boolean') {
         pub.merchPaytrEnabled = data.merchPaytrEnabled;
       }
+      if (typeof data.installmentTableEnabled === 'boolean') {
+        pub.installmentTableEnabled = data.installmentTableEnabled;
+      }
+      if (data.installmentTableToken != null) {
+        pub.installmentTableToken = sanitizePlainText(
+          data.installmentTableToken,
+          200,
+        );
+      }
+      if (typeof data.installmentsDefaultEnabled === 'boolean') {
+        pub.installmentsDefaultEnabled = data.installmentsDefaultEnabled;
+      }
       if (data.shopierWebsiteIndex != null) {
         pub.shopierWebsiteIndex = Number(data.shopierWebsiteIndex) || 1;
       }
@@ -320,6 +339,30 @@ function paymentsModule({
       await db.doc(PAYMENTS_DOC).set(pub, { merge: true });
       if (Object.keys(sec).length > 2) {
         await db.doc(SECRETS_DOC).set(sec, { merge: true });
+      }
+
+      // Market ürünü "plus" ile senkron
+      if (
+        pub.plusAmount != null ||
+        pub.plusDays != null ||
+        pub.plusProductName != null
+      ) {
+        const cfgNow = await readPublicPayments();
+        await db.collection('market_products').doc('plus').set(
+          {
+            id: 'plus',
+            type: 'plus',
+            sku: 'plus',
+            name: cfgNow.plusProductName || 'KampüsteyimPlus',
+            amount: Number(cfgNow.plusAmount) || 0,
+            plusDays: Number(cfgNow.plusDays) || 30,
+            short: `Dijital üyelik · 1 ay = ${Number(cfgNow.plusDays) || 30} gün`,
+            active: true,
+            updatedAt: new Date().toISOString(),
+            updatedBy: request.auth.uid,
+          },
+          { merge: true },
+        );
       }
 
       const cfg = await readPaymentsConfig();
@@ -374,6 +417,37 @@ function paymentsModule({
       } catch (e) {
         console.error('[getPaymentsPublic] eventTickets', e);
       }
+      let merch = [];
+      try {
+        if (typeof listPublicMerchProducts === 'function') {
+          merch = await listPublicMerchProducts();
+        }
+      } catch (e) {
+        console.error('[getPaymentsPublic] merch', e);
+      }
+      if (!merch.length) {
+        merch = Object.values(MERCH_CATALOG).map((m) => ({
+          sku: m.sku,
+          name: m.name,
+          amount: m.amount,
+          sizes: m.sizes,
+          short: m.short,
+          type: 'merch',
+          available: true,
+        }));
+      } else {
+        merch = merch.map((m) => ({
+          sku: m.sku || m.id,
+          name: m.name,
+          amount: m.amount,
+          sizes: m.sizes?.length ? m.sizes : ['Tek beden'],
+          short: m.short || '',
+          type: 'merch',
+          available: m.available !== false,
+          remaining: m.remaining,
+          statusLabel: m.statusLabel,
+        }));
+      }
       return {
         ok: true,
         activeProvider: 'paytr',
@@ -405,15 +479,7 @@ function paymentsModule({
           phone: cfg.sellerPhone,
           address: cfg.sellerAddress,
         },
-        merch: Object.values(MERCH_CATALOG).map((m) => ({
-          sku: m.sku,
-          name: m.name,
-          amount: m.amount,
-          sizes: m.sizes,
-          short: m.short,
-          type: 'merch',
-          available: true,
-        })),
+        merch,
         eventTickets,
       };
     },
@@ -500,12 +566,29 @@ function paymentsModule({
       );
 
       let merchItem = null;
+      let installmentProductFlags = {
+        installmentsEnabled: true,
+        cashPriceInstallments: false,
+      };
       if (product === 'merch') {
-        merchItem = MERCH_CATALOG[merchSku] || null;
+        if (typeof resolveMerchBySku === 'function') {
+          merchItem = await resolveMerchBySku(merchSku);
+        }
+        if (!merchItem) {
+          merchItem = MERCH_CATALOG[merchSku] || null;
+        }
         if (!merchItem) {
           throw new HttpsError('invalid-argument', 'Geçersiz ürün (sku)');
         }
-        if (!merchItem.sizes.includes(merchSize)) {
+        installmentProductFlags = {
+          installmentsEnabled: merchItem.installmentsEnabled !== false,
+          cashPriceInstallments: merchItem.cashPriceInstallments === true,
+        };
+        const sizes = Array.isArray(merchItem.sizes) ? merchItem.sizes : [];
+        if (sizes.length && !merchSize) {
+          // allow empty size only if single size
+        }
+        if (sizes.length && !sizes.includes(merchSize)) {
           throw new HttpsError('invalid-argument', 'Geçersiz beden');
         }
         if (!shipCity || !shipName || !shipAddress) {
@@ -515,6 +598,17 @@ function paymentsModule({
           );
         }
         amount = Number(merchItem.amount) || 0;
+      } else if (product === 'plus') {
+        try {
+          const plusSnap = await db.collection('market_products').doc('plus').get();
+          if (plusSnap.exists) {
+            const pd = plusSnap.data() || {};
+            installmentProductFlags = {
+              installmentsEnabled: pd.installmentsEnabled !== false,
+              cashPriceInstallments: pd.cashPriceInstallments === true,
+            };
+          }
+        } catch (_) {}
       }
 
       let campaignMeta = null;
@@ -617,6 +711,8 @@ function paymentsModule({
           userName,
           months: product === 'plus' ? months : null,
           plusDays: plusDaysForOrder,
+          plusProductName:
+            product === 'plus' ? cfg.plusProductName || 'KampüsteyimPlus' : null,
           source: sanitizePlainText(request.data?.source || 'app', 40) || 'app',
           sku: merchItem ? merchItem.sku : null,
           merchName: merchItem ? merchItem.name : null,
@@ -645,13 +741,22 @@ function paymentsModule({
         const paidOrder = { ...order, status: 'paid', provider: 'campaign' };
         if (product === 'plus') {
           await fulfillPaidOrder(paidOrder, cfg);
-        } else if (campaignMeta?.campaignId && typeof recordCampaignUse === 'function') {
-          await recordCampaignUse({
-            campaignId: campaignMeta.campaignId,
-            uid,
-            orderId: order.id,
-            code: campaignMeta.campaignCode,
-          });
+        } else if (product === 'merch') {
+          await db.collection(ORDERS).doc(order.id).set(
+            {
+              fulfillmentStatus: 'preparing',
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true },
+          );
+          if (campaignMeta?.campaignId && typeof recordCampaignUse === 'function') {
+            await recordCampaignUse({
+              campaignId: campaignMeta.campaignId,
+              uid,
+              orderId: order.id,
+              code: campaignMeta.campaignCode,
+            });
+          }
         }
         return {
           ok: true,
@@ -708,7 +813,12 @@ function paymentsModule({
         const userBasket = Buffer.from(
           JSON.stringify([[basketTitle, amount.toFixed(2), 1]]),
         ).toString('base64');
-        const noInstallment = '0';
+        const noInstallment = (() => {
+          const globalOn = cfg.installmentsDefaultEnabled !== false;
+          const productOn = installmentProductFlags.installmentsEnabled !== false;
+          if (!globalOn || !productOn) return '1';
+          return '0';
+        })();
         const maxInstallment = '0';
         const currency = 'TL';
         const testMode = cfg.paytrTestMode ? '1' : '0';
@@ -778,7 +888,13 @@ function paymentsModule({
         };
 
         await db.collection(ORDERS).doc(order.id).set(
-          { merchantOid, updatedAt: new Date().toISOString() },
+          {
+            merchantOid,
+            noInstallment: noInstallment === '1',
+            cashPriceInstallments:
+              installmentProductFlags.cashPriceInstallments === true,
+            updatedAt: new Date().toISOString(),
+          },
           { merge: true },
         );
 
@@ -971,7 +1087,8 @@ ${fields}
             order.meta?.merchName ||
             (order.product === 'plus' ? 'Kampüsteyim Plus' : 'Ödeme'),
         );
-        const amountStr = Number(order.amount || 0).toLocaleString('tr-TR', {
+        const amountNum = Number(order.amount || 0);
+        const amountStr = amountNum.toLocaleString('tr-TR', {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         });
@@ -982,11 +1099,45 @@ ${fields}
         const iframeSrc = escapeHtml(
           'https://www.paytr.com/odeme/guvenli/' + token,
         );
+        const showTable =
+          cfg.installmentTableEnabled === true &&
+          cfg.installmentTableToken &&
+          amountNum > 0 &&
+          order.noInstallment !== true;
+        const tableToken = encodeURIComponent(cfg.installmentTableToken || '');
+        const merchantId = encodeURIComponent(cfg.paytrMerchantId || '736106');
+        const amountParam = encodeURIComponent(amountNum.toFixed(2));
+        const cashNote =
+          order.cashPriceInstallments === true
+            ? '<p class="cash-note">Bu üründe peşin fiyatına taksit seçenekleri geçerlidir (banka koşullarına göre).</p>'
+            : '';
+        const taksitBlock = showTable
+          ? `
+<section class="taksit">
+  <h2>Taksit seçenekleri</h2>
+  ${cashNote}
+  <style>
+    #paytr_taksit_tablosu{clear:both;font-size:12px;max-width:100%;text-align:center;font-family:inherit}
+    #paytr_taksit_tablosu::before{display:table;content:" "}
+    #paytr_taksit_tablosu::after{content:"";clear:both;display:table}
+    .taksit-tablosu-wrapper{margin:5px;width:min(280px,100%);padding:12px;cursor:default;text-align:center;display:inline-block;border:1px solid #e1e1e1;border-radius:12px;background:#fff}
+    .taksit-logo img{max-height:28px;padding-bottom:10px}
+    .taksit-tutari-text{float:left;width:126px;color:#a2a2a2;margin-bottom:5px}
+    .taksit-tutar-wrapper{display:inline-block;background-color:#f7f7f7}
+    .taksit-tutar-wrapper:hover{background-color:#e8e8e8}
+    .taksit-tutari{float:left;width:126px;padding:6px 0;color:#474747;border:2px solid #ffffff}
+    .taksit-tutari-bold{font-weight:bold}
+    @media all and (max-width:600px){.taksit-tablosu-wrapper{margin:5px 0}}
+  </style>
+  <div id="paytr_taksit_tablosu"></div>
+  <script src="https://www.paytr.com/odeme/taksit-tablosu/v2?token=${tableToken}&merchant_id=${merchantId}&amount=${amountParam}&taksit=0&tumu=0"></script>
+</section>`
+          : '';
         res.set('Content-Type', 'text/html; charset=utf-8');
         res.set('Cache-Control', 'no-store');
         res.set(
           'Content-Security-Policy',
-          "frame-src https://www.paytr.com https://*.paytr.com; script-src 'self' 'unsafe-inline' https://www.paytr.com; default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com https://www.paytr.com",
+          "frame-src https://www.paytr.com https://*.paytr.com; script-src 'self' 'unsafe-inline' https://www.paytr.com; default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com https://www.paytr.com; img-src 'self' https: data:",
         );
         res.status(200).send(`<!DOCTYPE html>
 <html lang="tr">
@@ -1001,27 +1152,30 @@ ${fields}
 :root{--navy:#0B1F3A;--cyan:#00D4C8;--muted:#64748b;--line:#e2e8f0;--bg:#f4f7fb}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;font-family:"DM Sans",system-ui,sans-serif;background:var(--bg);color:#0f172a}
-.wrap{width:100%;max-width:100%;margin:0;padding:0 0 1.25rem}
-.bar{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.7rem 1rem;margin:0}
-.brand{font-weight:800;color:var(--navy);text-decoration:none;font-size:.95rem}
+.wrap{width:100%;max-width:100%;margin:0;padding:0 0 1.5rem}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.85rem 1.1rem;margin:0}
+.brand{font-weight:800;color:var(--navy);text-decoration:none;font-size:1.05rem}
 .brand span{color:var(--cyan)}
 .badge{font-size:.68rem;font-weight:800;background:#fef3c7;color:#92400e;padding:.25rem .5rem;border-radius:999px}
 .card{background:#fff;border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:0;overflow:hidden;box-shadow:none}
-.head{padding:.9rem 1rem .75rem;border-bottom:1px solid var(--line)}
-.head h1{margin:0;font-size:1.1rem;font-weight:800;color:var(--navy)}
-.head .row{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-top:.4rem}
-.head .amt{font-size:1.3rem;font-weight:800;color:var(--navy)}
-.head .hint{margin:0;color:var(--muted);font-size:.8rem;line-height:1.4}
-.pay{padding:0;min-height:70vh;background:#fff}
-.pay iframe{width:100%;min-height:70vh;border:0;display:block;background:#fff}
-.foot{margin-top:.75rem;padding:0 1rem;text-align:center;font-size:.75rem;color:var(--muted)}
-.foot a{color:var(--navy);font-weight:700;text-decoration:none;margin:0 .4rem}
-@media(min-width:760px){
-  body{background:var(--bg)}
-  .wrap{max-width:720px;margin:0 auto;padding:1rem 1rem 2rem}
-  .bar{padding:0;margin-bottom:.85rem}
-  .card{border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 28px rgba(15,23,42,.05)}
-  .pay,.pay iframe{min-height:560px}
+.head{padding:1.05rem 1.15rem .9rem;border-bottom:1px solid var(--line)}
+.head h1{margin:0;font-size:1.25rem;font-weight:800;color:var(--navy)}
+.head .row{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-top:.45rem}
+.head .amt{font-size:1.45rem;font-weight:800;color:var(--navy)}
+.head .hint{margin:0;color:var(--muted);font-size:.85rem;line-height:1.4}
+.pay{padding:0;min-height:78vh;background:#fff}
+.pay iframe{width:100%;min-height:78vh;border:0;display:block;background:#fff}
+.taksit{margin:1rem 1.1rem 0;padding:1rem;background:#fff;border:1px solid var(--line);border-radius:14px}
+.taksit h2{margin:0 0 .65rem;font-size:1rem;font-weight:800;color:var(--navy);text-align:center}
+.cash-note{margin:0 0 .75rem;font-size:.82rem;color:var(--muted);text-align:center;line-height:1.4}
+.foot{margin-top:.85rem;padding:0 1.1rem;text-align:center;font-size:.78rem;color:var(--muted)}
+.foot a{color:var(--navy);font-weight:700;text-decoration:none;margin:0 .45rem}
+@media(min-width:900px){
+  .wrap{max-width:980px;margin:0 auto;padding:1.25rem 1.25rem 2.25rem}
+  .bar{padding:0;margin-bottom:1rem}
+  .card{border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 32px rgba(15,23,42,.06)}
+  .pay,.pay iframe{min-height:640px}
+  .taksit{margin:1.1rem 0 0}
   .foot{padding:0}
 }
 </style>
@@ -1044,6 +1198,7 @@ body{margin:0;min-height:100vh;font-family:"DM Sans",system-ui,sans-serif;backgr
         <iframe src="${iframeSrc}" id="paytriframe" title="PayTR güvenli ödeme" allow="payment *"></iframe>
       </div>
     </div>
+    ${taksitBlock}
     <div class="foot">
       Kart bilgilerin Kampüsteyim sunucularında saklanmaz.
       <div style="margin-top:.45rem">
@@ -1197,22 +1352,31 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
         );
         if (product === 'plus' || product === 'event' || product === 'ad') {
           await fulfillPaidOrder(order, cfg);
-        } else if (
-          product === 'merch' &&
-          order.meta?.campaignId &&
-          typeof recordCampaignUse === 'function'
-        ) {
-          await recordCampaignUse({
-            campaignId: order.meta.campaignId,
-            uid: order.uid,
-            orderId: order.id || orderId,
-            code: order.meta.discountCode || order.meta.campaignCode,
-          });
+        } else if (product === 'merch') {
+          await ref.set(
+            {
+              fulfillmentStatus: 'preparing',
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true },
+          );
+          if (
+            order.meta?.campaignId &&
+            typeof recordCampaignUse === 'function'
+          ) {
+            await recordCampaignUse({
+              campaignId: order.meta.campaignId,
+              uid: order.uid,
+              orderId: order.id || orderId,
+              code: order.meta.discountCode || order.meta.campaignCode,
+            });
+          }
         }
       } else {
         await ref.set(
           {
             status: 'rejected',
+            fulfillmentStatus: 'cancelled',
             reviewedBy: request.auth.uid,
             updatedAt: new Date().toISOString(),
           },
@@ -1260,21 +1424,33 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
             );
             if (order.product === 'plus' || order.product === 'event' || order.product === 'ad') {
               await fulfillPaidOrder(order, cfg);
-            } else if (
-              order.product === 'merch' &&
-              order.meta?.campaignId &&
-              typeof recordCampaignUse === 'function'
-            ) {
-              await recordCampaignUse({
-                campaignId: order.meta.campaignId,
-                uid: order.uid,
-                orderId: order.id || doc.id,
-                code: order.meta.discountCode || order.meta.campaignCode,
-              });
+            } else if (order.product === 'merch') {
+              await doc.ref.set(
+                {
+                  fulfillmentStatus: 'preparing',
+                  updatedAt: new Date().toISOString(),
+                },
+                { merge: true },
+              );
+              if (
+                order.meta?.campaignId &&
+                typeof recordCampaignUse === 'function'
+              ) {
+                await recordCampaignUse({
+                  campaignId: order.meta.campaignId,
+                  uid: order.uid,
+                  orderId: order.id || doc.id,
+                  code: order.meta.discountCode || order.meta.campaignCode,
+                });
+              }
             }
           } else {
             await doc.ref.set(
-              { status: 'failed', updatedAt: new Date().toISOString() },
+              {
+                status: 'failed',
+                fulfillmentStatus: 'cancelled',
+                updatedAt: new Date().toISOString(),
+              },
               { merge: true },
             );
           }
@@ -1400,6 +1576,130 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
     },
   );
 
+  /** PayTR iade API — kısmi / tam; Plus anında düşer, merch iade durumuna alınır */
+  const adminRefundPaymentOrder = onCall(
+    { region: 'europe-west1', timeoutSeconds: 45 },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      await assertPlatformAdmin(request.auth.uid);
+      const orderId = sanitizePlainText(request.data?.orderId || '', 80);
+      const confirm = request.data?.confirm === true;
+      const confirm2 = request.data?.confirm2 === true;
+      if (!orderId) throw new HttpsError('invalid-argument', 'orderId gerekli');
+      if (!confirm || !confirm2) {
+        throw new HttpsError(
+          'failed-precondition',
+          'İade için çift onay gerekli (confirm + confirm2)',
+        );
+      }
+      const ref = db.collection(ORDERS).doc(orderId);
+      const snap = await ref.get();
+      if (!snap.exists) throw new HttpsError('not-found', 'Sipariş yok');
+      const order = snap.data() || {};
+      if (String(order.status || '') !== 'paid') {
+        throw new HttpsError('failed-precondition', 'Yalnızca ödenmiş sipariş iade edilir');
+      }
+      const merchantOid = String(order.merchantOid || '').trim();
+      if (!merchantOid) {
+        throw new HttpsError('failed-precondition', 'PayTR merchant_oid yok');
+      }
+      const orderAmount = Number(order.amount) || 0;
+      const already = Number(order.refundedAmount) || 0;
+      const remaining = Math.round((orderAmount - already) * 100) / 100;
+      if (!(remaining > 0)) {
+        throw new HttpsError('failed-precondition', 'İade edilecek tutar kalmadı');
+      }
+      let returnAmount = Number(request.data?.returnAmount);
+      if (!(returnAmount > 0)) returnAmount = remaining;
+      returnAmount = Math.round(returnAmount * 100) / 100;
+      if (returnAmount > remaining + 0.001) {
+        throw new HttpsError('invalid-argument', 'İade tutarı kalan tutarı aşıyor');
+      }
+      const cfg = await readPaymentsConfig();
+      if (!cfg.paytrMerchantId || !cfg.paytrMerchantKey || !cfg.paytrMerchantSalt) {
+        throw new HttpsError('failed-precondition', 'PayTR yapılandırılmamış');
+      }
+      const returnAmountStr = returnAmount.toFixed(2);
+      const paytrToken = crypto
+        .createHmac('sha256', cfg.paytrMerchantKey)
+        .update(
+          cfg.paytrMerchantId + merchantOid + returnAmountStr + cfg.paytrMerchantSalt,
+        )
+        .digest('base64');
+      const refRaw = sanitizePlainText(
+        request.data?.referenceNo || `RF${orderId}`.replace(/[^a-zA-Z0-9]/g, ''),
+        64,
+      );
+      const referenceNo = (refRaw.replace(/[^a-zA-Z0-9]/g, '') || `RF${Date.now()}`).slice(
+        0,
+        64,
+      );
+      const body = new URLSearchParams({
+        merchant_id: cfg.paytrMerchantId,
+        merchant_oid: merchantOid,
+        return_amount: returnAmountStr,
+        paytr_token: paytrToken,
+        reference_no: referenceNo,
+      });
+      const res = await fetch('https://www.paytr.com/odeme/iade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (String(json.status || '') !== 'success') {
+        console.error('[paytrRefund]', json);
+        throw new HttpsError(
+          'internal',
+          json.err_msg || json.error || 'PayTR iade başarısız',
+        );
+      }
+      const newRefunded = Math.round((already + returnAmount) * 100) / 100;
+      const full = newRefunded >= orderAmount - 0.001;
+      const product = String(order.product || '').toLowerCase();
+      const now = new Date().toISOString();
+      const patch = {
+        refundedAmount: newRefunded,
+        refundStatus: full ? 'full' : 'partial',
+        lastRefundAt: now,
+        lastRefundBy: request.auth.uid,
+        lastRefundAmount: returnAmount,
+        updatedAt: now,
+        paytrRefundPayload: json,
+      };
+      if (full) {
+        patch.status = 'refunded';
+        if (product === 'merch' || product === 'event') {
+          patch.fulfillmentStatus = 'refunded';
+        }
+      } else if (product === 'merch' || product === 'event') {
+        patch.fulfillmentStatus = 'return_pending';
+      }
+      await ref.set(patch, { merge: true });
+
+      // Plus: iade anında üyeliği kapat
+      if (product === 'plus' && order.uid) {
+        await db.collection('users').doc(order.uid).set(
+          {
+            plusActive: false,
+            plusExpiresAt: now,
+            plusSource: 'refund',
+            updatedAt: now,
+          },
+          { merge: true },
+        );
+      }
+
+      return {
+        ok: true,
+        returnAmount,
+        refundedAmount: newRefunded,
+        refundStatus: patch.refundStatus,
+        paytr: json,
+      };
+    },
+  );
+
   return {
     updatePaymentsConfig,
     getPaymentsAdmin,
@@ -1407,6 +1707,7 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
     createPaymentOrder,
     confirmIbanTransfer,
     adminReviewPaymentOrder,
+    adminRefundPaymentOrder,
     paytrCallback,
     shopierCallback,
     shopierPayPage,

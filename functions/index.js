@@ -1321,6 +1321,26 @@ exports.dispatchPush = onCall({ region: 'europe-west1' }, async (request) => {
     } catch (_) {}
   }
   const inboxUid = userDoc.exists ? userDoc.id : toUserId;
+  // Çağıran kullanıcı kendi inbox’ına sosyal bildirim yazmasın
+  // (toUserId = stableId iken auth.uid farklı olsa bile).
+  const socialSelfTypes = new Set([
+    'like',
+    'follow',
+    'repost',
+    'follow_request',
+    'follow_accepted',
+    'comment',
+    'mention',
+  ]);
+  if (socialSelfTypes.has(String(type || '')) && inboxUid === request.auth.uid) {
+    return { ok: true, delivered: 0, skipped: true, reason: 'self-inbox' };
+  }
+  if (actorId && String(actorId) === String(toUserId)) {
+    return { ok: true, delivered: 0, skipped: true, reason: 'self' };
+  }
+  if (String(request.auth.uid) === String(toUserId)) {
+    return { ok: true, delivered: 0, skipped: true, reason: 'self-auth' };
+  }
   if (!userAllowsPush(userData, type)) {
     return { ok: true, delivered: 0, skipped: true, reason: 'prefs' };
   }
@@ -7370,6 +7390,17 @@ exports.upsertMarketProduct = _marketProducts.upsertMarketProduct;
 exports.deleteMarketProduct = _marketProducts.deleteMarketProduct;
 exports.syncEventMarketTickets = _marketProducts.syncEventMarketTickets;
 
+const createMarketOrders = require('./market_orders');
+const _marketOrders = createMarketOrders({
+  db,
+  assertPlatformAdmin,
+  sendMail,
+  brandedEmail,
+  escapeHtml,
+});
+exports.listMarketOrders = _marketOrders.listMarketOrders;
+exports.updateMarketOrderStatus = _marketOrders.updateMarketOrderStatus;
+
 const _payments = paymentsModule({
   db,
   onCall,
@@ -7387,6 +7418,8 @@ const _payments = paymentsModule({
   listPublicEventTickets: _marketProducts.listPublicEventTickets,
   assertEventTicketAvailable: _marketProducts.assertEventTicketAvailable,
   syncEventTicketsForEvent: _marketProducts.syncEventTicketsForEvent,
+  listPublicMerchProducts: _marketProducts.listPublicMerchProducts,
+  resolveMerchBySku: _marketProducts.resolveMerchBySku,
   sendMail,
 });
 exports.updatePaymentsConfig = _payments.updatePaymentsConfig;
@@ -7395,6 +7428,7 @@ exports.getPaymentsPublic = _payments.getPaymentsPublic;
 exports.createPaymentOrder = _payments.createPaymentOrder;
 exports.confirmIbanTransfer = _payments.confirmIbanTransfer;
 exports.adminReviewPaymentOrder = _payments.adminReviewPaymentOrder;
+exports.adminRefundPaymentOrder = _payments.adminRefundPaymentOrder;
 exports.paytrCallback = _payments.paytrCallback;
 exports.shopierCallback = _payments.shopierCallback;
 exports.shopierPayPage = _payments.shopierPayPage;

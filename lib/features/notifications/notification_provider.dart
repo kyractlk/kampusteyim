@@ -200,7 +200,16 @@ class NotificationProvider extends ChangeNotifier {
     String? targetId,
     bool personalize = false,
   }) async {
-    if (toUserId == _userId) {
+    final to = toUserId.trim();
+    final actor = (actorId ?? '').trim();
+    if (to.isEmpty) return;
+    // Kendi kendine sosyal bildirim yok.
+    if (actor.isNotEmpty && actor == to) return;
+    if (_userId != null && actor == _userId && to == _userId) return;
+
+    // Yerel liste yalnızca gerçekten bize gelen bildirimlerde (optimistic).
+    // Offline iken actor'a “fallback local” yazma — PushService artık bunu yapmıyor.
+    if (to == _userId && (actor.isEmpty || actor != _userId)) {
       _items.insert(
         0,
         AppNotification(
@@ -217,7 +226,7 @@ class NotificationProvider extends ChangeNotifier {
       notifyListeners();
     }
     await PushService.instance.dispatch(
-      toUserId: toUserId,
+      toUserId: to,
       title: title,
       body: body,
       emoji: emoji,

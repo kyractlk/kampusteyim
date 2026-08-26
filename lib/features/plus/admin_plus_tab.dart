@@ -3,14 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../admin/admin_market_campaigns_panel.dart';
-import '../admin/admin_market_products_panel.dart';
 import '../admin/admin_user_search_field.dart';
 import '../payments/admin_payments_panel.dart';
 import 'plus_config.dart';
 import 'plus_provider.dart';
 
-/// Admin · Kampüsteyim Plus yönetimi
+/// Admin · Kampüsteyim Plus abonelik ayarları (market → Market sekmesi)
 class AdminPlusTab extends StatefulWidget {
   const AdminPlusTab({super.key});
 
@@ -161,8 +159,8 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Ücretsiz deneme, özellik bayrakları ve rate limit. '
-          'Kart / Shopier / IBAN ödemesi aşağıda yapılandırılır.',
+          'Ücretsiz deneme, özellik bayrakları, rate limit ve Plus atama. '
+          'Market ürünleri, siparişler ve PayTR ayarları Market sekmesinde.',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
         ),
         const SizedBox(height: 10),
@@ -177,17 +175,12 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Market vitrini',
+                'Plus satış fiyatı',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
               SizedBox(height: 4),
-              SelectableText(
-                'https://app.kampusteyim.app/market',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              SizedBox(height: 4),
               Text(
-                'Web satış + uygulama ödemeleri aynı API. Aylık tutar ödeme panelinden güncellenir.',
+                'Aylık tutar ve PayTR → Market → Ödeme ayarları.',
                 style: TextStyle(
                   fontSize: 12.5,
                   color: AppColors.textSecondary,
@@ -298,18 +291,23 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
           'Bekleyen Plus IBAN ödemeleri',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
+        const SizedBox(height: 4),
+        const Text(
+          'PayTR otomatik onaylar. IBAN ile gelen Plus ödemelerini burada onayla. '
+          'Market siparişleri Market sekmesinde.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
         const SizedBox(height: 8),
         const AdminPlusPaymentReviewsPanel(),
-        const Divider(height: 36),
-        const AdminPaymentsPanel(),
-        const Divider(height: 36),
-        const AdminMarketProductsPanel(),
-        const Divider(height: 36),
-        const AdminMarketCampaignsPanel(),
         const Divider(height: 36),
         const Text(
           'Kullanıcıya Plus ata / kaldır',
           style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Gün sayısını yazıp ata. Aynı işlemi Kullanıcılar → menüden de yapabilirsin.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
         const SizedBox(height: 8),
         AdminUserSearchField(
@@ -323,7 +321,8 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
           keyboardType: TextInputType.number,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           decoration: const InputDecoration(
-            labelText: 'Gün (ata)',
+            labelText: 'Kaç gün Plus?',
+            hintText: '30 / 60 / 365',
             border: OutlineInputBorder(),
           ),
         ),
@@ -339,16 +338,38 @@ class _AdminPlusTabState extends State<AdminPlusTab> {
             const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton(
-                onPressed: _revoke,
-                child: const Text('Kaldır'),
+                onPressed: () async {
+                  final id = _grantUser.text.trim();
+                  if (id.isEmpty) return;
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Plus kaldırılsın mı?'),
+                      content: const Text(
+                        'Seçili kullanıcının Plus üyeliği kapatılacak.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Vazgeç'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Kaldır'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (ok == true) await _revoke();
+                },
+                child: const Text('Plus kaldır'),
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
         Text(
-          'Hızlı ata: kullanıcılar sekmesinden uid kopyala. '
-          'Hediye/transfer kapalı.',
+          'Hızlı yol: Kullanıcılar sekmesinde kullanıcı menüsü → Plus ver / kaldır.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: AppColors.textSecondary,
               ),

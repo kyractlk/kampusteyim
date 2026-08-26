@@ -116,25 +116,29 @@ class _PayResultScreenState extends State<PayResultScreen> {
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: () {
-                    if (ok && widget.product == 'plus') {
-                      context.go('/profile/settings');
-                    } else {
-                      context.go('/market');
-                    }
+                    context.go('/home');
                   },
-                  child: Text(
-                    ok
-                        ? (widget.product == 'plus'
-                            ? 'Plus ayarlarına git'
-                            : 'Markete dön')
-                        : 'Tekrar dene',
-                  ),
+                  child: Text(ok ? 'Ana sayfaya dön' : 'Ana sayfa'),
                 ),
               ),
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () => context.go('/home'),
-                child: const Text('Ana sayfa'),
+                onPressed: () {
+                  if (ok && widget.product == 'plus') {
+                    context.go('/profile/settings');
+                  } else if (!ok) {
+                    context.go('/market');
+                  } else {
+                    context.go('/market');
+                  }
+                },
+                child: Text(
+                  ok
+                      ? (widget.product == 'plus'
+                          ? 'Plus ayarları'
+                          : 'Market')
+                      : 'Tekrar dene',
+                ),
               ),
             ],
           ),

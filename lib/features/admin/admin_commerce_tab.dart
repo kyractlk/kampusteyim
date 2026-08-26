@@ -8,25 +8,31 @@ import '../../core/widgets/safe_network_image.dart';
 import '../auth/data/auth_provider.dart';
 import '../commerce/commerce_service.dart';
 import '../payments/admin_payments_panel.dart';
+import 'admin_market_campaigns_panel.dart';
+import 'admin_market_orders_panel.dart';
+import 'admin_market_products_panel.dart';
 import 'admin_permissions.dart';
 import 'admin_provider.dart';
 import 'admin_user_search_field.dart';
 
-/// Admin: çekim + reklam teklif/onay/reach
-class AdminCommerceTab extends StatefulWidget {
-  const AdminCommerceTab({super.key});
+/// Admin · Market — sol submenu hub
+class AdminMarketTab extends StatefulWidget {
+  const AdminMarketTab({super.key});
 
   @override
-  State<AdminCommerceTab> createState() => _AdminCommerceTabState();
+  State<AdminMarketTab> createState() => _AdminMarketTabState();
 }
 
-class _AdminCommerceTabState extends State<AdminCommerceTab> {
+/// Geriye uyumluluk
+typedef AdminCommerceTab = AdminMarketTab;
+
+class _AdminMarketTabState extends State<AdminMarketTab> {
   final _companyId = TextEditingController();
   final _commission = TextEditingController(text: '10');
   final _minWithdraw = TextEditingController(text: '500');
 
-  /// company | smtp | withdrawals | ads | payments
-  String _section = 'ads';
+  /// orders | products | campaigns | pay_settings | payments | withdrawals | ads | company | smtp
+  String _section = 'orders';
 
   @override
   void dispose() {
@@ -61,144 +67,250 @@ class _AdminCommerceTabState extends State<AdminCommerceTab> {
     final admin = context.watch<AdminProvider>();
     final canAds = admin.can(me, AdminPermission.manageAds);
     final canPayments = admin.can(me, AdminPermission.reviewPayments);
+    final canMarket = admin.can(me, AdminPermission.managePlus);
     final canCompany =
         canAds ||
         admin.can(me, AdminPermission.createCompany) ||
         admin.can(me, AdminPermission.reviewLeads);
     final canSmtp = me?.isSuperAdmin == true;
-    final sections = <(String, String)>[
-      if (canAds) ('ads', 'Reklamlar'),
-      if (canPayments) ('payments', 'Ödeme onayları'),
-      if (canPayments) ('withdrawals', 'Bekleyen çekimler'),
-      if (canCompany) ('company', 'Firma ayarları'),
-      if (canSmtp) ('smtp', 'SMTP'),
+
+    final sections = <(String, String, IconData)>[
+      if (canMarket) ('orders', 'Siparişler', Icons.receipt_long_outlined),
+      if (canMarket) ('products', 'Ürünler', Icons.inventory_2_outlined),
+      if (canMarket) ('campaigns', 'Kampanyalar', Icons.local_offer_outlined),
+      if (canMarket) ('pay_settings', 'Ödeme ayarları', Icons.payments_outlined),
+      if (canPayments) ('payments', 'Ödeme onayları', Icons.fact_check_outlined),
+      if (canPayments) ('withdrawals', 'Çekimler', Icons.account_balance_outlined),
+      if (canAds) ('ads', 'Reklamlar', Icons.campaign_outlined),
+      if (canCompany) ('company', 'Firma ayarları', Icons.business_outlined),
+      if (canSmtp) ('smtp', 'SMTP', Icons.mail_outline),
     ];
+    if (sections.isEmpty) {
+      return const Center(child: Text('Bu sekme için yetkin yok.'));
+    }
     final effectiveSection = sections.any((s) => s.$1 == _section)
         ? _section
-        : (sections.isNotEmpty ? sections.first.$1 : 'ads');
+        : sections.first.$1;
+    if (effectiveSection != _section) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _section = effectiveSection);
+      });
+    }
+
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+
+    final menu = Material(
+      color: AppColors.surfaceMuted,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 24),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Market',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Sipariş, ürün, kampanya ve ödeme',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          for (final s in sections)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: ListTile(
+                dense: true,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                selected: effectiveSection == s.$1,
+                selectedTileColor: AppColors.navy.withValues(alpha: 0.1),
+                selectedColor: AppColors.navy,
+                iconColor: effectiveSection == s.$1
+                    ? AppColors.navy
+                    : AppColors.textSecondary,
+                textColor: effectiveSection == s.$1
+                    ? AppColors.navy
+                    : AppColors.textPrimary,
+                leading: Icon(s.$3, size: 20),
+                title: Text(
+                  s.$2,
+                  style: TextStyle(
+                    fontWeight: effectiveSection == s.$1
+                        ? FontWeight.w800
+                        : FontWeight.w600,
+                    fontSize: 13.5,
+                  ),
+                ),
+                onTap: () => setState(() => _section = s.$1),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    final body = switch (effectiveSection) {
+      'orders' => const SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 32),
+          child: AdminMarketOrdersPanel(),
+        ),
+      'products' => const SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 32),
+          child: AdminMarketProductsPanel(),
+        ),
+      'campaigns' => const SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 32),
+          child: AdminMarketCampaignsPanel(),
+        ),
+      'pay_settings' => const SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 32),
+          child: AdminPaymentsPanel(),
+        ),
+      'payments' => const AdminPaymentReviewsPanel(),
+      'withdrawals' => ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text(
+              'Bekleyen çekimler',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            _Withdrawals(),
+          ],
+        ),
+      'company' => ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text(
+              'Firma ayarları',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            AdminUserSearchField(
+              controller: _companyId,
+              labelText: 'Firma / org ara (ad / e-posta / uid)',
+              hintText: 'Ornek: Acme A.S. veya info@firma.com',
+              filter: (u) =>
+                  u.isCompany || u.isCommunity || u.isEventOrganizer,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _commission,
+                    decoration: const InputDecoration(
+                      labelText: 'Komisyon %',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _minWithdraw,
+                    decoration: const InputDecoration(
+                      labelText: 'Min çekim TL',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: _saveCompany,
+              child: const Text('Kaydet'),
+            ),
+          ],
+        ),
+      'smtp' => ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text(
+              'SMTP (süper admin)',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            const _SmtpBox(),
+          ],
+        ),
+      _ => const _AdsQueue(),
+    };
+
+    if (wide) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(width: 220, child: menu),
+          const VerticalDivider(width: 1),
+          Expanded(child: body),
+        ],
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        SizedBox(
+          height: 52,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             children: [
-              Text(
-                'Ticaret',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Reklam, ticari ödeme, çekim ve firma yönetimi.',
-                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                key: ValueKey('commerce_section_$effectiveSection'),
-                initialValue: effectiveSection,
-                decoration: const InputDecoration(
-                  labelText: 'Bölüm',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                items: [
-                  for (final section in sections)
-                    DropdownMenuItem(
-                      value: section.$1,
-                      child: Text(section.$2),
+              for (final s in sections)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    avatar: Icon(
+                      s.$3,
+                      size: 16,
+                      color: effectiveSection == s.$1
+                          ? Colors.white
+                          : AppColors.navy,
                     ),
-                ],
-                onChanged: (v) {
-                  if (v == null) return;
-                  setState(() => _section = v);
-                },
-              ),
+                    label: Text(
+                      s.$2,
+                      style: TextStyle(
+                        color: effectiveSection == s.$1
+                            ? Colors.white
+                            : AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    selected: effectiveSection == s.$1,
+                    selectedColor: AppColors.navy,
+                    backgroundColor: Colors.white,
+                    side: BorderSide(
+                      color: effectiveSection == s.$1
+                          ? AppColors.navy
+                          : AppColors.border,
+                    ),
+                    showCheckmark: false,
+                    onSelected: (_) => setState(() => _section = s.$1),
+                  ),
+                ),
             ],
           ),
         ),
         const Divider(height: 1),
-        Expanded(
-          child: switch (effectiveSection) {
-            'payments' => const AdminPaymentReviewsPanel(),
-            'withdrawals' => ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                const Text(
-                  'Bekleyen çekimler',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 8),
-                _Withdrawals(),
-              ],
-            ),
-            'company' => ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                const Text(
-                  'Firma ayarları',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 8),
-                AdminUserSearchField(
-                  controller: _companyId,
-                  labelText: 'Firma / org ara (ad / e-posta / uid)',
-                  hintText: 'Ornek: Acme A.S. veya info@firma.com',
-                  filter: (u) =>
-                      u.isCompany || u.isCommunity || u.isEventOrganizer,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _commission,
-                        decoration: const InputDecoration(
-                          labelText: 'Komisyon %',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _minWithdraw,
-                        decoration: const InputDecoration(
-                          labelText: 'Min çekim TL',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                FilledButton(
-                  onPressed: _saveCompany,
-                  child: const Text('Kaydet'),
-                ),
-              ],
-            ),
-            'smtp' => ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                const Text(
-                  'SMTP (süper admin)',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 8),
-                const _SmtpBox(),
-              ],
-            ),
-            _ => const _AdsQueue(),
-          },
-        ),
+        Expanded(child: body),
       ],
     );
   }
 }
+
 
 class _SmtpBox extends StatefulWidget {
   const _SmtpBox();

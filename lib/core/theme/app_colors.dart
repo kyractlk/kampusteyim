@@ -14,12 +14,13 @@ class AppColors {
   static const lime = Color(0xFF89C741);
   static const gold = Color(0xFFD9B31E);
 
-  static const background = Color(0xFFF4F7FB);
+  static const background = Color(0xFFF7F9FC);
   static const surface = Color(0xFFFFFFFF);
-  static const surfaceMuted = Color(0xFFECF1F7);
+  /// Feed / önerilenler ortak yumuşak zemin — soğuk “çimento” gri değil.
+  static const surfaceMuted = Color(0xFFF2F5FA);
   static const textPrimary = Color(0xFF0B1F3A);
-  static const textSecondary = Color(0xFF5B6B7C);
-  static const border = Color(0xFFD7E0EB);
+  static const textSecondary = Color(0xFF5A6A7C);
+  static const border = Color(0xFFE2E8F0);
   static const success = lime;
   static const warning = gold;
   static const error = crimson;

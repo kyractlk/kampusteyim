@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 import '../../core/storage/media_disk_cache.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/campus_affinity.dart';
-import '../../core/widgets/liquid_glass.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../core/widgets/web_safe_image.dart';
 import '../auth/data/auth_provider.dart';
@@ -208,17 +207,18 @@ class _SuggestCard extends StatelessWidget {
     final pending = auth.hasOutgoingFollowRequest(u.id);
     final following = auth.follows(u.id);
     final label = followActionLabel(auth, u);
-    final liquid = LiquidGlass.enabled(context);
-    final radius = liquid ? 16.0 : 12.0;
+    const radius = 14.0;
 
     final content = Material(
-      color: liquid ? Colors.transparent : AppColors.surface,
-      shape: liquid
-          ? null
-          : RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(radius),
-              side: const BorderSide(color: AppColors.border),
-            ),
+      color: AppColors.surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(radius),
+        side: BorderSide(
+          color: AppColors.navy.withValues(alpha: 0.08),
+        ),
+      ),
+      shadowColor: AppColors.navy.withValues(alpha: 0.12),
       child: Stack(
         children: [
           InkWell(
@@ -243,6 +243,7 @@ class _SuggestCard extends StatelessWidget {
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 1),
@@ -252,9 +253,9 @@ class _SuggestCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSecondary.withValues(alpha: 0.9),
                     ),
                   ),
                   const Spacer(),
@@ -266,20 +267,22 @@ class _SuggestCard extends StatelessWidget {
                           : () async {
                               await auth.toggleFollow(u.id);
                             },
-                      style: liquid
-                          ? liquidFilledButtonStyle(
-                              dark: false,
-                              minimumSize: const Size.fromHeight(30),
-                            )
-                          : FilledButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 6),
-                              visualDensity: VisualDensity.compact,
-                              textStyle: const TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: following
+                            ? AppColors.surfaceMuted
+                            : AppColors.navy,
+                        foregroundColor:
+                            following ? AppColors.textSecondary : Colors.white,
+                        disabledBackgroundColor: AppColors.surfaceMuted,
+                        disabledForegroundColor: AppColors.textSecondary,
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        visualDensity: VisualDensity.compact,
+                        elevation: 0,
+                        textStyle: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       child: Text(
                         following
                             ? 'Takip'
@@ -308,9 +311,7 @@ class _SuggestCard extends StatelessWidget {
               icon: Icon(
                 Icons.close,
                 size: 16,
-                color: liquid
-                    ? AppColors.textSecondary.withValues(alpha: 0.85)
-                    : null,
+                color: AppColors.textSecondary.withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -320,15 +321,19 @@ class _SuggestCard extends StatelessWidget {
 
     return SizedBox(
       width: 118,
-      child: liquid
-          ? LiquidGlass(
-              borderRadius: radius,
-              blur: 14,
-              intensity: 0.85,
-              borderOpacity: 0.55,
-              child: content,
-            )
-          : content,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.navy.withValues(alpha: 0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: content,
+      ),
     );
   }
 }

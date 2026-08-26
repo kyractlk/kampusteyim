@@ -301,6 +301,22 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
                           ),
                         ),
                       if (widget.admin
+                          .can(widget.me, AdminPermission.managePlus)) ...[
+                        PopupMenuItem(
+                          value: 'plus_grant',
+                          child: Text(
+                            u.plusActive
+                                ? 'Plus süre uzat / yeniden ver'
+                                : 'Plus ver',
+                          ),
+                        ),
+                        if (u.plusActive)
+                          const PopupMenuItem(
+                            value: 'plus_revoke',
+                            child: Text('Plus kaldır'),
+                          ),
+                      ],
+                      if (widget.admin
                           .can(widget.me, AdminPermission.restrictUsers)) ...[
                         const PopupMenuItem(
                             value: 'warn', child: Text('Uyarı gönder')),

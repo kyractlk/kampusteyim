@@ -303,7 +303,43 @@ class _AdminMarketCampaignsPanelState extends State<AdminMarketCampaignsPanel> {
           'Üyeye çek tanımla',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
+        const Text(
+          'Kampanyayı listeden veya aşağıdaki menüden seç, üyeyi ara, tanımla.',
+          style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          initialValue: _items.any((c) => '${c['id']}' == _selectedId)
+              ? _selectedId
+              : null,
+          decoration: const InputDecoration(
+            labelText: 'Kampanya seç',
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            for (final c in _items)
+              DropdownMenuItem(
+                value: '${c['id']}',
+                child: Text(
+                  '${c['code']} · ${c['label']}',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: (v) {
+            if (v == null) return;
+            Map<String, dynamic>? found;
+            for (final c in _items) {
+              if ('${c['id']}' == v) {
+                found = c;
+                break;
+              }
+            }
+            if (found != null) _edit(found);
+          },
+        ),
+        const SizedBox(height: 8),
         AdminUserSearchField(
           controller: _assignUid,
           labelText: 'Üye ara / uid',
