@@ -5011,22 +5011,32 @@ function parseOgrenciBelgesiPdfText(rawText) {
   const gradeM = flat.match(/Sınıf\s*:\s*([0-9]+\.?\s*SINIF)/i);
   if (gradeM) out.grade = gradeM[1].replace(/\s+/g, ' ').trim();
 
-  // "Program UNI/FAK/BOLUM/..." — satır kırıkları birleştir
+  // "ProgramUNI/FAK/BOLUM/..." — PDF bazen "Program" ile üniversiteyi bitişik yazar
   let program = '';
   const progBlock = text.match(
-    /Program\s+([\s\S]*?)(?:\n\s*:?\s*\n|Yukarıda kimlik|Bu belgenin)/i,
+    /Program\s*([\s\S]*?)(?:\n\s*:?\s*\n|Yukarıda\s+kimlik|Bu\s+belgenin)/i,
   );
   if (progBlock) {
     program = progBlock[1]
+      .replace(/-\s*\n\s*/g, '-') // satır sonu hece: tire kalsın (ELEKTRİK-ELEKTRONİK)
       .replace(/\n+/g, '')
       .replace(/\s+/g, ' ')
       .replace(/\s*\/\s*/g, '/')
       .trim();
   } else {
-    const one = flat.match(/Program\s+([A-ZÇĞİÖŞÜ0-9\s\-\/\.\(\)]+?)(?:\s+Yukarıda|\s+Bu belgenin|$)/i);
-    if (one) program = one[1].replace(/\s*\/\s*/g, '/').trim();
+    const one = flat.match(
+      /Program\s*([A-ZÇĞİÖŞÜ0-9\s\-\/\.\(\)]+?)(?:\s+Yukarıda|\s+Bu belgenin|$)/i,
+    );
+    if (one) {
+      program = one[1]
+        .replace(/-\s+/g, '')
+        .replace(/\s*\/\s*/g, '/')
+        .trim();
+    }
   }
-  out.programRaw = program.replace(/\/+$/, '');
+  // Başta kalan ":" / boşluk temizliği
+  program = program.replace(/^[:\s]+/, '').replace(/\/+$/, '');
+  out.programRaw = program;
   if (out.programRaw) {
     const segs = out.programRaw
       .split('/')
