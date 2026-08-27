@@ -619,6 +619,7 @@ class AuthProvider extends ChangeNotifier {
     String? studentVerificationType,
     String? studentIdFrontUrl,
     String? studentIdBackUrl,
+    String? edevletTicket,
   }) async {
     _busy = true;
     _error = null;
@@ -639,9 +640,14 @@ class AuthProvider extends ChangeNotifier {
       return false;
     }
 
+    final edevlet = (edevletTicket ?? '').trim();
+    final edevletOk = edevlet.length >= 20;
+
     var type = studentVerificationType;
     if (requireVerification) {
-      if (type == 'card') {
+      if (edevletOk) {
+        type = 'edevlet';
+      } else if (type == 'card') {
         if (studentIdFrontUrl == null || studentIdFrontUrl.trim().isEmpty) {
           _error = 'Öğrenci kartı ön yüzü zorunlu.';
           _busy = false;
@@ -650,7 +656,8 @@ class AuthProvider extends ChangeNotifier {
         }
       } else if (type == 'document') {
         if (studentIdDocUrl == null || studentIdDocUrl.trim().isEmpty) {
-          _error = 'Öğrenci belgesi PDF zorunlu.';
+          _error =
+              'e-Devlet doğrulaması başarısızsa öğrenci belgesi PDF yükle.';
           _busy = false;
           notifyListeners();
           return false;
@@ -777,7 +784,7 @@ class AuthProvider extends ChangeNotifier {
         kvkkAcceptedAt: DateTime.now(),
         marketingConsent: marketingConsent,
         marketingAcceptedAt: marketingConsent ? DateTime.now() : null,
-        accountStatus: requireVerification ? 'pending' : 'approved',
+        accountStatus: (requireVerification && !edevletOk) ? 'pending' : 'approved',
         studentIdDocUrl: studentIdDocUrl?.trim(),
         studentVerificationType: type,
         studentIdFrontUrl: studentIdFrontUrl?.trim(),
@@ -785,7 +792,38 @@ class AuthProvider extends ChangeNotifier {
       );
       _upsert(_user!);
       await _syncProfileToFirestore(_user!, privileged: true);
-      if (requireVerification) {
+
+      if (edevletOk) {
+        try {
+          final consumeEd = FirebaseFunctions.instanceFor(region: 'europe-west1')
+              .httpsCallable('consumeEdevletTicket');
+          final res = await consumeEd.call({'ticket': edevlet});
+          final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+          final docUrl = map['docUrl'] as String?;
+          _user = _user!.copyWith(
+            accountStatus: 'approved',
+            studentVerificationType: 'edevlet',
+            studentIdDocUrl: docUrl ?? _user!.studentIdDocUrl,
+          );
+          _upsert(_user!);
+        } catch (e) {
+          debugPrint('[auth] consumeEdevletTicket: $e');
+          // Bilet bozulursa belge yüklenmişse admin’e düş; yoksa hata.
+          if (hasDocs) {
+            _user = _user!.copyWith(accountStatus: 'pending');
+            _upsert(_user!);
+            await _syncProfileToFirestore(_user!, privileged: true);
+          } else {
+            _error =
+                'e-Devlet doğrulaması kayda işlenemedi. Belgeyi yükleyip tekrar dene.';
+            _busy = false;
+            notifyListeners();
+            return false;
+          }
+        }
+      }
+
+      if (requireVerification && _user?.accountStatus == 'pending') {
         try {
           final notify = FirebaseFunctions.instanceFor(region: 'europe-west1')
               .httpsCallable('notifyRegistrationPending');
@@ -814,7 +852,7 @@ class AuthProvider extends ChangeNotifier {
           'to': email.trim(),
           'firstName': firstName.trim(),
           'username': finalUsername,
-          'variant': requireVerification ? 'pending' : 'welcome',
+          'variant': _user?.accountStatus == 'pending' ? 'pending' : 'welcome',
         });
       } catch (e) {
         debugPrint('[auth] welcome mail: $e');
@@ -898,6 +936,60 @@ class AuthProvider extends ChangeNotifier {
       _error = 'Kod doğrulanamadı.';
       notifyListeners();
       return null;
+    }
+  }
+
+  /// e-Devlet barkod + TCKN ile öğrenci belgesi doğrula → kayıt bileti.
+  /// Başarısızsa [messages] dolu döner (admin yükleme yoluna düş).
+  Future<({bool ok, String? ticket, String? docUrl, List<String> messages})>
+      verifyEdevletBelge({
+    required String barkod,
+    required String tckn,
+  }) async {
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('verifyEdevletBelge');
+      final res = await callable.call({
+        'barkod': barkod.trim(),
+        'tckn': tckn.trim(),
+      });
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      final ok = map['ok'] == true;
+      final ticketRaw = '${map['ticket'] ?? ''}';
+      final ticket = ticketRaw.length >= 20 ? ticketRaw : null;
+      final docUrl = map['docUrl'] as String?;
+      final rawMsgs = map['messages'];
+      final messages = <String>[
+        if (rawMsgs is List)
+          ...rawMsgs.map((e) => '$e').where((e) => e.isNotEmpty),
+      ];
+      if (ok && ticket != null) {
+        return (ok: true, ticket: ticket, docUrl: docUrl, messages: const <String>[]);
+      }
+      return (
+        ok: false,
+        ticket: null,
+        docUrl: null,
+        messages: messages.isEmpty
+            ? const <String>['Belge doğrulanamadı.']
+            : messages,
+      );
+    } on FirebaseFunctionsException catch (e) {
+      _error = e.message ?? e.code;
+      notifyListeners();
+      return (
+        ok: false,
+        ticket: null,
+        docUrl: null,
+        messages: [e.message ?? e.code],
+      );
+    } catch (e) {
+      return (
+        ok: false,
+        ticket: null,
+        docUrl: null,
+        messages: const ['e-Devlet doğrulama servisine ulaşılamadı.'],
+      );
     }
   }
 

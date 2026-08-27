@@ -281,6 +281,7 @@ class _PendingCard extends StatelessWidget {
     final typeLabel = switch (type) {
       'card' => 'Kart',
       'document' => 'PDF',
+      'edevlet' => 'e-Devlet',
       _ => 'Belge',
     };
 

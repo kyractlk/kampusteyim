@@ -4869,6 +4869,229 @@ exports.verifyRegistrationEmailCode = onCall(
 );
 
 /**
+ * e-Devlet barkodlu belge doğrulama (öğrenci belgesi vb.).
+ * Ref: https://github.com/emrgncr/edevlet-belgedogrula-api
+ * data: { barkod, tckn }
+ * → { ok, ticket?, messages?, docUrl? }
+ */
+async function callEdevletBelgeDogrula(barkod, tckn) {
+  const qr = `barkod:${barkod};tckn:${tckn};`;
+  const url = `https://m.turkiye.gov.tr/api.php?p=belge-dogrulama&qr=${encodeURIComponent(qr)}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      Accept: 'application/json, text/plain, */*',
+      'Accept-Language': 'tr-TR,tr;q=0.9',
+      Referer: 'https://www.turkiye.gov.tr/',
+    },
+  });
+  const text = await res.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch (_) {
+    throw new HttpsError(
+      'unavailable',
+      'e-Devlet yanıtı okunamadı. Biraz sonra tekrar dene.',
+    );
+  }
+  return json;
+}
+
+exports.verifyEdevletBelge = onCall(
+  { region: 'europe-west1', timeoutSeconds: 60 },
+  async (request) => {
+    const barkod = String(request.data?.barkod || '')
+      .replace(/\s+/g, '')
+      .trim();
+    const tckn = String(request.data?.tckn || '')
+      .replace(/\D/g, '')
+      .trim();
+    if (!/^\d{10,32}$/.test(barkod)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Geçerli barkod numarası gir (belgedeki barkod).',
+      );
+    }
+    if (!/^\d{11}$/.test(tckn)) {
+      throw new HttpsError('invalid-argument', 'TC kimlik no 11 haneli olmalı.');
+    }
+    // Basit TC algoritma kontrolü
+    const digits = tckn.split('').map((d) => Number(d));
+    const odd = digits[0] + digits[2] + digits[4] + digits[6] + digits[8];
+    const even = digits[1] + digits[3] + digits[5] + digits[7];
+    const d10 = ((odd * 7 - even) % 10 + 10) % 10;
+    const d11 = (odd + even + digits[9]) % 10;
+    if (digits[9] !== d10 || digits[10] !== d11 || digits[0] === 0) {
+      throw new HttpsError('invalid-argument', 'TC kimlik numarası geçersiz.');
+    }
+
+    const rateId = crypto
+      .createHash('sha256')
+      .update(`edevlet:${tckn}`)
+      .digest('hex')
+      .slice(0, 32);
+    const rateRef = db.collection('registration_edevlet_rate').doc(rateId);
+    const rateSnap = await rateRef.get();
+    const rate = rateSnap.exists ? rateSnap.data() || {} : {};
+    const hourAgo = Date.now() - 60 * 60 * 1000;
+    const attempts = Array.isArray(rate.attempts)
+      ? rate.attempts.filter((t) => Number(t) > hourAgo)
+      : [];
+    if (attempts.length >= 8) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'Çok fazla deneme. Bir saat sonra tekrar dene.',
+      );
+    }
+    attempts.push(Date.now());
+    await rateRef.set(
+      { attempts, tcknHash: rateId, updatedAt: new Date().toISOString() },
+      { merge: true },
+    );
+
+    let json;
+    try {
+      json = await callEdevletBelgeDogrula(barkod, tckn);
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      console.warn('[verifyEdevletBelge]', e?.message || e);
+      throw new HttpsError(
+        'unavailable',
+        'e-Devlet doğrulama servisine ulaşılamadı.',
+      );
+    }
+
+    if (!json || json.return !== true) {
+      const messages = Array.isArray(json?.messageArr)
+        ? json.messageArr.map((m) => String(m))
+        : ['Belge doğrulanamadı.'];
+      return { ok: false, messages };
+    }
+
+    const ticket = crypto.randomBytes(24).toString('hex');
+    const expiresAt = new Date(Date.now() + 45 * 60 * 1000).toISOString();
+    let docUrl = null;
+
+    const b64 = json?.data?.barkodluBelge;
+    if (typeof b64 === 'string' && b64.length > 100) {
+      try {
+        const { getStorage } = require('firebase-admin/storage');
+        const bucket = getStorage().bucket();
+        const buf = Buffer.from(b64, 'base64');
+        const path = `student_ids/edevlet_${ticket}.pdf`;
+        const file = bucket.file(path);
+        await file.save(buf, {
+          metadata: {
+            contentType: 'application/pdf',
+            metadata: {
+              source: 'edevlet',
+              barkodHint: barkod.slice(-4),
+            },
+          },
+          resumable: false,
+        });
+        // 7 gün imzalı URL (admin inceleme / arşiv)
+        const [signed] = await file.getSignedUrl({
+          action: 'read',
+          expires: Date.now() + 7 * 24 * 3600 * 1000,
+        });
+        docUrl = signed;
+      } catch (e) {
+        console.warn('[verifyEdevletBelge] pdf upload', e?.message || e);
+      }
+    }
+
+    await db.collection('registration_edevlet_tickets').doc(ticket).set({
+      barkodLast4: barkod.slice(-4),
+      tcknHash: crypto.createHash('sha256').update(tckn).digest('hex'),
+      tcknLast2: tckn.slice(-2),
+      verified: true,
+      consumed: false,
+      docUrl,
+      createdAt: new Date().toISOString(),
+      expiresAt,
+    });
+
+    return {
+      ok: true,
+      ticket,
+      expiresAt,
+      docUrl,
+      message: 'Öğrenci belgesi e-Devlet üzerinden doğrulandı.',
+    };
+  },
+);
+
+/**
+ * Kayıt sırasında e-Devlet biletini tüket.
+ * data: { ticket } — auth zorunlu
+ */
+exports.consumeEdevletTicket = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    }
+    const ticket = String(request.data?.ticket || '').trim();
+    if (ticket.length < 20) {
+      throw new HttpsError('invalid-argument', 'e-Devlet bileti gerekli');
+    }
+    const ref = db.collection('registration_edevlet_tickets').doc(ticket);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      throw new HttpsError('not-found', 'e-Devlet doğrulaması bulunamadı');
+    }
+    const d = snap.data() || {};
+    if (d.verified !== true) {
+      throw new HttpsError('permission-denied', 'Belge doğrulanmamış');
+    }
+    if (d.consumed === true) {
+      throw new HttpsError('failed-precondition', 'Doğrulama zaten kullanılmış');
+    }
+    if (d.expiresAt && new Date(d.expiresAt).getTime() < Date.now()) {
+      throw new HttpsError('deadline-exceeded', 'Doğrulama süresi dolmuş');
+    }
+
+    const uid = request.auth.uid;
+    const now = new Date().toISOString();
+    await ref.set(
+      {
+        consumed: true,
+        consumedAt: now,
+        consumedBy: uid,
+      },
+      { merge: true },
+    );
+
+    await db
+      .collection('users')
+      .doc(uid)
+      .set(
+        {
+          accountStatus: 'approved',
+          studentVerificationType: 'edevlet',
+          studentIdDocUrl: d.docUrl || null,
+          edevletVerifiedAt: now,
+          edevletTicketId: ticket,
+          registrationAutoApprovedAt: now,
+          registrationAutoApproveReason: 'edevlet_belge',
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+
+    return {
+      ok: true,
+      approved: true,
+      docUrl: d.docUrl || null,
+    };
+  },
+);
+
+/**
  * Kayıt sonrası ticket tüket + Auth emailVerified.
  * data: { ticket }
  */
@@ -5381,9 +5604,11 @@ exports.notifyRegistrationPending = onCall(
     const typeLabel =
       studentVerificationType === 'card'
         ? 'Öğrenci kartı (ön/arka)'
-        : studentVerificationType === 'document'
-          ? 'Öğrenci belgesi (PDF)'
-          : 'Belge';
+        : studentVerificationType === 'edevlet'
+          ? 'e-Devlet otomatik doğrulama'
+          : studentVerificationType === 'document'
+            ? 'Öğrenci belgesi (PDF · manuel)'
+            : 'Belge';
 
     const links = [];
     if (studentIdFrontUrl) {

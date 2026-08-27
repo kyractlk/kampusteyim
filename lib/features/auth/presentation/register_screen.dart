@@ -30,6 +30,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _phone = TextEditingController();
   final _username = TextEditingController();
   final _emailCode = TextEditingController();
+  final _tckn = TextEditingController();
+  final _barkod = TextEditingController();
 
   String? _emailTicket;
   bool _emailVerified = false;
@@ -56,6 +58,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _pdfUrl;
   bool _uploading = false;
   String? _busySide;
+
+  String? _edevletTicket;
+  String? _edevletDocUrl;
+  bool _edevletBusy = false;
+  String? _edevletError;
+  bool _edevletFallbackUpload = false;
 
   List<String> get _stepIds {
     final ids = <String>['account', 'personal', 'campus'];
@@ -108,8 +116,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _phone.dispose();
     _username.dispose();
     _emailCode.dispose();
+    _tckn.dispose();
+    _barkod.dispose();
     super.dispose();
   }
+
+  bool get _edevletOk => (_edevletTicket ?? '').length >= 20;
 
   bool get _docsOk {
     if (!_security.requireStudentVerification) return true;
@@ -117,7 +129,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final needBack = _security.requireCardBothSides;
       return _frontUrl != null && (!needBack || _backUrl != null);
     }
-    if (_verifyType == 'document') return _pdfUrl != null;
+    if (_verifyType == 'document') {
+      if (_edevletOk) return true;
+      return _pdfUrl != null;
+    }
     return false;
   }
 
@@ -208,14 +223,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
       kvkkAccepted: _kvkk,
       marketingConsent: _marketing,
       requireVerification: require,
-      studentVerificationType: require ? _verifyType : null,
+      studentVerificationType: require
+          ? (_edevletOk ? 'edevlet' : _verifyType)
+          : null,
       studentIdFrontUrl: require && _verifyType == 'card' ? _frontUrl : null,
       studentIdBackUrl: require && _verifyType == 'card' ? _backUrl : null,
-      studentIdDocUrl: require && _verifyType == 'document' ? _pdfUrl : null,
+      studentIdDocUrl: require
+          ? (_edevletDocUrl ??
+              (_verifyType == 'document' ? _pdfUrl : null))
+          : null,
+      edevletTicket: _edevletOk ? _edevletTicket : null,
     );
     if (!mounted) return;
     if (ok) {
-      if (require) {
+      final pending = auth.user?.isAccountPending == true;
+      if (require && pending) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -225,6 +247,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
         context.go('/pending-approval');
       } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _edevletOk
+                  ? 'e-Devlet doğrulaması tamam — hesabın açıldı.'
+                  : 'Kayıt tamamlandı.',
+            ),
+          ),
+        );
         context.go('/home');
       }
     } else if (auth.error != null) {
@@ -232,6 +263,56 @@ class _RegisterScreenState extends State<RegisterScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text(auth.error!)));
     }
+  }
+
+  Future<void> _verifyEdevlet() async {
+    final tckn = _tckn.text.replaceAll(RegExp(r'\D'), '');
+    final barkod = _barkod.text.replaceAll(RegExp(r'\s'), '');
+    if (tckn.length != 11) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('TC kimlik no 11 haneli olmalı.')),
+      );
+      return;
+    }
+    if (barkod.length < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Belgedeki barkod numarasını gir.')),
+      );
+      return;
+    }
+    setState(() {
+      _edevletBusy = true;
+      _edevletError = null;
+    });
+    final auth = context.read<AuthProvider>();
+    final res = await auth.verifyEdevletBelge(barkod: barkod, tckn: tckn);
+    if (!mounted) return;
+    setState(() {
+      _edevletBusy = false;
+      if (res.ok) {
+        _edevletTicket = res.ticket;
+        _edevletDocUrl = res.docUrl;
+        _edevletFallbackUpload = false;
+        _edevletError = null;
+        _pdfUrl = res.docUrl ?? _pdfUrl;
+      } else {
+        _edevletTicket = null;
+        _edevletDocUrl = null;
+        _edevletFallbackUpload = true;
+        _edevletError = res.messages.isNotEmpty
+            ? res.messages.join(' ')
+            : 'Belge doğrulanamadı.';
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          res.ok
+              ? 'Belge e-Devlet’te doğrulandı.'
+              : 'Otomatik doğrulama olmadı — PDF yükleyip admin onayına gönderebilirsin.',
+        ),
+      ),
+    );
   }
 
   Future<void> _sendEmailCode() async {
@@ -791,8 +872,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Öğrenci kartı veya resmi belge yükle. Belgedeki bilgiler ad, soyad ve '
-          'öğrenci numarasıyla eşleşmeli. Başvuru admin onayına düşer.',
+          'Öğrenci belgesini e-Devlet barkodu ile anında doğrula. '
+          'Doğrulama olmazsa belgeyi yükle — başvuru admin onayına düşer.',
           style: TextStyle(
             fontSize: 13,
             height: 1.4,
@@ -805,12 +886,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
             selected: _verifyType == 'card',
             title: 'Öğrenci kartı',
             subtitle: _security.requireCardBothSides
-                ? 'Ön ve arka yüz fotoğrafı'
-                : 'Kart fotoğrafı',
+                ? 'Ön ve arka yüz · admin onayı'
+                : 'Kart fotoğrafı · admin onayı',
             icon: Icons.badge_outlined,
             onTap: () => setState(() {
               _verifyType = 'card';
               _pdfUrl = null;
+              _edevletTicket = null;
+              _edevletDocUrl = null;
+              _edevletFallbackUpload = false;
+              _edevletError = null;
             }),
           ),
         if (cardOk && pdfOk) const SizedBox(height: 8),
@@ -818,8 +903,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
           _TypeTile(
             selected: _verifyType == 'document',
             title: 'Öğrenci belgesi',
-            subtitle: 'Resmi belge PDF',
-            icon: Icons.picture_as_pdf_outlined,
+            subtitle: 'e-Devlet barkod + TC · otomatik doğrulama',
+            icon: Icons.verified_outlined,
             onTap: () => setState(() {
               _verifyType = 'document';
               _frontUrl = null;
@@ -872,20 +957,103 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ],
         if (_verifyType == 'document') ...[
           const SizedBox(height: 16),
-          _SideUploadCard(
-            label: 'PDF belge',
-            done: _pdfUrl != null,
-            busy: _uploading && _busySide == 'pdf',
-            pdfOnly: true,
-            onCamera: null,
-            onGallery: _uploading
-                ? null
-                : () => _runUpload(
-                    side: 'pdf',
-                    pick: StudentDocUpload.pickPdf,
-                    expectPdf: true,
-                  ),
+          TextFormField(
+            controller: _tckn,
+            keyboardType: TextInputType.number,
+            maxLength: 11,
+            decoration: const InputDecoration(
+              labelText: 'TC kimlik no',
+              counterText: '',
+              prefixIcon: Icon(Icons.badge_outlined),
+            ),
           ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _barkod,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Belge barkod no',
+              helperText: 'e-Devlet öğrenci belgesindeki barkod',
+              prefixIcon: Icon(Icons.qr_code_2_outlined),
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _edevletBusy ? null : _verifyEdevlet,
+            icon: _edevletBusy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.verified_user_outlined),
+            label: Text(
+              _edevletBusy ? 'Doğrulanıyor…' : 'e-Devlet ile doğrula',
+            ),
+          ),
+          if (_edevletOk) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.lime.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.lime),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.check_circle, color: AppColors.lime),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Belge doğrulandı. Kayıtta hesabın otomatik açılacak.',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (_edevletError != null && !_edevletOk) ...[
+            const SizedBox(height: 12),
+            Text(
+              _edevletError!,
+              style: const TextStyle(
+                color: Colors.redAccent,
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          ],
+          if (_edevletFallbackUpload || (!_edevletOk && _pdfUrl != null)) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Manuel yükleme (admin onayı)',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            _SideUploadCard(
+              label: 'PDF belge',
+              done: _pdfUrl != null,
+              busy: _uploading && _busySide == 'pdf',
+              pdfOnly: true,
+              onCamera: null,
+              onGallery: _uploading
+                  ? null
+                  : () => _runUpload(
+                      side: 'pdf',
+                      pick: StudentDocUpload.pickPdf,
+                      expectPdf: true,
+                    ),
+            ),
+          ],
+          if (!_edevletOk && !_edevletFallbackUpload) ...[
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => setState(() => _edevletFallbackUpload = true),
+              child: const Text('Doğrulayamıyorum — PDF yükle'),
+            ),
+          ],
         ],
       ],
     );
