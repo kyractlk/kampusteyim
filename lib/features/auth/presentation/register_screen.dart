@@ -1031,12 +1031,71 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ],
         if (_verifyType == 'document') ...[
           const SizedBox(height: 16),
+          ExpansionTile(
+            initiallyExpanded: false,
+            tilePadding: EdgeInsets.zero,
+            title: const Text(
+              'Barkod nasıl alınır?',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+            ),
+            children: const [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '1) turkiye.gov.tr veya e-Devlet mobil uygulamasına giriş yap.\n'
+                  '2) Arama: “Öğrenci Belgesi Sorgula” (YÖK).\n'
+                  '3) Belgeyi oluştur / görüntüle.\n'
+                  '4) Belgedeki barkod numarasını (ör. YOKOG…) kopyala.\n'
+                  '5) Aynı belgedeki T.C. kimlik no ile burada doğrula.\n\n'
+                  'Not: Barkod tek kullanımlık / süresi dolmuş olabilir; '
+                  '“bulunamadı” hatasında yeni belge oluştur.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.45,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              SizedBox(height: 8),
+            ],
+          ),
+          ExpansionTile(
+            initiallyExpanded: false,
+            tilePadding: EdgeInsets.zero,
+            title: const Text(
+              'KVKK — ne saklanır?',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+            ),
+            children: const [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Yasal dayanak: KVKK m.5/2-c (sözleşmenin kurulması/ifası) '
+                  've m.5/2-f (meşru menfaat — sahte hesap önleme). '
+                  'Aydınlatma: KVKK m.10.\n\n'
+                  'Saklanır: üniversite, fakülte, bölüm, öğrencilik durumu, '
+                  'sınıf; hesabındaki e-posta ve okul numarasıyla ilişkilendirilir.\n\n'
+                  'Saklanmaz: T.C. kimlik no, anne/baba adı, doğum bilgileri, ham PDF.\n\n'
+                  'Barkod + T.C. yalnızca anlık e-Devlet sorgusu içindir; '
+                  'sonrasında T.C. düz metin tutulmaz.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.45,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              SizedBox(height: 8),
+            ],
+          ),
+          const SizedBox(height: 8),
           TextFormField(
             controller: _tckn,
             keyboardType: TextInputType.number,
             maxLength: 11,
             decoration: const InputDecoration(
               labelText: 'TC kimlik no',
+              helperText: 'Yalnızca anlık doğrulama — saklanmaz',
               counterText: '',
               prefixIcon: Icon(Icons.badge_outlined),
             ),
@@ -1044,10 +1103,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: 10),
           TextFormField(
             controller: _barkod,
-            keyboardType: TextInputType.number,
+            textCapitalization: TextCapitalization.characters,
             decoration: const InputDecoration(
               labelText: 'Belge barkod no',
-              helperText: 'e-Devlet öğrenci belgesindeki barkod',
+              helperText: 'Örn. YOKOG… — belgedeki barkod',
               prefixIcon: Icon(Icons.qr_code_2_outlined),
             ),
           ),
@@ -1083,7 +1142,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Belge doğrulandı — ham PDF saklanmaz.',
+                          'Eğitim bilgileri doğrulandı — TC / anne-baba / PDF saklanmaz.',
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),

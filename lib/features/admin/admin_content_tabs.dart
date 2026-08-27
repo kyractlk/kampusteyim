@@ -239,16 +239,33 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
                   subtitle: Text(
                     '${u.email}\n${u.role.name}'
                     '${staffRole != null ? ' · ${staffRole.name}' : ''}'
-                    '${u.restrictionActive ? ' · kısıtlı' : ''}',
+                    '${u.restrictionActive ? ' · kısıtlı' : ''}'
+                    '${u.hasStudentCredential ? ' · belge kayıtlı' : ''}'
+                    '${u.studentVerificationType == 'edevlet' ? ' · e-Devlet' : ''}',
                   ),
                   isThreeLine: true,
-                  onTap: () => AppNav.openUserProfile(context, u),
+                  onTap: () {
+                    if (u.hasStudentCredential ||
+                        u.studentVerificationType != null) {
+                      _showUserCredential(context, u);
+                    } else {
+                      AppNav.openUserProfile(context, u);
+                    }
+                  },
                   trailing: PopupMenuButton<String>(
-                    onSelected: (v) =>
-                        widget.onUserAction(context, u, v),
+                    onSelected: (v) {
+                      if (v == 'credential') {
+                        _showUserCredential(context, u);
+                        return;
+                      }
+                      widget.onUserAction(context, u, v);
+                    },
                     itemBuilder: (_) => [
                       const PopupMenuItem(
                           value: 'profile', child: Text('Profili aç')),
+                      const PopupMenuItem(
+                          value: 'credential',
+                          child: Text('Öğrenci doğrulama / belge')),
                       if (widget.admin
                           .can(widget.me, AdminPermission.resetPassword))
                         const PopupMenuItem(
@@ -355,6 +372,73 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showUserCredential(BuildContext context, AppUser u) {
+    final c = u.studentCredential ?? const <String, dynamic>{};
+    String line(String label, dynamic v) {
+      final s = '${v ?? ''}'.trim();
+      if (s.isEmpty) return '';
+      return '$label: $s';
+    }
+
+    final lines = <String>[
+      line('Kaynak', c['source'] ?? u.studentVerificationType),
+      line('Üniversite', c['university'] ?? u.university),
+      line('Fakülte', c['faculty'] ?? u.faculty),
+      line('Bölüm', c['department'] ?? u.department),
+      line('Durum', c['studentStatus']),
+      line('Sınıf', c['grade']),
+      line('Bağlı e-posta', c['linkedEmail'] ?? u.email),
+      line('Bağlı okul no', c['linkedStudentNo'] ?? u.studentNo),
+      line('Doğrulama', c['verifiedAt']),
+      line('Barkod (son 4)', c['barkodLast4']),
+      if ((u.studentIdDocUrl ?? '').isNotEmpty)
+        'Manuel belge URL mevcut (admin incelemesi)',
+      if ((u.studentIdFrontUrl ?? '').isNotEmpty) 'Kart ön yüz yüklü',
+      if ((u.studentIdBackUrl ?? '').isNotEmpty) 'Kart arka yüz yüklü',
+    ].where((e) => e.isNotEmpty).toList();
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              u.fullName,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Kayıtlı öğrenci doğrulama özeti (eğitim alanları)',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 14),
+            if (lines.isEmpty)
+              const Text('Kayıtlı doğrulama / belge özeti yok.')
+            else
+              ...lines.map(
+                (e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(e, style: const TextStyle(height: 1.35)),
+                ),
+              ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                AppNav.openUserProfile(context, u);
+              },
+              child: const Text('Profili aç'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

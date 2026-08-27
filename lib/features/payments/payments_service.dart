@@ -96,7 +96,7 @@ class PaymentsPublicConfig {
   bool get paytrTestMode => raw['paytrTestMode'] == true;
   bool get shopierReady => raw['shopierReady'] == true;
   bool get ibanReady => raw['ibanReady'] == true;
-  bool get marketInAppVisible => raw['marketInAppVisible'] != false;
+  bool get marketInAppVisible => raw['marketInAppVisible'] == true;
   bool get merchPaytrEnabled => raw['merchPaytrEnabled'] != false;
 }
 

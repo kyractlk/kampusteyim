@@ -81,8 +81,8 @@ function paymentsModule({
         DEFAULT_SHOPIER_PAY,
       paytrPayPageUrl:
         String(d.paytrPayPageUrl || DEFAULT_PAYTR_PAY).trim() || DEFAULT_PAYTR_PAY,
-      /** Uygulama içi Market sekmesi — admin kapatabilir */
-      marketInAppVisible: d.marketInAppVisible !== false,
+      /** Uygulama içi Market sekmesi — varsayılan kapalı; admin açar */
+      marketInAppVisible: d.marketInAppVisible === true,
       /** Merch için PayTR açık mı (kapalıysa IBAN) */
       merchPaytrEnabled: d.merchPaytrEnabled !== false,
       /** Pay sayfasında taksit tablosu */
@@ -482,7 +482,7 @@ function paymentsModule({
         paytrTestMode: cfg.paytrTestMode === true,
         shopierReady: false,
         ibanReady: false,
-        marketInAppVisible: cfg.marketInAppVisible !== false,
+        marketInAppVisible: cfg.marketInAppVisible === true,
         merchPaytrEnabled: true,
         seller: {
           name: cfg.sellerName,

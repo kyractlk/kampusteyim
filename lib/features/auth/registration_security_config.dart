@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 /// Kayıt güvenlik / form alan ayarları — yalnız admin. Kullanıcıya gerekçe gösterilmez.
 class RegistrationSecurityConfig {
   const RegistrationSecurityConfig({
-    this.requireStudentVerification = true,
+    this.requireStudentVerification = false,
     this.requireStudentNo = true,
     this.requirePhone = true,
     this.allowStudentCard = true,
@@ -38,7 +38,7 @@ class RegistrationSecurityConfig {
   factory RegistrationSecurityConfig.fromMap(Map<String, dynamic>? m) {
     if (m == null || m.isEmpty) return defaults;
     return RegistrationSecurityConfig(
-      requireStudentVerification: m['requireStudentVerification'] != false,
+      requireStudentVerification: m['requireStudentVerification'] == true,
       requireStudentNo: m['requireStudentNo'] != false,
       requirePhone: m['requirePhone'] != false,
       allowStudentCard: m['allowStudentCard'] != false,

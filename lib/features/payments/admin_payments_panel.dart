@@ -111,7 +111,7 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
     _ibanNote.text = cfg.ibanNote;
     _paytrMerchantId.text = cfg.paytrMerchantId;
     _paytrTest = cfg.paytrTestMode;
-    _marketInApp = cfg.raw['marketInAppVisible'] != false;
+    _marketInApp = cfg.raw['marketInAppVisible'] == true;
     _merchPaytr = cfg.raw['merchPaytrEnabled'] != false;
     _installmentTable = cfg.raw['installmentTableEnabled'] == true;
     _installmentsDefault = cfg.raw['installmentsDefaultEnabled'] != false;

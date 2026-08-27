@@ -56,7 +56,8 @@
         <li>Kimlik: ad, soyad</li>
         <li>İletişim: e-posta, telefon</li>
         <li>Öğrenci / üyelik: öğrenci numarası, üniversite, şehir</li>
-        <li>Doğrulama: öğrenci kartı (ön/arka) veya öğrenci belgesi PDF</li>
+        <li>Doğrulama: tercih edilen yol e-Devlet barkodlu öğrenci belgesi; başarısızsa kart/PDF (admin incelemesi)</li>
+        <li>e-Devlet sonrası saklanan özet: üniversite, fakülte, bölüm, öğrencilik durumu (TC, anne/baba, ham PDF saklanmaz)</li>
         <li>Hesap: kullanıcı adı, profil fotoğrafı, biyografi, bağlantılar</li>
         <li>Kullanım: gönderi, yorum, beğeni, hikâye, etkinlik, çalışma odası</li>
         <li>Ödeme / bilet: sipariş kaydı, IBAN açıklama kodu, bilet sahibi uid (ödeyen = katılımcı)</li>
@@ -83,11 +84,24 @@
     <section>
       <h2>5. Hukuki sebepler</h2>
       <p>
-        6698 sayılı KVKK md. 5–6 kapsamında; sözleşmenin kurulması/ifası,
-        hukuki yükümlülük, meşru menfaat ve (gerektiğinde) açık rıza.
+        6698 sayılı KVKK md. 5 kapsamında başlıca dayanaklar:
+        md. 5/2-c (sözleşmenin kurulması/ifası — üyelik ve öğrenci platform hizmeti),
+        md. 5/2-f (meşru menfaat — sahte hesap / kötüye kullanım önleme; denge testi ile),
+        gerektiğinde açık rıza (pazarlama ve manuel belge incelemesi).
+        Aydınlatma: md. 10. Veri minimizasyonu: md. 4.
         Anayasa md. 20 (özel hayatın gizliliği) ve md. 22 (haberleşme hürriyeti)
-        ile KVKK birlikte değerlendirilir; kişisel veriler ancak kanunda
-        öngörülen usulle işlenir.
+        ile KVKK birlikte değerlendirilir.
+        Kaynak: <a href="https://www.kvkk.gov.tr/Icerik/4190/Kisisel-Verilerin-Islenme-Sartlari">KVKK — İşlenme şartları</a>.
+      </p>
+    </section>
+
+    <section>
+      <h2>5B. e-Devlet öğrenci belgesi</h2>
+      <p>
+        Barkod ve T.C. kimlik numarası yalnızca anlık Türkiye.gov.tr doğrulaması için kullanılır.
+        Dönen PDF bellekte okunur; eğitim/öğretim alanları çıkarılır; T.C., anne/baba adı,
+        doğum bilgileri ve ham PDF kalıcı saklanmaz. Özet, hesabın e-posta ve öğrenci numarası
+        ile ilişkilendirilir.
       </p>
     </section>
 
@@ -114,8 +128,10 @@
     <section>
       <h2>7. Saklama ve silme</h2>
       <p>
-        Öğrenci belgeleri onay ve itiraz süreleri boyunca; diğer veriler
-        üyelik ve yasal saklama süreleri boyunca tutulur.
+        Öğrenci doğrulama özetleri (eğitim alanları) üyelik süresince;
+        manuel yüklenen kart/PDF onay ve itiraz süreleri boyunca;
+        diğer veriler üyelik ve yasal saklama süreleri boyunca tutulur.
+        e-Devlet ham PDF ve T.C. kimlik numarası doğrulama sonrası tutulmaz.
         Hesap silme taleplerinde KVKK’ya uygun silme süreçleri işletilir.
         Uygulama içinden “Hesabımı sil” akışını kullanabilirsiniz.
       </p>

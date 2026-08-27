@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../auth/data/auth_provider.dart';
 import '../jobs/jobs_provider.dart';
+import '../payments/payments_service.dart';
 import '../plus/plus_widgets.dart';
 import 'profile_screen.dart' show openThemePicker;
 import 'package:firebase_auth/firebase_auth.dart' as fa;
@@ -131,17 +132,28 @@ class ProfileSettingsScreen extends StatelessWidget {
         children: [
           const PlusPrivilegesCard(),
           const SizedBox(height: 12),
-          _tile(
-            svg: MtIcons.ticket,
-            title: 'Market',
-            subtitle: 'Merch ürünleri ve kampüs koleksiyonu',
-            onTap: () => context.push('/market'),
-          ),
-          _tile(
-            svg: MtIcons.ticket,
-            title: 'Teslimat adreslerim',
-            subtitle: 'Market kargo adreslerini yönet',
-            onTap: () => context.push('/profile/delivery-addresses'),
+          FutureBuilder<PaymentsPublicConfig>(
+            future: PaymentsService.getPublic(),
+            builder: (context, snap) {
+              final marketOn = snap.data?.marketInAppVisible == true;
+              if (!marketOn) return const SizedBox.shrink();
+              return Column(
+                children: [
+                  _tile(
+                    svg: MtIcons.ticket,
+                    title: 'Market',
+                    subtitle: 'Merch ürünleri ve kampüs koleksiyonu',
+                    onTap: () => context.push('/market'),
+                  ),
+                  _tile(
+                    svg: MtIcons.ticket,
+                    title: 'Teslimat adreslerim',
+                    subtitle: 'Market kargo adreslerini yönet',
+                    onTap: () => context.push('/profile/delivery-addresses'),
+                  ),
+                ],
+              );
+            },
           ),
           _tile(
             svg: MtIcons.follow,

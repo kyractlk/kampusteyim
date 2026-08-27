@@ -550,6 +550,8 @@ class AuthProvider extends ChangeNotifier {
         'studentVerificationType': user.studentVerificationType,
         'studentIdFrontUrl': user.studentIdFrontUrl,
         'studentIdBackUrl': user.studentIdBackUrl,
+        if (user.studentCredential != null)
+          'studentCredential': user.studentCredential,
         'hideFromSearch': user.hideFromSearch,
         'isPrivateAccount': user.isPrivateAccount,
         'isSpectatorMode': user.isSpectatorMode,
@@ -804,14 +806,27 @@ class AuthProvider extends ChangeNotifier {
             return v.isNotEmpty ? v : fallback;
           }
 
+          final credRaw = map['studentCredential'];
+          final cred = credRaw is Map
+              ? Map<String, dynamic>.from(credRaw)
+              : <String, dynamic>{
+                  'source': 'edevlet',
+                  'university': map['university'],
+                  'faculty': map['faculty'],
+                  'department': map['department'],
+                  'studentStatus': map['studentStatus'],
+                  'grade': map['grade'],
+                  'linkedEmail': _user!.email,
+                  'linkedStudentNo': _user!.studentNo,
+                  'verifiedAt': DateTime.now().toIso8601String(),
+                };
           _user = _user!.copyWith(
             accountStatus: 'approved',
             studentVerificationType: 'edevlet',
             university: pick('university', _user!.university),
             faculty: pick('faculty', _user!.faculty),
             department: pick('department', _user!.department),
-            firstName: pick('firstName', _user!.firstName),
-            lastName: pick('lastName', _user!.lastName),
+            studentCredential: cred,
           );
           _upsert(_user!);
           await _syncProfileToFirestore(_user!, privileged: true);
@@ -1256,6 +1271,9 @@ class AuthProvider extends ChangeNotifier {
       studentVerificationType: m['studentVerificationType'] as String?,
       studentIdFrontUrl: m['studentIdFrontUrl'] as String?,
       studentIdBackUrl: m['studentIdBackUrl'] as String?,
+      studentCredential: m['studentCredential'] is Map
+          ? Map<String, dynamic>.from(m['studentCredential'] as Map)
+          : null,
       registrationRejectReason: '${m['registrationRejectReason'] ?? ''}',
       hideFromSearch: m['hideFromSearch'] == true,
       isPrivateAccount: m['isPrivateAccount'] == true,

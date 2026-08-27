@@ -131,7 +131,7 @@ class _MarketScreenState extends State<MarketScreen>
   Widget build(BuildContext context) {
     final glass = LiquidGlass.enabled(context);
     final cfg = _cfg;
-    final visible = cfg?.marketInAppVisible != false;
+    final visible = cfg?.marketInAppVisible == true;
     final merch = (cfg?.merch ?? const <Map<String, dynamic>>[])
         .where((m) => m['available'] != false)
         .toList();

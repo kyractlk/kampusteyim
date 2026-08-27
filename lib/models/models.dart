@@ -167,6 +167,7 @@ class AppUser {
     this.studentVerificationType,
     this.studentIdFrontUrl,
     this.studentIdBackUrl,
+    this.studentCredential,
     this.registrationRejectReason = '',
     this.hideFromSearch = false,
     this.isPrivateAccount = false,
@@ -266,8 +267,22 @@ class AppUser {
   /// Öğrenci kartı arka yüz.
   final String? studentIdBackUrl;
 
+  /// e-Devlet / belge doğrulama özeti — yalnız eğitim alanları (KVKK minimizasyon).
+  /// Anahtarlar: source, university, faculty, department, studentStatus, grade,
+  /// linkedEmail, linkedStudentNo, verifiedAt, barkodLast4.
+  final Map<String, dynamic>? studentCredential;
+
   /// Red sebebi (varsa).
   final String registrationRejectReason;
+
+  bool get hasStudentCredential {
+    final c = studentCredential;
+    if (c == null || c.isEmpty) return false;
+    return (c['university'] ?? c['department'] ?? c['source'] ?? '')
+        .toString()
+        .trim()
+        .isNotEmpty;
+  }
 
   /// Aramada görünmez.
   final bool hideFromSearch;
@@ -479,6 +494,7 @@ class AppUser {
     String? studentVerificationType,
     String? studentIdFrontUrl,
     String? studentIdBackUrl,
+    Map<String, dynamic>? studentCredential,
     String? registrationRejectReason,
     bool? hideFromSearch,
     bool? isPrivateAccount,
@@ -492,6 +508,7 @@ class AppUser {
     bool clearRestrictionUntil = false,
     bool clearStaffRole = false,
     bool clearStudentIdDoc = false,
+    bool clearStudentCredential = false,
   }) {
     return AppUser(
       id: id,
@@ -569,6 +586,9 @@ class AppUser {
       studentIdBackUrl: clearStudentIdDoc
           ? null
           : (studentIdBackUrl ?? this.studentIdBackUrl),
+      studentCredential: clearStudentCredential
+          ? null
+          : (studentCredential ?? this.studentCredential),
       registrationRejectReason:
           registrationRejectReason ?? this.registrationRejectReason,
       hideFromSearch: hideFromSearch ?? this.hideFromSearch,
