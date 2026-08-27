@@ -114,6 +114,9 @@ class PushService {
           link: link,
           targetId: targetId,
           type: type,
+          title: '$title',
+          body: '$body',
+          actorId: '${data['actorId'] ?? ''}',
         );
         showLocal(
           title: title,
@@ -153,7 +156,14 @@ class PushService {
     final link = '${data['link'] ?? ''}';
     final targetId = '${data['targetId'] ?? ''}';
     final type = '${data['type'] ?? ''}';
-    final payload = _payloadFor(link: link, targetId: targetId, type: type);
+    final payload = _payloadFor(
+      link: link,
+      targetId: targetId,
+      type: type,
+      title: '${data['title'] ?? ''}',
+      body: '${data['body'] ?? ''}',
+      actorId: '${data['actorId'] ?? ''}',
+    );
     if (payload.isNotEmpty) {
       onNotificationTap?.call(payload);
     }
@@ -163,14 +173,80 @@ class PushService {
     required String link,
     required String targetId,
     required String type,
+    String title = '',
+    String body = '',
+    String actorId = '',
   }) {
     if (link.trim().isNotEmpty) return link.trim();
-    if (targetId.isEmpty) return '';
-    final t = type.toLowerCase();
+    final path = _pathForTarget(
+      type: type,
+      targetId: targetId,
+      title: title,
+      body: body,
+      actorId: actorId,
+    );
+    return path ?? '';
+  }
+
+  /// type + target → uygulama içi path (CF ile aynı mantık).
+  static String? _pathForTarget({
+    required String type,
+    required String targetId,
+    String title = '',
+    String body = '',
+    String actorId = '',
+  }) {
+    final tid = targetId.trim();
+    final t = type.toLowerCase().trim();
+    final blob = '$title $body'.toLowerCase();
+    final aid = actorId.trim();
+
     if (t == 'reel' || t.startsWith('reel_')) {
-      return '/reels?id=${Uri.encodeComponent(targetId)}';
+      if (tid.isEmpty) return '/reels';
+      return '/reels?id=${Uri.encodeComponent(tid)}';
     }
-    return '/post/${Uri.encodeComponent(targetId)}';
+    if (t == 'follow' || t == 'follow_request' || t == 'follow_accepted') {
+      final u = aid.isNotEmpty ? aid : tid;
+      if (u.isEmpty) return null;
+      return '/user/${Uri.encodeComponent(u)}';
+    }
+    if (t == 'story' || t == 'story_like') {
+      final u = aid.isNotEmpty ? aid : tid;
+      if (u.isEmpty) return null;
+      return '/stories/view/${Uri.encodeComponent(u)}';
+    }
+    if (t == 'event' || (tid.isNotEmpty && tid.startsWith('e_'))) {
+      if (tid.isEmpty) return '/events';
+      return '/event/${Uri.encodeComponent(tid)}';
+    }
+    if (t == 'announcement' ||
+        tid.startsWith('a_') ||
+        tid.startsWith('ann_')) {
+      if (tid.isEmpty) return '/announcements';
+      return '/announcement/${Uri.encodeComponent(tid)}';
+    }
+    if (t == 'community') {
+      if (tid.isEmpty) return null;
+      if (blob.contains('duyuru')) {
+        return '/announcement/${Uri.encodeComponent(tid)}';
+      }
+      return '/event/${Uri.encodeComponent(tid)}';
+    }
+    if (t == 'job') {
+      if (tid.isEmpty) return '/staj-ai';
+      final postId = tid.startsWith('job_') ? tid : 'job_$tid';
+      return '/post/${Uri.encodeComponent(postId)}';
+    }
+    if (t == 'application' || t == 'offer') {
+      if (tid.isEmpty) return '/firma';
+      return '/firma/job/${Uri.encodeComponent(tid)}';
+    }
+    if (blob.contains('hikâye') || blob.contains('hikaye')) {
+      final u = aid.isNotEmpty ? aid : tid;
+      if (u.isNotEmpty) return '/stories/view/${Uri.encodeComponent(u)}';
+    }
+    if (tid.isEmpty) return null;
+    return '/post/${Uri.encodeComponent(tid)}';
   }
 
   bool _loggedPermissionBlock = false;
@@ -284,6 +360,7 @@ class PushService {
     required String type,
     String? actorId,
     String? targetId,
+    String? linkPath,
     bool personalize = false,
   }) async {
     try {
@@ -297,6 +374,7 @@ class PushService {
         'type': type,
         'actorId': actorId,
         'targetId': targetId,
+        'linkPath': linkPath,
         'personalize': personalize,
       });
     } catch (e) {

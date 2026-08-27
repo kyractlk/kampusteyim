@@ -515,6 +515,7 @@ class JobsProvider extends ChangeNotifier {
       type: 'application',
       actorId: studentId,
       targetId: jobId,
+      linkPath: '/firma/job/${Uri.encodeComponent(jobId)}',
     );
     return true;
   }

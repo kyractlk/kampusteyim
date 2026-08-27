@@ -418,6 +418,7 @@ class FeedProvider extends ChangeNotifier {
     required String type,
     String? actorId,
     String? targetId,
+    String? linkPath,
   }) async {
     final n = _notifications;
     if (n == null || toUserId.isEmpty) return;
@@ -429,6 +430,7 @@ class FeedProvider extends ChangeNotifier {
       type: type,
       actorId: actorId,
       targetId: targetId,
+      linkPath: linkPath,
     );
   }
 
@@ -463,8 +465,9 @@ class FeedProvider extends ChangeNotifier {
         await _notify(
           toUserId: communityId,
           copy: NotificationCopy.eventDeadlinePassed(e.title),
-          type: 'community',
+          type: 'event',
           targetId: e.id,
+          linkPath: '/event/${Uri.encodeComponent(e.id)}',
         );
         for (final a in e.applications) {
           if (a.status != EventApplicationStatus.pending) continue;
@@ -473,8 +476,9 @@ class FeedProvider extends ChangeNotifier {
             copy: NotificationCopy.eventApplicationCancelled(
               eventTitle: e.title,
             ),
-            type: 'community',
+            type: 'event',
             targetId: e.id,
+            linkPath: '/event/${Uri.encodeComponent(e.id)}',
           );
         }
       }
@@ -1064,9 +1068,10 @@ class FeedProvider extends ChangeNotifier {
           who: applicant.fullName,
           eventTitle: event.title,
         ),
-        type: 'community',
+        type: 'event',
         actorId: applicant.id,
         targetId: event.id,
+        linkPath: '/event/${Uri.encodeComponent(event.id)}',
       );
     }
     return null;
@@ -1131,8 +1136,9 @@ class FeedProvider extends ChangeNotifier {
         eventTitle: event.title,
         untilLabel: label,
       ),
-      type: 'community',
+      type: 'event',
       targetId: event.id,
+      linkPath: '/event/${Uri.encodeComponent(event.id)}',
     );
   }
 
@@ -1265,8 +1271,9 @@ class FeedProvider extends ChangeNotifier {
             : NotificationCopy.eventApplicationRejected(
                 eventTitle: event.title,
               ),
-        type: 'community',
+        type: 'event',
         targetId: event.id,
+        linkPath: '/event/${Uri.encodeComponent(event.id)}',
       );
     }
 
@@ -1274,8 +1281,9 @@ class FeedProvider extends ChangeNotifier {
       await _notify(
         toUserId: event.communityId!,
         copy: NotificationCopy.eventRosterFull(event.title),
-        type: 'community',
+        type: 'event',
         targetId: event.id,
+        linkPath: '/event/${Uri.encodeComponent(event.id)}',
       );
     }
   }
@@ -1315,8 +1323,9 @@ class FeedProvider extends ChangeNotifier {
         who: removed.userName,
         eventTitle: event.title,
       ),
-      type: 'community',
+      type: 'event',
       targetId: event.id,
+      linkPath: '/event/${Uri.encodeComponent(event.id)}',
     );
   }
 

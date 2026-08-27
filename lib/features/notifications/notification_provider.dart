@@ -198,6 +198,7 @@ class NotificationProvider extends ChangeNotifier {
     required String type,
     String? actorId,
     String? targetId,
+    String? linkPath,
     bool personalize = false,
   }) async {
     final to = toUserId.trim();
@@ -221,6 +222,7 @@ class NotificationProvider extends ChangeNotifier {
           createdAt: DateTime.now(),
           actorId: actorId,
           targetId: targetId,
+          link: linkPath,
         ),
       );
       notifyListeners();
@@ -233,6 +235,7 @@ class NotificationProvider extends ChangeNotifier {
       type: type,
       actorId: actorId,
       targetId: targetId,
+      linkPath: linkPath,
       personalize: personalize,
     );
   }

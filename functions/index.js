@@ -86,6 +86,72 @@ const BRAND_LOGO =
   'https://ayskampuss.web.app/kampusteyim_icon.png';
 /** Uygulama (SPA) — e-posta CTA ve derin linkler */
 const BRAND_HOME = 'https://app.kampusteyim.app';
+
+/** type + targetId → uygulama içi path (Flutter AppNav ile uyumlu). */
+function resolveDeepLinkPath({
+  type,
+  targetId,
+  actorId,
+  title = '',
+  body = '',
+  linkPath,
+}) {
+  if (linkPath && String(linkPath).trim()) {
+    const p = String(linkPath).trim();
+    return p.startsWith('/') ? p : `/${p}`;
+  }
+  const t = String(type || '').toLowerCase();
+  const tid = targetId != null ? String(targetId).trim() : '';
+  const aid = actorId != null ? String(actorId).trim() : '';
+  const blob = `${title || ''} ${body || ''}`.toLowerCase();
+  const enc = (id) => encodeURIComponent(String(id));
+
+  if (t === 'reel' || t.startsWith('reel_')) {
+    return tid ? `/reels?id=${enc(tid)}` : '/reels';
+  }
+  if (t === 'follow' || t === 'follow_request' || t === 'follow_accepted') {
+    const u = aid || tid;
+    return u ? `/user/${enc(u)}` : null;
+  }
+  if (t === 'story' || t === 'story_like') {
+    const u = aid || tid;
+    return u ? `/stories/view/${enc(u)}` : null;
+  }
+  if (t === 'event' || t === 'event_application' || (tid && tid.startsWith('e_'))) {
+    return tid ? `/event/${enc(tid)}` : '/events';
+  }
+  if (
+    t === 'announcement' ||
+    (tid && (tid.startsWith('a_') || tid.startsWith('ann_')))
+  ) {
+    return tid ? `/announcement/${enc(tid)}` : '/announcements';
+  }
+  if (t === 'community') {
+    if (!tid) return null;
+    if (blob.includes('duyuru')) return `/announcement/${enc(tid)}`;
+    return `/event/${enc(tid)}`;
+  }
+  if (t === 'job') {
+    if (!tid) return '/staj-ai';
+    const postId = tid.startsWith('job_') ? tid : `job_${tid}`;
+    return `/post/${enc(postId)}`;
+  }
+  if (t === 'application' || t === 'offer') {
+    return tid ? `/firma/job/${enc(tid)}` : '/firma';
+  }
+  if (blob.includes('hikâye') || blob.includes('hikaye')) {
+    const u = aid || tid;
+    return u ? `/stories/view/${enc(u)}` : null;
+  }
+  if (!tid) return null;
+  return `/post/${enc(tid)}`;
+}
+
+function absoluteDeepLink(path) {
+  if (!path) return '';
+  if (String(path).startsWith('http')) return String(path);
+  return `${BRAND_HOME}${String(path).startsWith('/') ? path : `/${path}`}`;
+}
 /** Tanıtım sitesi */
 const BRAND_MARKETING = 'https://kampusteyim.app';
 const BRAND_LABEL = 'KampüsteyimAPP';
@@ -448,11 +514,15 @@ function userAllowsPush(userData, type) {
     case 'offer':
       return prefs.offers !== false;
     case 'community':
+    case 'event':
+    case 'announcement':
       return prefs.community !== false;
     case 'activity':
     case 'reel':
     case 'reel_like':
     case 'reel_comment':
+    case 'story':
+    case 'story_like':
       return prefs.activity !== false;
     case 'admin_broadcast':
       return prefs.admin !== false;
@@ -1302,6 +1372,7 @@ exports.dispatchPush = onCall({ region: 'europe-west1' }, async (request) => {
     type = 'community',
     actorId,
     targetId,
+    linkPath,
     personalize = false,
   } = request.data || {};
   if (!toUserId || !title || !body) {
@@ -1358,17 +1429,15 @@ exports.dispatchPush = onCall({ region: 'europe-west1' }, async (request) => {
     }
   }
 
-  const typeStr = String(type || '');
-  const isReelPush =
-    typeStr === 'reel' ||
-    typeStr.startsWith('reel_') ||
-    typeStr === 'reel_like' ||
-    typeStr === 'reel_comment';
-  const deepLink = targetId
-    ? isReelPush
-      ? `${BRAND_HOME}/reels?id=${encodeURIComponent(String(targetId))}`
-      : `${BRAND_HOME}/post/${encodeURIComponent(String(targetId))}`
-    : '';
+  const path = resolveDeepLinkPath({
+    type,
+    targetId,
+    actorId,
+    title,
+    body: finalBody,
+    linkPath,
+  });
+  const deepLink = absoluteDeepLink(path);
 
   const inbox = {
     title,
@@ -1548,16 +1617,15 @@ async function deliverToUserDoc({
     return { delivered: 0, mailed: 0, skipped: true };
   }
   const inboxUid = doc.id;
-  const typeStr = String(type || '');
-  const isReelPush =
-    typeStr === 'reel' || typeStr.startsWith('reel_');
-  const link = linkPath
-    ? `${BRAND_HOME}${linkPath.startsWith('/') ? linkPath : `/${linkPath}`}`
-    : targetId
-      ? isReelPush
-        ? `${BRAND_HOME}/reels?id=${encodeURIComponent(String(targetId))}`
-        : `${BRAND_HOME}/post/${encodeURIComponent(String(targetId))}`
-      : BRAND_HOME;
+  const path = resolveDeepLinkPath({
+    type,
+    targetId,
+    actorId,
+    title,
+    body,
+    linkPath,
+  });
+  const link = absoluteDeepLink(path) || BRAND_HOME;
 
   await db.collection('users').doc(inboxUid).collection('notifications').add({
     title,
@@ -1894,9 +1962,15 @@ exports.notifyAudience = onCall(
       throw new HttpsError('invalid-argument', 'actorId, title, body zorunlu');
     }
 
-    const notifType = kind === 'event' ? 'community' : 'community';
+    const notifType = kind === 'event' ? 'event' : 'announcement';
     const pushTitle = String(title);
     const pushBody = `${actorName}: ${body}`;
+    const resolvedLink =
+      kind === 'event' && targetId
+        ? `/event/${encodeURIComponent(String(targetId))}`
+        : targetId
+          ? `/announcement/${encodeURIComponent(String(targetId))}`
+          : null;
 
     if (audience === 'followers') {
       return notifyFollowersOfActor({
@@ -1908,12 +1982,7 @@ exports.notifyAudience = onCall(
         targetId: targetId || null,
         sendEmail: !!sendEmail,
         emailSubject: `KampüsteyimAPP · ${actorName}`,
-        linkPath:
-          kind === 'event' && targetId
-            ? `/event/${encodeURIComponent(String(targetId))}`
-            : targetId
-              ? `/announcement/${encodeURIComponent(String(targetId))}`
-              : '/',
+        linkPath: resolvedLink,
       });
     }
 
@@ -1960,6 +2029,7 @@ exports.notifyAudience = onCall(
               targetId: targetId || null,
               sendEmail: !!sendEmail,
               emailSubject: `KampüsteyimAPP · ${actorName}`,
+              linkPath: resolvedLink,
             }),
           ),
         );
@@ -6593,8 +6663,9 @@ exports.onStoryCreatedPush = onDocumentCreated(
       title: 'Yeni hikâye',
       body: `${name} yeni bir hikâye paylaştı`,
       emoji: '✨',
-      type: 'activity',
+      type: 'story',
       targetId: event.params.storyId,
+      linkPath: `/stories/view/${encodeURIComponent(authorId)}`,
       sendEmail: false,
     });
   },

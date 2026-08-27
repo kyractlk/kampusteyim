@@ -664,6 +664,7 @@ class _ReelPageState extends State<_ReelPage> {
                   type: 'reel_like',
                   actorId: me.id,
                   targetId: reel.id,
+                  linkPath: '/reels?id=${Uri.encodeComponent(reel.id)}',
                 );
           }
         }());
@@ -918,6 +919,8 @@ class _ReelPageState extends State<_ReelPage> {
                                     type: 'reel_like',
                                     actorId: me.id,
                                     targetId: reel.id,
+                                    linkPath:
+                                        '/reels?id=${Uri.encodeComponent(reel.id)}',
                                   );
                             }
                           }());
@@ -1064,6 +1067,7 @@ class _ReelCommentsSheetState extends State<_ReelCommentsSheet> {
             type: 'reel_comment',
             actorId: me.id,
             targetId: widget.reel.id,
+            linkPath: '/reels?id=${Uri.encodeComponent(widget.reel.id)}',
           );
     }
     _ctrl.clear();

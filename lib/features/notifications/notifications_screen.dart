@@ -34,95 +34,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return t.isEmpty ? 'Bildirim' : t;
   }
 
-  bool _looksLikeReel(AppNotification n) {
-    final type = n.type.toLowerCase();
-    if (type == 'reel' || type.startsWith('reel_')) return true;
-    final link = (n.link ?? '').toLowerCase();
-    if (link.contains('/reels')) return true;
-    final blob = '${n.title} ${n.body}'.toLowerCase();
-    return blob.contains('reels');
-  }
-
   void _open(
     BuildContext context, {
     required AppNotification n,
   }) {
     context.read<NotificationProvider>().markRead(n.id);
-    final type = n.type;
-    final targetId = n.targetId;
-    final actorId = n.actorId;
-    final userRoute = actorId ?? targetId;
-    final link = n.link?.trim();
-
-    if (link != null &&
-        link.isNotEmpty &&
-        AppNav.tryOpenReelLink(context, link)) {
-      return;
-    }
-    if (_looksLikeReel(n)) {
-      AppNav.openReel(context, reelId: targetId);
-      return;
-    }
-
-    switch (type) {
-      case 'follow':
-      case 'follow_request':
-      case 'follow_accepted':
-        if (userRoute != null && userRoute.isNotEmpty) {
-          context.push('/user/${Uri.encodeComponent(userRoute)}');
-        }
-        return;
-      case 'mention':
-      case 'like':
-      case 'comment':
-      case 'repost':
-      case 'activity':
-      case 'promo':
-        if (targetId != null && targetId.isNotEmpty) {
-          context.push('/post/${Uri.encodeComponent(targetId)}');
-        }
-        return;
-      case 'reel':
-      case 'reel_like':
-      case 'reel_comment':
-        AppNav.openReel(context, reelId: targetId);
-        return;
-      case 'story_like':
-        final me = context.read<AuthProvider>().user?.id;
-        if (me != null && me.isNotEmpty) {
-          context.push('/stories/view/${Uri.encodeComponent(me)}');
-        }
-        return;
-      case 'job':
-      case 'application':
-        context.push('/jobs');
-        return;
-      case 'community':
-        if (targetId == null || targetId.isEmpty) return;
-        if (targetId.startsWith('e_')) {
-          context.push('/event/${Uri.encodeComponent(targetId)}');
-        } else if (targetId.startsWith('a_')) {
-          context.push('/announcement/${Uri.encodeComponent(targetId)}');
-        } else {
-          context.push('/post/${Uri.encodeComponent(targetId)}');
-        }
-        return;
-      default:
-        if (targetId == null || targetId.isEmpty) {
-          if (userRoute != null && userRoute.isNotEmpty) {
-            context.push('/user/${Uri.encodeComponent(userRoute)}');
-          }
-          return;
-        }
-        if (targetId.startsWith('p_') ||
-            targetId.startsWith('job_') ||
-            targetId.startsWith('ann_') ||
-            targetId.contains('post')) {
-          context.push('/post/${Uri.encodeComponent(targetId)}');
-        } else {
-          context.push('/user/${Uri.encodeComponent(targetId)}');
-        }
-    }
+    AppNav.openNotification(
+      context,
+      type: n.type,
+      targetId: n.targetId,
+      actorId: n.actorId,
+      link: n.link,
+      title: n.title,
+      body: n.body,
+    );
   }
 
   Future<void> _acceptRequest(AppUser requester) async {

@@ -85,30 +85,9 @@ Future<void> main() async {
     PushService.instance.onNotificationTap = (raw) {
       final ctx = appRootNavigatorKey.currentContext;
       if (ctx == null) return;
-      if (AppNav.tryOpenReelLink(ctx, raw)) return;
+      if (AppNav.openDeepLink(ctx, raw)) return;
       var path = raw.trim();
-      if (path.startsWith('https://') || path.startsWith('http://')) {
-        try {
-          final uri = Uri.parse(path);
-          final segs = uri.pathSegments.where((s) => s.isNotEmpty).toList();
-          if (segs.isNotEmpty && segs.first.toLowerCase() == 'reels') {
-            final id = uri.queryParameters['id'];
-            AppNav.openReel(ctx, reelId: id);
-            return;
-          }
-          if (segs.length >= 2) {
-            path = '/${segs[0]}/${Uri.encodeComponent(segs[1])}';
-          } else if (segs.length == 1) {
-            path = '/${segs[0]}';
-          } else {
-            path = '/home';
-          }
-        } catch (_) {
-          return;
-        }
-      }
       if (!path.startsWith('/')) path = '/$path';
-      if (AppNav.tryOpenReelLink(ctx, path)) return;
       GoRouter.of(ctx).push(path);
     };
   } catch (e, st) {

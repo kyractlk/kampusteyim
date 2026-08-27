@@ -576,9 +576,10 @@ class ReelsProvider extends ChangeNotifier {
           title: copy.$1,
           body: '${copy.$2} (Kampüs Reels)',
           emoji: copy.$3,
-          type: 'mention',
+          type: 'reel_comment',
           actorId: actorId,
           targetId: reelId,
+          linkPath: '/reels?id=${Uri.encodeComponent(reelId)}',
         );
       } catch (e) {
         debugPrint('[reels] mention notify: $e');
