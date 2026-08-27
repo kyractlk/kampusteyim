@@ -4938,6 +4938,101 @@ function edevletPairHash(barkod, tckn) {
     .digest('hex');
 }
 
+function hashTckn(tckn) {
+  return crypto.createHash('sha256').update(String(tckn)).digest('hex');
+}
+
+/** Kullanıcıya PII sızdırmayan genel red (başka hesabın belgesi). */
+function edevletIdentityTakenResponse() {
+  return {
+    ok: false,
+    code: 'identity_already_registered',
+    messages: [
+      'Bu kimlik doğrulaması sistemde başka bir hesapla kayıtlı. '
+        + 'Başkasının belgesiyle kayıt olamazsın. Kendi öğrenci belgeni kullan '
+        + 'veya destek ile iletişime geç.',
+    ],
+  };
+}
+
+/**
+ * TC hash başka bir aktif kullanıcıya bağlı mı?
+ * Silinmiş hesaplar yeniden claim’e izin verir. Ham TC / ad saklanmaz.
+ */
+async function isEdevletIdentityTaken(tcknHash, { allowUid = null } = {}) {
+  if (!tcknHash) return false;
+  const snap = await db.collection('registration_edevlet_claims').doc(tcknHash).get();
+  if (!snap.exists) return false;
+  const d = snap.data() || {};
+  const ownerUid = String(d.uid || '').trim();
+  if (!ownerUid) return false;
+  if (allowUid && ownerUid === allowUid) return false;
+  try {
+    const userSnap = await db.collection('users').doc(ownerUid).get();
+    if (!userSnap.exists) return false;
+    const u = userSnap.data() || {};
+    if (`${u.usernameStatus || ''}` === 'deleted') return false;
+    if (u.accountDeleted === true) return false;
+  } catch (_) {
+    // kullanıcı okunamazsa güvenli tarafta kal: engelle
+  }
+  return true;
+}
+
+async function claimEdevletIdentity({
+  tcknHash,
+  uid,
+  barkodLast4,
+  email,
+  studentNo,
+}) {
+  const claimRef = db.collection('registration_edevlet_claims').doc(tcknHash);
+  const now = new Date().toISOString();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(claimRef);
+    if (snap.exists) {
+      const d = snap.data() || {};
+      const ownerUid = String(d.uid || '').trim();
+      if (ownerUid && ownerUid !== uid) {
+        const userSnap = await tx.get(db.collection('users').doc(ownerUid));
+        const u = userSnap.exists ? userSnap.data() || {} : {};
+        const deleted =
+          !userSnap.exists ||
+          `${u.usernameStatus || ''}` === 'deleted' ||
+          u.accountDeleted === true;
+        if (!deleted) {
+          throw new HttpsError(
+            'already-exists',
+            'Bu kimlik doğrulaması sistemde başka bir hesapla kayıtlı.',
+          );
+        }
+      }
+    }
+    tx.set(
+      claimRef,
+      {
+        uid,
+        claimedAt: now,
+        barkodLast4: barkodLast4 || null,
+        // KVKK: yalnızca hash — e-posta / öğrenci no düz metin yok
+        emailHash: email
+          ? crypto
+              .createHash('sha256')
+              .update(String(email).trim().toLowerCase())
+              .digest('hex')
+          : null,
+        studentNoHash: studentNo
+          ? crypto
+              .createHash('sha256')
+              .update(String(studentNo).trim())
+              .digest('hex')
+          : null,
+      },
+      { merge: true },
+    );
+  });
+}
+
 async function mintEdevletTicketFromEducation({
   barkod,
   tckn,
@@ -4952,7 +5047,7 @@ async function mintEdevletTicketFromEducation({
   const expiresAt = new Date(Date.now() + 45 * 60 * 1000).toISOString();
   const payload = {
     barkodLast4: barkod.slice(-4),
-    tcknHash: crypto.createHash('sha256').update(tckn).digest('hex'),
+    tcknHash: hashTckn(tckn),
     verified: true,
     consumed: false,
     university: university || null,
@@ -5091,6 +5186,12 @@ exports.verifyEdevletBelge = onCall(
     const d11 = (odd + even + digits[9]) % 10;
     if (digits[9] !== d10 || digits[10] !== d11 || digits[0] === 0) {
       throw new HttpsError('invalid-argument', 'TC kimlik numarası geçersiz.');
+    }
+
+    const tcknHash = hashTckn(tckn);
+    // Başkasının belgesi / kimliği başka hesapta claim edilmişse reddet (PII yok)
+    if (await isEdevletIdentityTaken(tcknHash)) {
+      return edevletIdentityTakenResponse();
     }
 
     // Aynı barkod+TC: daha önce başarıyla okuduysak e-Devlet’e tekrar gitme
@@ -5326,6 +5427,29 @@ exports.consumeEdevletTicket = onCall(
     const userSnap = await userRef.get();
     const u = userSnap.exists ? userSnap.data() || {} : {};
 
+    const tcknHash = String(d.tcknHash || '').trim();
+    if (!tcknHash) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Doğrulama kaydı eksik. Belgeyi yeniden doğrula.',
+      );
+    }
+    try {
+      await claimEdevletIdentity({
+        tcknHash,
+        uid,
+        barkodLast4: d.barkodLast4 || null,
+        email: u.email || null,
+        studentNo: u.studentNo || null,
+      });
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      throw new HttpsError(
+        'already-exists',
+        'Bu kimlik doğrulaması sistemde başka bir hesapla kayıtlı.',
+      );
+    }
+
     await ref.set(
       {
         consumed: true,
@@ -5362,6 +5486,7 @@ exports.consumeEdevletTicket = onCall(
       studentIdBackUrl: null,
       edevletVerifiedAt: now,
       edevletTicketId: ticket,
+      edevletTcknHash: tcknHash,
       studentCredential,
       registrationAutoApprovedAt: now,
       registrationAutoApproveReason: 'edevlet_belge',
