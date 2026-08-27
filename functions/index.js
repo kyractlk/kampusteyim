@@ -1523,6 +1523,15 @@ async function findUserDocByAnyId(userId) {
     if (!byStable.empty) return byStable.docs[0];
   } catch (_) {}
 
+  try {
+    const byAuth = await db
+      .collection('users')
+      .where('authUid', '==', id)
+      .limit(1)
+      .get();
+    if (!byAuth.empty) return byAuth.docs[0];
+  } catch (_) {}
+
   const handle = id.replace(/^@/, '').toLowerCase();
   if (handle) {
     try {
@@ -4111,12 +4120,18 @@ exports.onMailOutboxCreated = onDocumentCreated(
 // ─── AYS Tech planlı bakım ─────────────────────────────────────────
 
 async function assertPlatformAdmin(uid) {
-  const snap = await db.collection('users').doc(uid).get();
+  let snap = await db.collection('users').doc(uid).get();
+  if (!snap.exists) {
+    const found = await findUserDocByAnyId(uid);
+    if (found && found.exists) snap = found;
+  }
   if (!snap.exists) {
     throw new HttpsError('permission-denied', 'Admin gerekli');
   }
   const d = snap.data() || {};
   if (d.isSuperAdmin === true || d.role === 'admin') return d;
+  // Panel personeli: role alanı student kalsa bile staffRoleId ile yetkili
+  if (String(d.staffRoleId || '').trim()) return d;
   throw new HttpsError('permission-denied', 'Admin gerekli');
 }
 
@@ -4972,7 +4987,7 @@ async function isEdevletIdentityTaken(tcknHash, { allowUid = null } = {}) {
     if (!userSnap.exists) return false;
     const u = userSnap.data() || {};
     if (`${u.usernameStatus || ''}` === 'deleted') return false;
-    if (u.accountDeleted === true) return false;
+    if (u.deleted === true || u.accountDeleted === true) return false;
   } catch (_) {
     // kullanıcı okunamazsa güvenli tarafta kal: engelle
   }
@@ -4998,6 +5013,7 @@ async function claimEdevletIdentity({
         const u = userSnap.exists ? userSnap.data() || {} : {};
         const deleted =
           !userSnap.exists ||
+          u.deleted === true ||
           `${u.usernameStatus || ''}` === 'deleted' ||
           u.accountDeleted === true;
         if (!deleted) {
@@ -5613,6 +5629,11 @@ async function purgeUserAccount({
     .trim()
     .toLowerCase();
 
+  // Auth UID: doc id veya alan
+  const linkedAuth = String(data.authUid || '').trim();
+  if (linkedAuth) authUid = linkedAuth;
+  else if (snap.exists) authUid = userRef.id;
+
   if (username) {
     try {
       await db.collection('handles').doc(username).delete();
@@ -5621,40 +5642,126 @@ async function purgeUserAccount({
     }
   }
 
-  // Alt koleksiyonlar (bildirim vb.) — best effort
-  for (const sub of ['notifications', 'cv', 'cv_exports']) {
+  // e-Devlet kimlik claim serbest bırak (yeniden kayıt)
+  const tcknHash = String(data.edevletTcknHash || '').trim();
+  if (tcknHash) {
     try {
-      const subSnap = await userRef.collection(sub).limit(200).get();
-      const batch = db.batch();
-      subSnap.docs.forEach((d) => batch.delete(d.ref));
-      if (!subSnap.empty) await batch.commit();
+      await db.collection('registration_edevlet_claims').doc(tcknHash).delete();
     } catch (_) {
       /* ignore */
     }
   }
 
-  await userRef.set(
-    {
-      deleted: true,
-      deletedAt: new Date().toISOString(),
-      deletedBy: actorId,
-      email: `deleted_${authUid}@invalid.local`,
-      firstName: 'Silinmiş',
-      lastName: 'Hesap',
-      fullName: 'Silinmiş hesap',
-      phone: '',
-      photoUrl: null,
-      username: null,
-      usernameStatus: 'deleted',
-      following: [],
-      followers: [],
-      fcmTokens: [],
-      notificationPrefs: {},
-    },
-    { merge: true },
-  );
+  // Alt koleksiyonlar (bildirim vb.) — best effort, sayfalı
+  for (const sub of ['notifications', 'cv', 'cv_exports']) {
+    try {
+      for (let page = 0; page < 20; page += 1) {
+        const subSnap = await userRef.collection(sub).limit(200).get();
+        if (subSnap.empty) break;
+        const batch = db.batch();
+        subSnap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        if (subSnap.size < 200) break;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
 
-  const authIds = new Set([authUid, uid].filter(Boolean));
+  // Gönderi / reel / hikaye / yorum — hard delete (yeniden kayıt temiz başlasın)
+  const contentIds = new Set(
+    [authUid, userRef.id, String(data.stableId || '').trim()].filter(Boolean),
+  );
+  const wipeCols = ['posts', 'reels', 'stories', 'comments'];
+  for (const col of wipeCols) {
+    for (const authorId of contentIds) {
+      try {
+        for (let page = 0; page < 40; page += 1) {
+          const snap = await db
+            .collection(col)
+            .where('authorId', '==', authorId)
+            .limit(200)
+            .get();
+          if (snap.empty) break;
+          const batch = db.batch();
+          snap.docs.forEach((d) => batch.delete(d.ref));
+          await batch.commit();
+          if (snap.size < 200) break;
+        }
+      } catch (e) {
+        console.warn('[purgeUser] wipe', col, authorId, e?.message || e);
+      }
+    }
+  }
+
+  // Storage: avatar / öğrenci belgeleri
+  try {
+    const bucket = getStorage().bucket();
+    const prefixes = [
+      `users/${authUid}/`,
+      `users/${userRef.id}/`,
+      `student_docs/${authUid}/`,
+      `student_docs/${userRef.id}/`,
+    ];
+    for (const prefix of prefixes) {
+      try {
+        await bucket.deleteFiles({ prefix, force: true });
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  } catch (e) {
+    console.warn('[purgeUser] storage', e?.message || e);
+  }
+
+  const tombstone = {
+    deleted: true,
+    accountDeleted: true,
+    deletedAt: new Date().toISOString(),
+    deletedBy: actorId,
+    email: `deleted_${authUid || userRef.id}@invalid.local`,
+    firstName: 'Silinmiş',
+    lastName: 'Hesap',
+    fullName: 'Silinmiş hesap',
+    phone: '',
+    photoUrl: null,
+    communityLogoUrl: null,
+    username: null,
+    usernameStatus: 'deleted',
+    accountStatus: 'rejected',
+    following: [],
+    followers: [],
+    fcmTokens: [],
+    notificationPrefs: {},
+    staffRoleId: null,
+    isSuperAdmin: false,
+    panelAccess: false,
+    studentIdDocUrl: null,
+    studentIdFrontUrl: null,
+    studentIdBackUrl: null,
+    studentCredential: null,
+    edevletTicketId: null,
+    edevletTcknHash: null,
+    studentNo: '',
+    university: '',
+    faculty: '',
+    department: '',
+    bio: '',
+  };
+
+  await userRef.set(tombstone, { merge: true });
+
+  // stableId ile ikinci kopya doküman varsa onu da işaretle
+  const stable = String(data.stableId || '').trim();
+  if (stable && stable !== userRef.id) {
+    try {
+      await db.collection('users').doc(stable).set(tombstone, { merge: true });
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  const authIds = new Set([authUid, uid, userRef.id].filter(Boolean));
   for (const id of authIds) {
     try {
       await auth.deleteUser(id);
@@ -5815,7 +5922,7 @@ exports.confirmAccountDeletion = onCall(
 );
 
 exports.adminDeleteAccount = onCall(
-  { region: 'europe-west1', timeoutSeconds: 60 },
+  { region: 'europe-west1', timeoutSeconds: 300, memory: '512MiB' },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Giriş gerekli');
@@ -5833,15 +5940,7 @@ exports.adminDeleteAccount = onCall(
       );
     }
 
-    const actorSnap = await db.collection('users').doc(actorId).get();
-    const actor = actorSnap.data() || {};
-    const isAdmin =
-      actor.isSuperAdmin === true ||
-      actor.role === 'admin' ||
-      !!actor.staffRoleId;
-    if (!isAdmin) {
-      throw new HttpsError('permission-denied', 'Yetki yok');
-    }
+    const actor = await assertAdminPermission(actorId, 'manage_users');
 
     let resolvedId = targetUid;
     const found = await findUserDocByAnyId(targetUid);
@@ -5851,15 +5950,44 @@ exports.adminDeleteAccount = onCall(
       if (target.isSuperAdmin === true) {
         throw new HttpsError('permission-denied', 'Süper admin silinemez');
       }
-    } else {
-      const targetSnap = await db.collection('users').doc(targetUid).get();
-      const target = targetSnap.data() || {};
-      if (target.isSuperAdmin === true) {
-        throw new HttpsError('permission-denied', 'Süper admin silinemez');
+      const targetAuth = String(target.authUid || found.id || '').trim();
+      if (
+        found.id === actorId ||
+        targetAuth === actorId ||
+        String(target.stableId || '') === actorId
+      ) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Kendi hesabını bu menüden silemezsin.',
+        );
       }
+    } else if (email) {
+      // E-posta ile bul (liste stableId gönderip doc silinmiş olabilir)
+      try {
+        const byEmail = await db
+          .collection('users')
+          .where('email', '==', email)
+          .limit(1)
+          .get();
+        if (!byEmail.empty) {
+          resolvedId = byEmail.docs[0].id;
+          const target = byEmail.docs[0].data() || {};
+          if (target.isSuperAdmin === true) {
+            throw new HttpsError('permission-denied', 'Süper admin silinemez');
+          }
+        }
+      } catch (e) {
+        if (e instanceof HttpsError) throw e;
+      }
+      if (resolvedId === targetUid) {
+        // Auth'tan silmeyi dene (Firestore yok)
+        resolvedId = targetUid;
+      }
+    } else {
+      throw new HttpsError('not-found', 'Kullanıcı bulunamadı');
     }
 
-    await purgeUserAccount({
+    const result = await purgeUserAccount({
       uid: resolvedId,
       email,
       actorId,
@@ -5867,7 +5995,7 @@ exports.adminDeleteAccount = onCall(
       reason: 'admin',
     });
 
-    return { ok: true };
+    return { ok: true, ...result };
   },
 );
 

@@ -1243,13 +1243,6 @@ class PostCard extends StatelessWidget {
                                 const SizedBox(width: 4),
                                 const BotBadge(size: 15),
                               ],
-                              if (author?.showUniversityBadge == true) ...[
-                                const SizedBox(width: 4),
-                                UniversityBadge(
-                                  label: author!.universityBadgeLabel,
-                                  compact: true,
-                                ),
-                              ],
                             ],
                           ),
                           Text(

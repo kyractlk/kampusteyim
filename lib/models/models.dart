@@ -334,17 +334,10 @@ class AppUser {
   bool get showGreenBadge => isPlusActive && !showGoldBadge && !showBlueBadge;
 
   /// Profilde üniversite rozeti gösterilsin mi?
-  /// Firma / reklam hesaplarında üniversite rozeti yok.
-  bool get showUniversityBadge {
-    if (isCompany) return false;
-    final u = university.trim();
-    if (u.isEmpty || u == '—') return false;
-    return role == UserRole.student ||
-        role == UserRole.admin ||
-        isCommunity == false;
-  }
+  /// Tüm okullar için tutarlı rozet yok — özellik kapalı.
+  bool get showUniversityBadge => false;
 
-  /// Kısa kampüs etiketi (rozet metni).
+  /// Kısa kampüs etiketi (rozet metni) — kullanılmıyor; geriye uyumluluk.
   String get universityBadgeLabel {
     final u = university.trim();
     if (u.isEmpty) return '';

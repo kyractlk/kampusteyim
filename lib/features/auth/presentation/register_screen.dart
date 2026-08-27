@@ -80,7 +80,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   List<String> get _stepLabels {
     final labels = <String>['Hesap', 'Kişisel', 'Kampüs'];
-    if (_security.showVerificationStep) labels.add('Belge');
+    if (_security.showVerificationStep) labels.add('Doğrulama');
     labels.add('Onay');
     return labels;
   }
@@ -118,16 +118,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final edevlet = _security.allowEdevlet;
     final card = _security.allowStudentCard;
     final pdf = _security.allowStudentDocumentPdf;
-    if (edevlet &&
-        (_security.verificationMode == RegVerificationMode.edevletOnly ||
-            _verifyType == null)) {
+    // e-Devlet varsa otomatik belge (barkod) — kullanıcı seçmez
+    if (edevlet) {
       _verifyType = 'document';
       return;
     }
     if (_verifyType == 'card' && !card) _verifyType = null;
-    if (_verifyType == 'document' && !edevlet && !pdf) _verifyType = null;
+    if (_verifyType == 'document' && !pdf) _verifyType = null;
     if (_verifyType == null) {
-      if (edevlet) {
+      if (card && !pdf) {
+        _verifyType = 'card';
+      } else if (pdf && !card) {
         _verifyType = 'document';
       } else if (card) {
         _verifyType = 'card';
@@ -280,27 +281,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!mounted) return;
     if (ok) {
       final pending = auth.user?.isAccountPending == true;
-      if (require && pending) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Başvurun alındı. Belgen admin onayına düştü; sonuç mail ve bildirimle gelir.',
-            ),
-          ),
-        );
-        context.go('/pending-approval');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _edevletOk
-                  ? 'e-Devlet doğrulaması tamam — hesabın açıldı.'
-                  : 'Kayıt tamamlandı.',
-            ),
-          ),
-        );
-        context.go('/home');
-      }
+      final msg = (require && pending)
+          ? 'Kayıt başarılı. Belgen admin onayına düştü; sonuç mail ile gelir. Giriş yapabilirsin.'
+          : (_edevletOk
+              ? 'Kayıt başarılı. e-Devlet doğrulaması tamam — giriş yapabilirsin.'
+              : 'Kayıt başarılı. Giriş yapabilirsin.');
+      await auth.signOut();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      context.go('/login');
     } else if (auth.error != null) {
       ScaffoldMessenger.of(
         context,
@@ -366,7 +355,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         content: Text(
           res.ok
               ? 'Belgeden eğitim bilgileri alındı — lütfen doğrula.'
-              : 'Otomatik doğrulama olmadı — PDF yükleyip admin onayına gönderebilirsin.',
+              : (_security.allowEdevletPdfFallback
+                  ? 'e-Devlet doğrulanamadı — PDF yükleme açıldı (admin onayı).'
+                  : 'e-Devlet doğrulanamadı. Yeni belge oluşturup tekrar dene.'),
         ),
       ),
     );
@@ -1024,15 +1015,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final pdfOk = _security.allowStudentDocumentPdf;
     final edevletOk = _security.allowEdevlet;
     final fallbackOk = _security.allowEdevletPdfFallback;
-    final showTypePicker = !(edevletOk &&
-            _security.verificationMode == RegVerificationMode.edevletOnly) &&
-        (cardOk || (pdfOk && !edevletOk) || (cardOk && (pdfOk || edevletOk)));
+    // e-Devlet açıksa tip seçici yok. Yalnız belge modunda kart+PDF varsa seçici.
+    final showTypePicker = !edevletOk && cardOk && pdfOk;
 
     final intro = switch (_security.verificationMode) {
       RegVerificationMode.edevletOnly =>
-        'Öğrenci belgeni e-Devlet barkodu ile doğrula. Kart / PDF yükleme kapalı.',
+        'Öğrenci belgeni e-Devlet barkodu ile doğrula. Sistem bilgileri otomatik okur.',
       RegVerificationMode.edevletPlusDoc =>
-        'Önce e-Devlet barkodu ile doğrula. Olmazsa kart veya PDF yükle — admin onayına düşer.',
+        'e-Devlet barkodu + TC ile doğrula. Sistem eğitim bilgilerini otomatik alır. '
+            'Doğrulama olmazsa PDF yükleme açılır (admin onayı).',
       RegVerificationMode.documentOnly =>
         'Öğrenci kartı veya PDF belge yükle. Başvuru admin onayına düşer.',
       RegVerificationMode.defer =>
@@ -1112,17 +1103,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 _edevletStatus = null;
               }),
             ),
-            if (edevletOk || pdfOk) const SizedBox(height: 8),
+            if (pdfOk) const SizedBox(height: 8),
           ],
-          if (showTypePicker && (edevletOk || pdfOk))
+          if (showTypePicker && pdfOk)
             _TypeTile(
               selected: _verifyType == 'document',
-              title: edevletOk ? 'Öğrenci belgesi' : 'PDF belge',
-              subtitle: edevletOk
-                  ? (fallbackOk
-                      ? 'e-Devlet barkod + TC · yedek PDF'
-                      : 'e-Devlet barkod + TC')
-                  : 'PDF yükle · admin onayı',
+              title: 'PDF belge',
+              subtitle: 'PDF yükle · admin onayı',
               icon: Icons.verified_outlined,
               onTap: () => setState(() {
                 _verifyType = 'document';
@@ -1412,17 +1399,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           pick: StudentDocUpload.pickPdf,
                           expectPdf: true,
                         ),
-                ),
-              ],
-              if (fallbackOk &&
-                  !_edevletParsed &&
-                  !_edevletFallbackUpload &&
-                  _edevletUserConfirmed != false) ...[
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () =>
-                      setState(() => _edevletFallbackUpload = true),
-                  child: const Text('Doğrulayamıyorum — PDF yükle'),
                 ),
               ],
             ] else if (pdfOk) ...[

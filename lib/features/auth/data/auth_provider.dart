@@ -724,6 +724,8 @@ class AuthProvider extends ChangeNotifier {
         password: password,
       );
       await cred.user?.updateDisplayName('$firstName $lastName');
+      // Callable’lar için ID token’ın hazır olduğundan emin ol
+      await cred.user?.getIdToken(true);
 
       try {
         final consume = FirebaseFunctions.instanceFor(region: 'europe-west1')
@@ -746,24 +748,48 @@ class AuthProvider extends ChangeNotifier {
       String? aiNote;
 
       try {
-        final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
-            .httpsCallable('claimUsername');
-        final res = await callable.call({
-          'username': cleanUser,
-          'firstName': firstName.trim(),
-          'lastName': lastName.trim(),
-        });
-        final map = Map<String, dynamic>.from(res.data as Map);
-        finalUsername = '${map['username'] ?? cleanUser}';
-        status = '${map['status'] ?? 'ok'}';
-        aiNote = map['message'] as String?;
+        final claimed = await _claimUsernameRemote(
+          username: cleanUser,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+        );
+        finalUsername = claimed.username;
+        status = claimed.status;
+        aiNote = claimed.message;
       } catch (e) {
         debugPrint('[auth] claimUsername: $e');
-        finalUsername =
-            'user_${cred.user!.uid.substring(0, 8)}_${DateTime.now().millisecondsSinceEpoch % 10000}';
-        status = 'temp';
-        aiNote =
-            'Kullanıcı adın geçici atandı. Lütfen profilinden kalıcı bir ad seç.';
+        // Client fallback: Auth varsa handles’a doğrudan yaz
+        final fb = cred.user;
+        if (fb != null) {
+          try {
+            await fb.getIdToken(true);
+            final handleRef =
+                FirebaseFirestore.instance.collection('handles').doc(cleanUser);
+            final taken = await handleRef.get();
+            if (!taken.exists) {
+              await handleRef.set({
+                'uid': fb.uid,
+                'authUid': fb.uid,
+                'createdAt': DateTime.now().toIso8601String(),
+              });
+              finalUsername = cleanUser;
+              status = 'ok';
+            } else {
+              finalUsername =
+                  'user_${fb.uid.substring(0, 8)}_${DateTime.now().millisecondsSinceEpoch % 10000}';
+              status = 'temp';
+              aiNote =
+                  'Kullanıcı adın geçici atandı. Lütfen profilinden kalıcı bir ad seç.';
+            }
+          } catch (e2) {
+            debugPrint('[auth] claimUsername fallback: $e2');
+            finalUsername =
+                'user_${fb.uid.substring(0, 8)}_${DateTime.now().millisecondsSinceEpoch % 10000}';
+            status = 'temp';
+            aiNote =
+                'Kullanıcı adın geçici atandı. Lütfen profilinden kalıcı bir ad seç.';
+          }
+        }
       }
 
       _user = AppUser(
@@ -1064,35 +1090,85 @@ class AuthProvider extends ChangeNotifier {
   Future<String?> changeUsername(String desired) async {
     final u = _user;
     if (u == null) return 'Giriş gerekli';
+    final fb = fa.FirebaseAuth.instance.currentUser;
+    if (fb == null) {
+      return 'Oturum süresi dolmuş. Çıkış yapıp tekrar giriş yap.';
+    }
     final clean = desired.trim().replaceAll('@', '').toLowerCase();
     if (!RegExp(r'^[a-z0-9_]{3,24}$').hasMatch(clean)) {
       return 'Kullanıcı adı 3–24 karakter; sadece a-z, 0-9, _';
     }
     try {
-      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
-          .httpsCallable('claimUsername');
-      final res = await callable.call({
-        'username': clean,
-        'firstName': u.firstName,
-        'lastName': u.lastName,
-        'replaceTemp': true,
-      });
-      final map = Map<String, dynamic>.from(res.data as Map);
-      if (map['allowed'] == false) {
-        return '${map['message'] ?? 'Bu kullanıcı adı uygun değil'}';
+      await fb.getIdToken(true);
+      final map = await _claimUsernameRemote(
+        username: clean,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        replaceTemp: true,
+      );
+      if (map.allowed == false && map.status == 'rejected') {
+        return map.message ?? 'Bu kullanıcı adı uygun değil';
       }
-      final next = '${map['username'] ?? clean}';
-      final status = '${map['status'] ?? 'ok'}';
+      final next = map.username.isNotEmpty ? map.username : clean;
+      final status = map.status;
       _user = u.copyWith(username: next, usernameStatus: status);
       _upsert(_user!);
       await _syncProfileToFirestore(_user!);
       notifyListeners();
       return status == 'temp'
-          ? (map['message'] as String? ?? 'Geçici kullanıcı adı atandı')
+          ? (map.message ?? 'Geçici kullanıcı adı atandı')
           : null;
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'unauthenticated') {
+        return 'Oturum doğrulanamadı. Çıkış yapıp tekrar giriş yap, sonra kullanıcı adını kaydet.';
+      }
+      return e.message?.trim().isNotEmpty == true
+          ? e.message!
+          : 'Kullanıcı adı kaydedilemedi (${e.code})';
     } catch (e) {
       return 'Kullanıcı adı kaydedilemedi: $e';
     }
+  }
+
+  Future<({String username, String status, String? message, bool allowed})>
+      _claimUsernameRemote({
+    required String username,
+    required String firstName,
+    required String lastName,
+    bool replaceTemp = false,
+  }) async {
+    Future<Map<String, dynamic>> once() async {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable(
+        'claimUsername',
+        options: HttpsCallableOptions(timeout: const Duration(seconds: 90)),
+      );
+      final res = await callable.call({
+        'username': username,
+        'firstName': firstName,
+        'lastName': lastName,
+        'replaceTemp': replaceTemp,
+      });
+      return Map<String, dynamic>.from(res.data as Map);
+    }
+
+    Map<String, dynamic> map;
+    try {
+      map = await once();
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'unauthenticated') {
+        await fa.FirebaseAuth.instance.currentUser?.getIdToken(true);
+        map = await once();
+      } else {
+        rethrow;
+      }
+    }
+    return (
+      username: '${map['username'] ?? username}',
+      status: '${map['status'] ?? 'ok'}',
+      message: map['message'] as String?,
+      allowed: map['allowed'] != false,
+    );
   }
 
   void updateAllowMentions(bool value) {
@@ -1111,6 +1187,27 @@ class AuthProvider extends ChangeNotifier {
     if (syncRemote) {
       unawaited(_syncProfileToFirestore(user, privileged: true));
     }
+    notifyListeners();
+  }
+
+  /// Admin silme sonrası yerel dizinden kaldır (tombstone sync gelene kadar).
+  void removeUserFromDirectory(String id, {String? email}) {
+    final mail = (email ?? '').trim().toLowerCase();
+    final aliases = <String>{id};
+    for (final e in _idAliases.entries) {
+      if (e.key == id || e.value == id) {
+        aliases.add(e.key);
+        aliases.add(e.value);
+      }
+    }
+    _directory.removeWhere((u) {
+      if (aliases.contains(u.id)) return true;
+      if (mail.isNotEmpty && u.email.trim().toLowerCase() == mail) return true;
+      return false;
+    });
+    _idAliases.removeWhere(
+      (k, v) => aliases.contains(k) || aliases.contains(v),
+    );
     notifyListeners();
   }
 
@@ -1146,13 +1243,24 @@ class AuthProvider extends ChangeNotifier {
         if (snap.docs.isEmpty) break;
         for (final doc in snap.docs) {
           final m = doc.data();
-          if (m['deleted'] == true) continue;
           final email = '${m['email'] ?? ''}'.trim();
-          if (email.contains('@invalid.local')) continue;
-          final first = '${m['firstName'] ?? ''}'.trim();
-          if (email.isEmpty && first.isEmpty) continue;
           final stable = '${m['stableId'] ?? ''}'.trim();
           final id = stable.isNotEmpty ? stable : doc.id;
+          final isGone = m['deleted'] == true ||
+              '${m['usernameStatus'] ?? ''}' == 'deleted' ||
+              email.contains('@invalid.local');
+          if (isGone) {
+            _directory.removeWhere(
+              (u) =>
+                  u.id == id ||
+                  u.id == doc.id ||
+                  (stable.isNotEmpty && u.id == stable) ||
+                  (email.isNotEmpty && u.email == email),
+            );
+            continue;
+          }
+          final first = '${m['firstName'] ?? ''}'.trim();
+          if (email.isEmpty && first.isEmpty) continue;
           final user = _appUserFromFirestore(id, m);
           _upsert(user);
           // Oturumdaki kullanıcıyı da taze profille güncelle (following vb.).

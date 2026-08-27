@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
@@ -798,20 +800,56 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           ),
         );
         if (confirm2 != true || !context.mounted) return;
+
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const Center(
+            child: Card(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Hesap siliniyor…'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+
+        String? errMsg;
         try {
           final callable = FirebaseFunctions.instanceFor(
             region: 'europe-west1',
           ).httpsCallable('adminDeleteAccount');
-          await callable.call({'uid': u.id, 'email': u.email});
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('${u.fullName} silindi')));
+          await callable.call({
+            'uid': u.id,
+            'email': u.email,
+          }).timeout(const Duration(seconds: 90));
+          auth.removeUserFromDirectory(u.id, email: u.email);
+          // Tombstone’ları da temizle (sync)
+          unawaited(auth.syncDirectoryFromFirestore());
+        } on FirebaseFunctionsException catch (e) {
+          errMsg = e.message?.trim().isNotEmpty == true
+              ? e.message!
+              : 'Sunucu hatası (${e.code})';
         } catch (e) {
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Silinemedi: $e')));
+          errMsg = '$e';
+        }
+
+        if (context.mounted) {
+          Navigator.of(context, rootNavigator: true).pop(); // loading
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                errMsg == null ? '${u.fullName} silindi' : 'Silinemedi: $errMsg',
+              ),
+            ),
+          );
         }
       case 'profile':
         if (context.mounted) context.push('/user/${u.id}');
