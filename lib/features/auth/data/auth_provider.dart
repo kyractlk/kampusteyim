@@ -799,13 +799,22 @@ class AuthProvider extends ChangeNotifier {
               .httpsCallable('consumeEdevletTicket');
           final res = await consumeEd.call({'ticket': edevlet});
           final map = Map<String, dynamic>.from(res.data as Map? ?? {});
-          final docUrl = map['docUrl'] as String?;
+          String pick(String key, String fallback) {
+            final v = '${map[key] ?? ''}'.trim();
+            return v.isNotEmpty ? v : fallback;
+          }
+
           _user = _user!.copyWith(
             accountStatus: 'approved',
             studentVerificationType: 'edevlet',
-            studentIdDocUrl: docUrl ?? _user!.studentIdDocUrl,
+            university: pick('university', _user!.university),
+            faculty: pick('faculty', _user!.faculty),
+            department: pick('department', _user!.department),
+            firstName: pick('firstName', _user!.firstName),
+            lastName: pick('lastName', _user!.lastName),
           );
           _upsert(_user!);
+          await _syncProfileToFirestore(_user!, privileged: true);
         } catch (e) {
           debugPrint('[auth] consumeEdevletTicket: $e');
           // Bilet bozulursa belge yüklenmişse admin’e düş; yoksa hata.
@@ -939,10 +948,20 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// e-Devlet barkod + TCKN ile öğrenci belgesi doğrula → kayıt bileti.
-  /// Başarısızsa [messages] dolu döner (admin yükleme yoluna düş).
-  Future<({bool ok, String? ticket, String? docUrl, List<String> messages})>
-      verifyEdevletBelge({
+  /// e-Devlet barkod + TCKN ile öğrenci belgesi doğrula → kayıt bileti + kampüs alanları.
+  Future<
+      ({
+        bool ok,
+        String? ticket,
+        List<String> messages,
+        String? university,
+        String? faculty,
+        String? department,
+        String? studentStatus,
+        String? grade,
+        String? firstName,
+        String? lastName,
+      })> verifyEdevletBelge({
     required String barkod,
     required String tckn,
   }) async {
@@ -957,22 +976,43 @@ class AuthProvider extends ChangeNotifier {
       final ok = map['ok'] == true;
       final ticketRaw = '${map['ticket'] ?? ''}';
       final ticket = ticketRaw.length >= 20 ? ticketRaw : null;
-      final docUrl = map['docUrl'] as String?;
       final rawMsgs = map['messages'];
       final messages = <String>[
         if (rawMsgs is List)
           ...rawMsgs.map((e) => '$e').where((e) => e.isNotEmpty),
       ];
+      String? s(String k) {
+        final v = '${map[k] ?? ''}'.trim();
+        return v.isEmpty ? null : v;
+      }
+
       if (ok && ticket != null) {
-        return (ok: true, ticket: ticket, docUrl: docUrl, messages: const <String>[]);
+        return (
+          ok: true,
+          ticket: ticket,
+          messages: const <String>[],
+          university: s('university'),
+          faculty: s('faculty'),
+          department: s('department'),
+          studentStatus: s('studentStatus'),
+          grade: s('grade'),
+          firstName: s('firstName'),
+          lastName: s('lastName'),
+        );
       }
       return (
         ok: false,
         ticket: null,
-        docUrl: null,
         messages: messages.isEmpty
             ? const <String>['Belge doğrulanamadı.']
             : messages,
+        university: s('university'),
+        faculty: s('faculty'),
+        department: s('department'),
+        studentStatus: s('studentStatus'),
+        grade: s('grade'),
+        firstName: s('firstName'),
+        lastName: s('lastName'),
       );
     } on FirebaseFunctionsException catch (e) {
       _error = e.message ?? e.code;
@@ -980,15 +1020,27 @@ class AuthProvider extends ChangeNotifier {
       return (
         ok: false,
         ticket: null,
-        docUrl: null,
         messages: [e.message ?? e.code],
+        university: null,
+        faculty: null,
+        department: null,
+        studentStatus: null,
+        grade: null,
+        firstName: null,
+        lastName: null,
       );
     } catch (e) {
       return (
         ok: false,
         ticket: null,
-        docUrl: null,
         messages: const ['e-Devlet doğrulama servisine ulaşılamadı.'],
+        university: null,
+        faculty: null,
+        department: null,
+        studentStatus: null,
+        grade: null,
+        firstName: null,
+        lastName: null,
       );
     }
   }

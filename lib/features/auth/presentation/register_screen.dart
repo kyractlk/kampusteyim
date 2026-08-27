@@ -60,10 +60,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _busySide;
 
   String? _edevletTicket;
-  String? _edevletDocUrl;
   bool _edevletBusy = false;
   String? _edevletError;
   bool _edevletFallbackUpload = false;
+  String? _edevletUniversity;
+  String? _edevletFaculty;
+  String? _edevletDepartment;
+  String? _edevletStatus;
 
   List<String> get _stepIds {
     final ids = <String>['account', 'personal', 'campus'];
@@ -228,9 +231,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
           : null,
       studentIdFrontUrl: require && _verifyType == 'card' ? _frontUrl : null,
       studentIdBackUrl: require && _verifyType == 'card' ? _backUrl : null,
-      studentIdDocUrl: require
-          ? (_edevletDocUrl ??
-              (_verifyType == 'document' ? _pdfUrl : null))
+      studentIdDocUrl: require && !_edevletOk && _verifyType == 'document'
+          ? _pdfUrl
           : null,
       edevletTicket: _edevletOk ? _edevletTicket : null,
     );
@@ -274,7 +276,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
-    if (barkod.length < 10) {
+    if (barkod.length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Belgedeki barkod numarasını gir.')),
       );
@@ -291,28 +293,97 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _edevletBusy = false;
       if (res.ok) {
         _edevletTicket = res.ticket;
-        _edevletDocUrl = res.docUrl;
         _edevletFallbackUpload = false;
         _edevletError = null;
-        _pdfUrl = res.docUrl ?? _pdfUrl;
+        _edevletUniversity = res.university;
+        _edevletFaculty = res.faculty;
+        _edevletDepartment = res.department;
+        _edevletStatus = res.studentStatus;
+        if ((res.firstName ?? '').isNotEmpty) {
+          _firstName.text = res.firstName!;
+        }
+        if ((res.lastName ?? '').isNotEmpty) {
+          _lastName.text = res.lastName!;
+        }
+        // Kampüs seçimini belgeden doldur (katalog eşleşmesi)
+        final uni = res.university;
+        if (uni != null && uni.isNotEmpty && _catalog != null) {
+          final cities = _catalog!.cities;
+          String? matchedCity;
+          String? matchedUni;
+          for (final c in cities) {
+            for (final u in _catalog!.universitiesForCity(c)) {
+              if (_campusNameMatch(u, uni)) {
+                matchedCity = c;
+                matchedUni = u;
+                break;
+              }
+            }
+            if (matchedUni != null) break;
+          }
+          if (matchedUni != null) {
+            _city = matchedCity;
+            _university = matchedUni;
+            final facs = _catalog!.facultiesFor(matchedUni);
+            final fac = res.faculty;
+            if (fac != null && facs.isNotEmpty) {
+              CampusFaculty? mf;
+              for (final f in facs) {
+                if (_campusNameMatch(f.name, fac)) {
+                  mf = f;
+                  break;
+                }
+              }
+              if (mf != null) {
+                _faculty = mf.name;
+                final deps = _catalog!.departmentsFor(
+                  universityName: matchedUni,
+                  facultyName: mf.name,
+                );
+                final dep = res.department;
+                if (dep != null && deps.isNotEmpty) {
+                  final md = deps.cast<String?>().firstWhere(
+                        (d) => d != null && _campusNameMatch(d, dep),
+                        orElse: () => null,
+                      );
+                  if (md != null) _department = md;
+                }
+              }
+            }
+          }
+        }
       } else {
         _edevletTicket = null;
-        _edevletDocUrl = null;
         _edevletFallbackUpload = true;
         _edevletError = res.messages.isNotEmpty
             ? res.messages.join(' ')
             : 'Belge doğrulanamadı.';
+        _edevletUniversity = null;
+        _edevletFaculty = null;
+        _edevletDepartment = null;
+        _edevletStatus = null;
       }
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           res.ok
-              ? 'Belge e-Devlet’te doğrulandı.'
+              ? 'Belge doğrulandı${res.university != null ? ' · ${res.university}' : ''}.'
               : 'Otomatik doğrulama olmadı — PDF yükleyip admin onayına gönderebilirsin.',
         ),
       ),
     );
+  }
+
+  bool _campusNameMatch(String a, String b) {
+    String n(String s) => s
+        .toLowerCase()
+        .replaceAll('ı', 'i')
+        .replaceAll('İ', 'i')
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final x = n(a);
+    final y = n(b);
+    return x.contains(y) || y.contains(x);
   }
 
   Future<void> _sendEmailCode() async {
@@ -893,9 +964,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
               _verifyType = 'card';
               _pdfUrl = null;
               _edevletTicket = null;
-              _edevletDocUrl = null;
               _edevletFallbackUpload = false;
               _edevletError = null;
+              _edevletUniversity = null;
+              _edevletFaculty = null;
+              _edevletDepartment = null;
+              _edevletStatus = null;
             }),
           ),
         if (cardOk && pdfOk) const SizedBox(height: 8),
@@ -1000,16 +1074,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: AppColors.lime),
               ),
-              child: const Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.check_circle, color: AppColors.lime),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Belge doğrulandı. Kayıtta hesabın otomatik açılacak.',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
+                  const Row(
+                    children: [
+                      Icon(Icons.check_circle, color: AppColors.lime),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Belge doğrulandı — ham PDF saklanmaz.',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
                   ),
+                  if (_edevletStatus != null) ...[
+                    const SizedBox(height: 8),
+                    Text(_edevletStatus!,
+                        style: const TextStyle(fontSize: 13)),
+                  ],
+                  if (_edevletUniversity != null)
+                    Text(_edevletUniversity!,
+                        style: const TextStyle(fontSize: 13)),
+                  if (_edevletFaculty != null)
+                    Text(_edevletFaculty!,
+                        style: const TextStyle(fontSize: 13)),
+                  if (_edevletDepartment != null)
+                    Text(_edevletDepartment!,
+                        style: const TextStyle(fontSize: 13)),
                 ],
               ),
             ),

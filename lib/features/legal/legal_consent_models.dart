@@ -27,22 +27,22 @@ class LegalConsentTexts {
 İletişim: Geri Bildirim / destek kanalları üzerinden KampüsteyimAPP uygulaması içinden veya AYS Tech resmi iletişim adreslerinden.
 
 2. İşlenen Kişisel Veriler
-Uygulama kullanımı kapsamında; kimlik (ad, soyad), iletişim (e-posta, telefon), öğrenci / üyelik bilgileri (öğrenci numarası, üniversite, şehir), öğrenci belgesi / öğrenci kimlik kartı görüntüsü (kayıt ve doğrulama amacıyla), hesap (kullanıcı adı, profil fotoğrafı, biyografi), işlem güvenliği (oturum, cihaz / bildirim token’ları), kullanıcı işlem (gönderi, yorum, beğeni, hikâye, şikayet, çalışma odası etkinlikleri), gizlilik tercihleri ve gerektiğinde pazarlama tercihleri işlenebilir.
+Uygulama kullanımı kapsamında; kimlik (ad, soyad), iletişim (e-posta, telefon), öğrenci / üyelik bilgileri (öğrenci numarası, üniversite, fakülte, bölüm, şehir), hesap (kullanıcı adı, profil fotoğrafı, biyografi), işlem güvenliği (oturum, cihaz / bildirim token’ları), kullanıcı işlem (gönderi, yorum, beğeni, hikâye, şikayet, çalışma odası etkinlikleri), gizlilik tercihleri ve gerektiğinde pazarlama tercihleri işlenebilir. e-Devlet barkod doğrulamasında kullanılan T.C. kimlik numarası ve ham belge PDF’i kalıcı olarak saklanmaz.
 
 3. Öğrenci Belgesi Doğrulama
-KampüsteyimAPP yalnızca doğrulanmış öğrencilere yönelik bir platformdur. Kayıt sırasında yüklediğiniz öğrenci kartı (ön ve arka yüz) veya öğrenci belgesi PDF’i; formdaki ad, soyad ve öğrenci numarasıyla eşleşmenin kontrolü ve admin onayı için işlenir. Dosyalar zararlı yazılım imza kontrolünden geçirilebilir. Onay süreci tamamlanana kadar hesabınız “beklemede” kalır; sonuç e-posta ve mobil bildirim ile bildirilir.
+KampüsteyimAPP yalnızca doğrulanmış öğrencilere yönelik bir platformdur. Tercih edilen yol: e-Devlet Kapısı barkodlu öğrenci belgesi doğrulamasıdır. Barkod ve T.C. kimlik numarası yalnızca anlık doğrulama için e-Devlet API’sine iletilir; dönen PDF bellekte okunur, üniversite / fakülte / bölüm / öğrencilik durumu gibi akademik alanlar çıkarılır ve ham PDF ile T.C. kimlik numarası silinir (saklanmaz). Doğrulama başarısız olursa veya öğrenci kartı yüklenirse; yüklenen görüntü / PDF yalnızca admin incelemesi için işlenir ve onay sürecinin tamamlanmasına kadar tutulabilir. Onay sonucu e-posta ve mobil bildirim ile bildirilir.
 
 4. Kişisel Verilerin İşlenme Amaçları
-Kişisel verileriniz; üyelik oluşturma ve kimlik doğrulama, öğrenci belgesi incelemesi, kampüs sosyal ağı hizmetlerinin sunulması, içerik moderasyonu ve güvenlik (AYS Tech Guard dâhil), bildirim gönderimi, staj / CV / etkinlik / hikâye özelliklerinin işletilmesi, yasal yükümlülüklerin yerine getirilmesi, suiistimalin önlenmesi ve hizmet kalitesinin artırılması amaçlarıyla işlenir.
+Kişisel verileriniz; üyelik oluşturma ve kimlik / öğrenci doğrulama, kampüs sosyal ağı hizmetlerinin sunulması, içerik moderasyonu ve güvenlik (AYS Tech Guard dâhil), bildirim gönderimi, staj / CV / etkinlik / hikâye özelliklerinin işletilmesi, yasal yükümlülüklerin yerine getirilmesi, suiistimalin önlenmesi ve hizmet kalitesinin artırılması amaçlarıyla işlenir.
 
 5. Hukuki Sebepler
-KVKK’nın 5. ve 6. maddeleri kapsamında; sözleşmenin kurulması/ifası, hukuki yükümlülük, meşru menfaat (güvenlik ve hizmet sürekliliği) ve açık rıza (özellikle pazarlama iletişimi ve belge işleme için) hukuki sebeplerine dayanılır.
+KVKK’nın 5. ve 6. maddeleri kapsamında; sözleşmenin kurulması/ifası, hukuki yükümlülük, meşru menfaat (güvenlik ve hizmet sürekliliği) ve açık rıza (özellikle pazarlama iletişimi ve — manuel belge yükleme hâlinde — belge incelemesi için) hukuki sebeplerine dayanılır.
 
 6. Aktarım
-Verileriniz; hizmet altyapısı için Firebase / Google Cloud gibi yurt içi-yurt dışı teknik hizmet sağlayıcılarına, yasal zorunluluk hâlinde yetkili kamu kurumlarına ve açık rızanız varsa pazarlama amaçlı AYS Tech ekosistem hizmetlerine aktarılabilir. Aktarımlarda KVKK’ya uygun güvenlik önlemleri alınır.
+Verileriniz; hizmet altyapısı için Firebase / Google Cloud gibi yurt içi-yurt dışı teknik hizmet sağlayıcılarına, yasal zorunluluk hâlinde yetkili kamu kurumlarına ve açık rızanız varsa pazarlama amaçlı AYS Tech ekosistem hizmetlerine aktarılabilir. e-Devlet doğrulama sorgusu Türkiye.gov.tr altyapısına yapılır. Aktarımlarda KVKK’ya uygun güvenlik önlemleri alınır.
 
 7. Saklama
-Öğrenci belgesi görüntüleri, onay sürecinin tamamlanması ve olası itiraz süreleri boyunca; diğer veriler üyelik ve yasal saklama süreleri boyunca muhafaza edilir. Hesap silme taleplerinde KVKK’ya uygun silme/yok etme süreçleri işletilir.
+e-Devlet otomatik doğrulamasında ham PDF ve T.C. kimlik numarası doğrulama sonrası tutulmaz; yalnızca doğrulama sonucu ve çıkarılan akademik alanlar (üniversite, fakülte, bölüm, durum) hesap kaydıyla ilişkilendirilebilir. Manuel yüklenen öğrenci kartı / belge görüntüleri, onay sürecinin tamamlanması ve olası itiraz süreleri boyunca; diğer veriler üyelik ve yasal saklama süreleri boyunca muhafaza edilir. Hesap silme taleplerinde KVKK’ya uygun silme/yok etme süreçleri işletilir.
 
 8. Haklarınız
 KVKK’nın 11. maddesi uyarınca; kişisel verilerinizin işlenip işlenmediğini öğrenme, işlenmişse bilgi talep etme, amaca uygun kullanılıp kullanılmadığını öğrenme, yurt içinde/yurt dışında aktarıldığı üçüncü kişileri bilme, eksik/yanlış işlenmişse düzeltilmesini isteme, KVKK’ya uygun silme/yok etme talep etme, otomatik sistemler vasıtasıyla analiz sonucu aleyhinize çıkan sonuca itiraz etme ve kanuna aykırı işleme nedeniyle zararın giderilmesini talep etme haklarına sahipsiniz.

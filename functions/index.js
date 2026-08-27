@@ -4869,10 +4869,9 @@ exports.verifyRegistrationEmailCode = onCall(
 );
 
 /**
- * e-Devlet barkodlu belge doğrulama (öğrenci belgesi vb.).
+ * e-Devlet barkodlu belge doğrulama (öğrenci belgesi).
  * Ref: https://github.com/emrgncr/edevlet-belgedogrula-api
- * data: { barkod, tckn }
- * → { ok, ticket?, messages?, docUrl? }
+ * PDF bellekte parse edilir; ham PDF/TCKN saklanmaz (KVKK).
  */
 async function callEdevletBelgeDogrula(barkod, tckn) {
   const qr = `barkod:${barkod};tckn:${tckn};`;
@@ -4900,16 +4899,109 @@ async function callEdevletBelgeDogrula(barkod, tckn) {
   return json;
 }
 
+function titleCaseTr(s) {
+  const lower = String(s || '')
+    .toLocaleLowerCase('tr-TR')
+    .trim();
+  return lower.replace(/(^|[\s\-_/()])(\S)/g, (_, a, b) => a + b.toLocaleUpperCase('tr-TR'));
+}
+
+/** YÖK öğrenci belgesi PDF metninden kampüs alanları. */
+function parseOgrenciBelgesiPdfText(rawText) {
+  const text = String(rawText || '').replace(/\r/g, '\n');
+  const flat = text.replace(/\t/g, ' ').replace(/[ \t]+/g, ' ');
+  const out = {
+    fullName: '',
+    firstName: '',
+    lastName: '',
+    university: '',
+    faculty: '',
+    department: '',
+    studentStatus: '',
+    grade: '',
+    programRaw: '',
+  };
+
+  const nameM = flat.match(/Adı\s*\/\s*Soyadı\s+([A-ZÇĞİÖŞÜ\s]+?)(?:\s+Anne|\s+Baba|\s+Doğum|$)/i);
+  if (nameM) {
+    const full = nameM[1].replace(/\s+/g, ' ').trim();
+    out.fullName = titleCaseTr(full);
+    const parts = full.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      out.lastName = titleCaseTr(parts[parts.length - 1]);
+      out.firstName = titleCaseTr(parts.slice(0, -1).join(' '));
+    } else {
+      out.firstName = out.fullName;
+    }
+  }
+
+  const statusM =
+    flat.match(/AKT[İI]F\s+Ö[ĞG]RENC[İI]/i) ||
+    flat.match(/Öğrencilik\s+Durumu\s*[:\s]*([A-ZÇĞİÖŞÜ\s]+)/i);
+  if (statusM) {
+    out.studentStatus = statusM[0].includes('AKT')
+      ? 'Aktif öğrenci'
+      : titleCaseTr(statusM[1] || statusM[0]);
+  }
+
+  const gradeM = flat.match(/Sınıf\s*:\s*([0-9]+\.?\s*SINIF)/i);
+  if (gradeM) out.grade = gradeM[1].replace(/\s+/g, ' ').trim();
+
+  // "Program UNI/FAK/BOLUM/..." — satır kırıkları birleştir
+  let program = '';
+  const progBlock = text.match(
+    /Program\s+([\s\S]*?)(?:\n\s*:?\s*\n|Yukarıda kimlik|Bu belgenin)/i,
+  );
+  if (progBlock) {
+    program = progBlock[1]
+      .replace(/\n+/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*\/\s*/g, '/')
+      .trim();
+  } else {
+    const one = flat.match(/Program\s+([A-ZÇĞİÖŞÜ0-9\s\-\/\.\(\)]+?)(?:\s+Yukarıda|\s+Bu belgenin|$)/i);
+    if (one) program = one[1].replace(/\s*\/\s*/g, '/').trim();
+  }
+  out.programRaw = program.replace(/\/+$/, '');
+  if (out.programRaw) {
+    const segs = out.programRaw
+      .split('/')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (segs[0]) out.university = titleCaseTr(segs[0]);
+    if (segs[1]) out.faculty = titleCaseTr(segs[1]);
+    // Bölüm: "... BÖLÜMÜ" segmenti tercih
+    const bolum = segs.find((s) => /BÖLÜMÜ|BOLUMU/i.test(s));
+    if (bolum) {
+      out.department = titleCaseTr(bolum.replace(/\s*BÖLÜMÜ$/i, '').trim());
+    } else if (segs[2]) {
+      out.department = titleCaseTr(
+        segs[2].replace(/\s*PR\.?\s*\(.*\)$/i, '').replace(/\s*BÖLÜMÜ$/i, '').trim(),
+      );
+    }
+  }
+
+  return out;
+}
+
+async function extractTextFromPdfBuffer(buf) {
+  const pdfParse = require('pdf-parse');
+  const data = await pdfParse(buf);
+  return String(data?.text || '');
+}
+
 exports.verifyEdevletBelge = onCall(
-  { region: 'europe-west1', timeoutSeconds: 60 },
+  { region: 'europe-west1', timeoutSeconds: 90 },
   async (request) => {
     const barkod = String(request.data?.barkod || '')
       .replace(/\s+/g, '')
-      .trim();
+      .trim()
+      .toUpperCase();
     const tckn = String(request.data?.tckn || '')
       .replace(/\D/g, '')
       .trim();
-    if (!/^\d{10,32}$/.test(barkod)) {
+    // YÖK barkodları alfanümerik (örn. YOKOG…)
+    if (!/^[A-Z0-9]{8,40}$/.test(barkod)) {
       throw new HttpsError(
         'invalid-argument',
         'Geçerli barkod numarası gir (belgedeki barkod).',
@@ -4918,7 +5010,6 @@ exports.verifyEdevletBelge = onCall(
     if (!/^\d{11}$/.test(tckn)) {
       throw new HttpsError('invalid-argument', 'TC kimlik no 11 haneli olmalı.');
     }
-    // Basit TC algoritma kontrolü
     const digits = tckn.split('').map((d) => Number(d));
     const odd = digits[0] + digits[2] + digits[4] + digits[6] + digits[8];
     const even = digits[1] + digits[3] + digits[5] + digits[7];
@@ -4948,7 +5039,7 @@ exports.verifyEdevletBelge = onCall(
     }
     attempts.push(Date.now());
     await rateRef.set(
-      { attempts, tcknHash: rateId, updatedAt: new Date().toISOString() },
+      { attempts, updatedAt: new Date().toISOString() },
       { merge: true },
     );
 
@@ -4957,7 +5048,7 @@ exports.verifyEdevletBelge = onCall(
       json = await callEdevletBelgeDogrula(barkod, tckn);
     } catch (e) {
       if (e instanceof HttpsError) throw e;
-      console.warn('[verifyEdevletBelge]', e?.message || e);
+      console.warn('[verifyEdevletBelge] network');
       throw new HttpsError(
         'unavailable',
         'e-Devlet doğrulama servisine ulaşılamadı.',
@@ -4971,46 +5062,67 @@ exports.verifyEdevletBelge = onCall(
       return { ok: false, messages };
     }
 
-    const ticket = crypto.randomBytes(24).toString('hex');
-    const expiresAt = new Date(Date.now() + 45 * 60 * 1000).toISOString();
-    let docUrl = null;
-
     const b64 = json?.data?.barkodluBelge;
-    if (typeof b64 === 'string' && b64.length > 100) {
-      try {
-        const { getStorage } = require('firebase-admin/storage');
-        const bucket = getStorage().bucket();
-        const buf = Buffer.from(b64, 'base64');
-        const path = `student_ids/edevlet_${ticket}.pdf`;
-        const file = bucket.file(path);
-        await file.save(buf, {
-          metadata: {
-            contentType: 'application/pdf',
-            metadata: {
-              source: 'edevlet',
-              barkodHint: barkod.slice(-4),
-            },
-          },
-          resumable: false,
-        });
-        // 7 gün imzalı URL (admin inceleme / arşiv)
-        const [signed] = await file.getSignedUrl({
-          action: 'read',
-          expires: Date.now() + 7 * 24 * 3600 * 1000,
-        });
-        docUrl = signed;
-      } catch (e) {
-        console.warn('[verifyEdevletBelge] pdf upload', e?.message || e);
-      }
+    if (typeof b64 !== 'string' || b64.length < 100) {
+      return {
+        ok: false,
+        messages: ['Belge PDF içeriği alınamadı. PDF yükleyerek admin onayına gönder.'],
+      };
     }
 
+    let parsed = {
+      fullName: '',
+      firstName: '',
+      lastName: '',
+      university: '',
+      faculty: '',
+      department: '',
+      studentStatus: '',
+      grade: '',
+      programRaw: '',
+    };
+    try {
+      const buf = Buffer.from(b64, 'base64');
+      const pdfText = await extractTextFromPdfBuffer(buf);
+      parsed = parseOgrenciBelgesiPdfText(pdfText);
+      // Bellek temizliği — ham base64 tutulmaz
+    } catch (e) {
+      console.warn('[verifyEdevletBelge] pdf parse');
+      return {
+        ok: false,
+        messages: [
+          'Belge alındı ancak okunamadı. PDF yükleyerek admin onayına gönderebilirsin.',
+        ],
+      };
+    }
+
+    const activeOk = /aktif/i.test(parsed.studentStatus || '');
+    if (!activeOk && parsed.studentStatus) {
+      return {
+        ok: false,
+        messages: [
+          `Öğrencilik durumu uygun değil (${parsed.studentStatus}). Aktif öğrenci belgesi gerekli.`,
+        ],
+        parsed,
+      };
+    }
+
+    const ticket = crypto.randomBytes(24).toString('hex');
+    const expiresAt = new Date(Date.now() + 45 * 60 * 1000).toISOString();
+
+    // Yalnız yapılandırılmış alanlar — ham PDF / TCKN yok
     await db.collection('registration_edevlet_tickets').doc(ticket).set({
       barkodLast4: barkod.slice(-4),
       tcknHash: crypto.createHash('sha256').update(tckn).digest('hex'),
-      tcknLast2: tckn.slice(-2),
       verified: true,
       consumed: false,
-      docUrl,
+      university: parsed.university || null,
+      faculty: parsed.faculty || null,
+      department: parsed.department || null,
+      studentStatus: parsed.studentStatus || null,
+      grade: parsed.grade || null,
+      firstName: parsed.firstName || null,
+      lastName: parsed.lastName || null,
       createdAt: new Date().toISOString(),
       expiresAt,
     });
@@ -5019,8 +5131,14 @@ exports.verifyEdevletBelge = onCall(
       ok: true,
       ticket,
       expiresAt,
-      docUrl,
       message: 'Öğrenci belgesi e-Devlet üzerinden doğrulandı.',
+      university: parsed.university || null,
+      faculty: parsed.faculty || null,
+      department: parsed.department || null,
+      studentStatus: parsed.studentStatus || null,
+      grade: parsed.grade || null,
+      firstName: parsed.firstName || null,
+      lastName: parsed.lastName || null,
     };
   },
 );
@@ -5066,27 +5184,38 @@ exports.consumeEdevletTicket = onCall(
       { merge: true },
     );
 
-    await db
-      .collection('users')
-      .doc(uid)
-      .set(
-        {
-          accountStatus: 'approved',
-          studentVerificationType: 'edevlet',
-          studentIdDocUrl: d.docUrl || null,
-          edevletVerifiedAt: now,
-          edevletTicketId: ticket,
-          registrationAutoApprovedAt: now,
-          registrationAutoApproveReason: 'edevlet_belge',
-          updatedAt: now,
-        },
-        { merge: true },
-      );
+    const patch = {
+      accountStatus: 'approved',
+      studentVerificationType: 'edevlet',
+      studentIdDocUrl: null,
+      edevletVerifiedAt: now,
+      edevletTicketId: ticket,
+      registrationAutoApprovedAt: now,
+      registrationAutoApproveReason: 'edevlet_belge',
+      updatedAt: now,
+    };
+    if (d.university) patch.university = String(d.university);
+    if (d.faculty) patch.faculty = String(d.faculty);
+    if (d.department) patch.department = String(d.department);
+    if (d.firstName) patch.firstName = String(d.firstName);
+    if (d.lastName) patch.lastName = String(d.lastName);
+    if (d.university || d.department) {
+      patch.bio = d.department
+        ? `${d.university || ''} · ${d.department}`.trim()
+        : `${d.university || ''} öğrencisi`;
+    }
+
+    await db.collection('users').doc(uid).set(patch, { merge: true });
 
     return {
       ok: true,
       approved: true,
-      docUrl: d.docUrl || null,
+      university: d.university || null,
+      faculty: d.faculty || null,
+      department: d.department || null,
+      firstName: d.firstName || null,
+      lastName: d.lastName || null,
+      studentStatus: d.studentStatus || null,
     };
   },
 );
