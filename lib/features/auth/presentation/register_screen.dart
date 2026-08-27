@@ -63,6 +63,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _edevletBusy = false;
   String? _edevletError;
   bool _edevletFallbackUpload = false;
+  /// null = henüz sorulmadı, true = öğrenci onayladı, false = reddetti → admin
+  bool? _edevletUserConfirmed;
   String? _edevletUniversity;
   String? _edevletFaculty;
   String? _edevletDepartment;
@@ -124,7 +126,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  bool get _edevletOk => (_edevletTicket ?? '').length >= 20;
+  bool get _edevletParsed => (_edevletTicket ?? '').length >= 20;
+  bool get _edevletOk =>
+      _edevletParsed && _edevletUserConfirmed == true;
 
   bool get _docsOk {
     if (!_security.requireStudentVerification) return true;
@@ -134,6 +138,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
     if (_verifyType == 'document') {
       if (_edevletOk) return true;
+      // Reddetti veya otomatik olmadı → PDF ile admin onayı
       return _pdfUrl != null;
     }
     return false;
@@ -285,6 +290,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() {
       _edevletBusy = true;
       _edevletError = null;
+      _edevletUserConfirmed = null;
     });
     final auth = context.read<AuthProvider>();
     final res = await auth.verifyEdevletBelge(barkod: barkod, tckn: tckn);
@@ -295,6 +301,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _edevletTicket = res.ticket;
         _edevletFallbackUpload = false;
         _edevletError = null;
+        _edevletUserConfirmed = null; // öğrenciye sorulacak
         _edevletUniversity = res.university;
         _edevletFaculty = res.faculty;
         _edevletDepartment = res.department;
@@ -305,55 +312,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         if ((res.lastName ?? '').isNotEmpty) {
           _lastName.text = res.lastName!;
         }
-        // Kampüs seçimini belgeden doldur (katalog eşleşmesi)
-        final uni = res.university;
-        if (uni != null && uni.isNotEmpty && _catalog != null) {
-          final cities = _catalog!.cities;
-          String? matchedCity;
-          String? matchedUni;
-          for (final c in cities) {
-            for (final u in _catalog!.universitiesForCity(c)) {
-              if (_campusNameMatch(u, uni)) {
-                matchedCity = c;
-                matchedUni = u;
-                break;
-              }
-            }
-            if (matchedUni != null) break;
-          }
-          if (matchedUni != null) {
-            _city = matchedCity;
-            _university = matchedUni;
-            final facs = _catalog!.facultiesFor(matchedUni);
-            final fac = res.faculty;
-            if (fac != null && facs.isNotEmpty) {
-              CampusFaculty? mf;
-              for (final f in facs) {
-                if (_campusNameMatch(f.name, fac)) {
-                  mf = f;
-                  break;
-                }
-              }
-              if (mf != null) {
-                _faculty = mf.name;
-                final deps = _catalog!.departmentsFor(
-                  universityName: matchedUni,
-                  facultyName: mf.name,
-                );
-                final dep = res.department;
-                if (dep != null && deps.isNotEmpty) {
-                  final md = deps.cast<String?>().firstWhere(
-                        (d) => d != null && _campusNameMatch(d, dep),
-                        orElse: () => null,
-                      );
-                  if (md != null) _department = md;
-                }
-              }
-            }
-          }
-        }
       } else {
         _edevletTicket = null;
+        _edevletUserConfirmed = null;
         _edevletFallbackUpload = true;
         _edevletError = res.messages.isNotEmpty
             ? res.messages.join(' ')
@@ -368,8 +329,101 @@ class _RegisterScreenState extends State<RegisterScreen> {
       SnackBar(
         content: Text(
           res.ok
-              ? 'Belge doğrulandı${res.university != null ? ' · ${res.university}' : ''}.'
+              ? 'Belgeden eğitim bilgileri alındı — lütfen doğrula.'
               : 'Otomatik doğrulama olmadı — PDF yükleyip admin onayına gönderebilirsin.',
+        ),
+      ),
+    );
+  }
+
+  void _applyCampusFromBelge() {
+    final uni = _edevletUniversity;
+    if (uni == null || uni.isEmpty || _catalog == null) return;
+    final cities = _catalog!.cities;
+    String? matchedCity;
+    String? matchedUni;
+    for (final c in cities) {
+      for (final u in _catalog!.universitiesForCity(c)) {
+        if (_campusNameMatch(u, uni)) {
+          matchedCity = c;
+          matchedUni = u;
+          break;
+        }
+      }
+      if (matchedUni != null) break;
+    }
+    // Şehir listesinde yoksa tüm üniversite adlarını tara
+    if (matchedUni == null) {
+      for (final c in cities) {
+        for (final u in _catalog!.universitiesForCity(c)) {
+          if (_campusNameMatch(u, uni) || _campusNameMatch(uni, u)) {
+            matchedCity = c;
+            matchedUni = u;
+            break;
+          }
+        }
+        if (matchedUni != null) break;
+      }
+    }
+    if (matchedUni == null) return;
+    _city = matchedCity;
+    _university = matchedUni;
+    final facs = _catalog!.facultiesFor(matchedUni);
+    final fac = _edevletFaculty;
+    if (fac != null && facs.isNotEmpty) {
+      CampusFaculty? mf;
+      for (final f in facs) {
+        if (_campusNameMatch(f.name, fac)) {
+          mf = f;
+          break;
+        }
+      }
+      if (mf != null) {
+        _faculty = mf.name;
+        final deps = _catalog!.departmentsFor(
+          universityName: matchedUni,
+          facultyName: mf.name,
+        );
+        final dep = _edevletDepartment;
+        if (dep != null && deps.isNotEmpty) {
+          final md = deps.cast<String?>().firstWhere(
+                (d) => d != null && _campusNameMatch(d, dep),
+                orElse: () => null,
+              );
+          if (md != null) _department = md;
+        }
+      }
+    }
+  }
+
+  void _confirmEdevletYes() {
+    setState(() {
+      _edevletUserConfirmed = true;
+      _edevletFallbackUpload = false;
+      _applyCampusFromBelge();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Onaylandı'
+          '${_university != null ? ' · $_university' : ''}'
+          '${_faculty != null ? ' · $_faculty' : ''}'
+          '${_department != null ? ' · $_department' : ''}',
+        ),
+      ),
+    );
+  }
+
+  void _confirmEdevletNo() {
+    setState(() {
+      _edevletUserConfirmed = false;
+      _edevletTicket = null; // otomatik onay yok → admin
+      _edevletFallbackUpload = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Bilgiler reddedildi — PDF yükle, başvurun admin onayına düşer.',
         ),
       ),
     );
@@ -383,7 +437,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         .replaceAll(RegExp(r'[^a-z0-9]'), '');
     final x = n(a);
     final y = n(b);
-    return x.contains(y) || y.contains(x);
+    if (x.isEmpty || y.isEmpty) return false;
+    return x == y || x.contains(y) || y.contains(x);
   }
 
   Future<void> _sendEmailCode() async {
@@ -966,6 +1021,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               _edevletTicket = null;
               _edevletFallbackUpload = false;
               _edevletError = null;
+              _edevletUserConfirmed = null;
               _edevletUniversity = null;
               _edevletFaculty = null;
               _edevletDepartment = null;
@@ -983,6 +1039,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               _verifyType = 'document';
               _frontUrl = null;
               _backUrl = null;
+              _edevletUserConfirmed = null;
             }),
           ),
         if (_verifyType == 'card') ...[
@@ -1124,26 +1181,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
               _edevletBusy ? 'Doğrulanıyor…' : 'e-Devlet ile doğrula',
             ),
           ),
-          if (_edevletOk) ...[
+          if (_edevletParsed) ...[
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.lime.withValues(alpha: 0.15),
+                color: _edevletOk
+                    ? AppColors.lime.withValues(alpha: 0.15)
+                    : AppColors.cyan.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.lime),
+                border: Border.all(
+                  color: _edevletOk ? AppColors.lime : AppColors.cyan,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.check_circle, color: AppColors.lime),
-                      SizedBox(width: 10),
+                      Icon(
+                        _edevletOk
+                            ? Icons.check_circle
+                            : Icons.school_outlined,
+                        color: _edevletOk ? AppColors.lime : AppColors.cyan,
+                      ),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Eğitim bilgileri doğrulandı — TC / anne-baba / PDF saklanmaz.',
-                          style: TextStyle(fontWeight: FontWeight.w800),
+                          _edevletOk
+                              ? 'Onayladın — kampüs bilgilerin güncellendi.'
+                              : 'Belgeden okunan eğitim bilgileri',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),
                     ],
@@ -1162,11 +1230,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   if (_edevletDepartment != null)
                     Text(_edevletDepartment!,
                         style: const TextStyle(fontSize: 13)),
+                  if (_edevletUserConfirmed == null) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Bu bilgiler sizin için doğru mu?',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Evet dersen kampüs profilin güncellenir ve hesap açılır. '
+                      'Hayır dersen PDF yükleyip admin onayına düşersin.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: _confirmEdevletYes,
+                            child: const Text('Evet, doğru'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _confirmEdevletNo,
+                            child: const Text('Hayır'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
           ],
-          if (_edevletError != null && !_edevletOk) ...[
+          if (_edevletError != null && !_edevletParsed) ...[
             const SizedBox(height: 12),
             Text(
               _edevletError!,
@@ -1177,7 +1283,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             ),
           ],
-          if (_edevletFallbackUpload || (!_edevletOk && _pdfUrl != null)) ...[
+          if (_edevletFallbackUpload ||
+              (!_edevletOk && _pdfUrl != null) ||
+              _edevletUserConfirmed == false) ...[
             const SizedBox(height: 16),
             const Text(
               'Manuel yükleme (admin onayı)',
@@ -1199,7 +1307,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
             ),
           ],
-          if (!_edevletOk && !_edevletFallbackUpload) ...[
+          if (!_edevletParsed &&
+              !_edevletFallbackUpload &&
+              _edevletUserConfirmed != false) ...[
             const SizedBox(height: 8),
             TextButton(
               onPressed: () => setState(() => _edevletFallbackUpload = true),

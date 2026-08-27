@@ -4872,31 +4872,100 @@ exports.verifyRegistrationEmailCode = onCall(
  * e-Devlet barkodlu belge doğrulama (öğrenci belgesi).
  * Ref: https://github.com/emrgncr/edevlet-belgedogrula-api
  * PDF bellekte parse edilir; ham PDF/TCKN saklanmaz (KVKK).
+ *
+ * Not: Masaüstü Chrome UA sıkça 406 HTML döndürür (bot engeli).
+ * Mobil UA ile JSON gelir. Aynı barkod+TC için cache kullanılır.
  */
 async function callEdevletBelgeDogrula(barkod, tckn) {
   const qr = `barkod:${barkod};tckn:${tckn};`;
+  // encodeURIComponent ; ve : karakterlerini doğru encode eder
   const url = `https://m.turkiye.gov.tr/api.php?p=belge-dogrulama&qr=${encodeURIComponent(qr)}`;
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      Accept: 'application/json, text/plain, */*',
-      'Accept-Language': 'tr-TR,tr;q=0.9',
-      Referer: 'https://www.turkiye.gov.tr/',
-    },
-  });
-  const text = await res.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch (_) {
-    throw new HttpsError(
-      'unavailable',
-      'e-Devlet yanıtı okunamadı. Biraz sonra tekrar dene.',
-    );
+  const userAgents = [
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+  ];
+
+  let lastDetail = '';
+  for (const ua of userAgents) {
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': ua,
+          Accept: 'application/json, text/plain, */*',
+          'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+          Referer: 'https://m.turkiye.gov.tr/',
+          Origin: 'https://m.turkiye.gov.tr',
+        },
+        redirect: 'follow',
+      });
+    } catch (e) {
+      lastDetail = `network:${e?.message || e}`;
+      continue;
+    }
+    const text = await res.text();
+    const trimmed = String(text || '').trim();
+    // 406 / bot sayfası HTML
+    if (
+      res.status === 406 ||
+      res.status === 403 ||
+      trimmed.startsWith('<!') ||
+      trimmed.toLowerCase().startsWith('<html')
+    ) {
+      lastDetail = `blocked status=${res.status}`;
+      continue;
+    }
+    try {
+      return JSON.parse(trimmed);
+    } catch (_) {
+      lastDetail = `bad-json status=${res.status}`;
+      continue;
+    }
   }
-  return json;
+  console.warn('[edevlet] all UA failed', lastDetail);
+  throw new HttpsError(
+    'unavailable',
+    'e-Devlet yanıtı okunamadı (geçici engel). Biraz sonra tekrar dene.',
+  );
+}
+
+function edevletPairHash(barkod, tckn) {
+  return crypto
+    .createHash('sha256')
+    .update(`edevlet-pair:${barkod}|${tckn}`)
+    .digest('hex');
+}
+
+async function mintEdevletTicketFromEducation({
+  barkod,
+  tckn,
+  university,
+  faculty,
+  department,
+  studentStatus,
+  grade,
+  fromCache = false,
+}) {
+  const ticket = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + 45 * 60 * 1000).toISOString();
+  const payload = {
+    barkodLast4: barkod.slice(-4),
+    tcknHash: crypto.createHash('sha256').update(tckn).digest('hex'),
+    verified: true,
+    consumed: false,
+    university: university || null,
+    faculty: faculty || null,
+    department: department || null,
+    studentStatus: studentStatus || null,
+    grade: grade || null,
+    createdAt: new Date().toISOString(),
+    expiresAt,
+    fromCache: fromCache === true,
+  };
+  await db.collection('registration_edevlet_tickets').doc(ticket).set(payload);
+  return { ticket, expiresAt, ...payload };
 }
 
 function titleCaseTr(s) {
@@ -5014,6 +5083,40 @@ exports.verifyEdevletBelge = onCall(
       throw new HttpsError('invalid-argument', 'TC kimlik numarası geçersiz.');
     }
 
+    // Aynı barkod+TC: daha önce başarıyla okuduysak e-Devlet’e tekrar gitme
+    // (barkod tek kullanımlık / bot engeli yüzünden ikinci çağrı false dönebiliyor)
+    const pairHash = edevletPairHash(barkod, tckn);
+    const cacheRef = db.collection('registration_edevlet_cache').doc(pairHash);
+    const cacheSnap = await cacheRef.get();
+    if (cacheSnap.exists) {
+      const c = cacheSnap.data() || {};
+      const cacheExp = c.cacheExpiresAt ? new Date(c.cacheExpiresAt).getTime() : 0;
+      if (cacheExp > Date.now() && (c.university || c.department || c.studentStatus)) {
+        const minted = await mintEdevletTicketFromEducation({
+          barkod,
+          tckn,
+          university: c.university,
+          faculty: c.faculty,
+          department: c.department,
+          studentStatus: c.studentStatus,
+          grade: c.grade,
+          fromCache: true,
+        });
+        return {
+          ok: true,
+          ticket: minted.ticket,
+          expiresAt: minted.expiresAt,
+          cached: true,
+          message: 'Öğrenci belgesi (önbellek) doğrulandı.',
+          university: c.university || null,
+          faculty: c.faculty || null,
+          department: c.department || null,
+          studentStatus: c.studentStatus || null,
+          grade: c.grade || null,
+        };
+      }
+    }
+
     const rateId = crypto
       .createHash('sha256')
       .update(`edevlet:${tckn}`)
@@ -5026,17 +5129,12 @@ exports.verifyEdevletBelge = onCall(
     const attempts = Array.isArray(rate.attempts)
       ? rate.attempts.filter((t) => Number(t) > hourAgo)
       : [];
-    if (attempts.length >= 8) {
+    if (attempts.length >= 12) {
       throw new HttpsError(
         'resource-exhausted',
         'Çok fazla deneme. Bir saat sonra tekrar dene.',
       );
     }
-    attempts.push(Date.now());
-    await rateRef.set(
-      { attempts, updatedAt: new Date().toISOString() },
-      { merge: true },
-    );
 
     let json;
     try {
@@ -5050,10 +5148,46 @@ exports.verifyEdevletBelge = onCall(
       );
     }
 
+    // Canlı çağrı sonrası rate sayacı
+    attempts.push(Date.now());
+    await rateRef.set(
+      { attempts, updatedAt: new Date().toISOString() },
+      { merge: true },
+    );
+
     if (!json || json.return !== true) {
       const messages = Array.isArray(json?.messageArr)
         ? json.messageArr.map((m) => String(m))
         : ['Belge doğrulanamadı.'];
+      // e-Devlet “bulunamadı” dedi ama bizde taze cache varsa onu kullan
+      if (cacheSnap.exists) {
+        const c = cacheSnap.data() || {};
+        const cacheExp = c.cacheExpiresAt ? new Date(c.cacheExpiresAt).getTime() : 0;
+        if (cacheExp > Date.now() && (c.university || c.department)) {
+          const minted = await mintEdevletTicketFromEducation({
+            barkod,
+            tckn,
+            university: c.university,
+            faculty: c.faculty,
+            department: c.department,
+            studentStatus: c.studentStatus,
+            grade: c.grade,
+            fromCache: true,
+          });
+          return {
+            ok: true,
+            ticket: minted.ticket,
+            expiresAt: minted.expiresAt,
+            cached: true,
+            message: 'e-Devlet barkodu tüketilmiş; önceki başarılı doğrulama kullanıldı.',
+            university: c.university || null,
+            faculty: c.faculty || null,
+            department: c.department || null,
+            studentStatus: c.studentStatus || null,
+            grade: c.grade || null,
+          };
+        }
+      }
       return { ok: false, messages };
     }
 
@@ -5077,7 +5211,6 @@ exports.verifyEdevletBelge = onCall(
       const buf = Buffer.from(b64, 'base64');
       const pdfText = await extractTextFromPdfBuffer(buf);
       parsed = parseOgrenciBelgesiPdfText(pdfText);
-      // Bellek temizliği — ham base64 / PDF tutulmaz
     } catch (e) {
       console.warn('[verifyEdevletBelge] pdf parse');
       return {
@@ -5105,28 +5238,38 @@ exports.verifyEdevletBelge = onCall(
       };
     }
 
-    const ticket = crypto.randomBytes(24).toString('hex');
-    const expiresAt = new Date(Date.now() + 45 * 60 * 1000).toISOString();
-
-    // Yalnız eğitim alanları — ham PDF / TCKN / ad-soyad / anne-baba yok
-    await db.collection('registration_edevlet_tickets').doc(ticket).set({
-      barkodLast4: barkod.slice(-4),
-      tcknHash: crypto.createHash('sha256').update(tckn).digest('hex'),
-      verified: true,
-      consumed: false,
-      university: parsed.university || null,
-      faculty: parsed.faculty || null,
-      department: parsed.department || null,
-      studentStatus: parsed.studentStatus || null,
-      grade: parsed.grade || null,
-      createdAt: new Date().toISOString(),
-      expiresAt,
+    const minted = await mintEdevletTicketFromEducation({
+      barkod,
+      tckn,
+      university: parsed.university,
+      faculty: parsed.faculty,
+      department: parsed.department,
+      studentStatus: parsed.studentStatus,
+      grade: parsed.grade,
+      fromCache: false,
     });
+
+    // 24 saat cache — aynı belge tekrarında e-Devlet’e gitmeden bilet üret
+    await cacheRef.set(
+      {
+        university: parsed.university || null,
+        faculty: parsed.faculty || null,
+        department: parsed.department || null,
+        studentStatus: parsed.studentStatus || null,
+        grade: parsed.grade || null,
+        barkodLast4: barkod.slice(-4),
+        lastTicket: minted.ticket,
+        verifiedAt: new Date().toISOString(),
+        cacheExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      },
+      { merge: true },
+    );
 
     return {
       ok: true,
-      ticket,
-      expiresAt,
+      ticket: minted.ticket,
+      expiresAt: minted.expiresAt,
+      cached: false,
       message: 'Öğrenci belgesi e-Devlet üzerinden doğrulandı.',
       university: parsed.university || null,
       faculty: parsed.faculty || null,
