@@ -58,6 +58,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _pdfUrl;
   bool _uploading = false;
   String? _busySide;
+  bool _deferredSkip = false;
 
   String? _edevletTicket;
   bool _edevletBusy = false;
@@ -72,14 +73,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   List<String> get _stepIds {
     final ids = <String>['account', 'personal', 'campus'];
-    if (_security.requireStudentVerification) ids.add('docs');
+    if (_security.showVerificationStep) ids.add('docs');
     ids.add('legal');
     return ids;
   }
 
   List<String> get _stepLabels {
     final labels = <String>['Hesap', 'Kişisel', 'Kampüs'];
-    if (_security.requireStudentVerification) labels.add('Belge');
+    if (_security.showVerificationStep) labels.add('Belge');
     labels.add('Onay');
     return labels;
   }
@@ -106,9 +107,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       setState(() {
         _security = s;
+        _deferredSkip = false;
+        _ensureVerifyType();
         if (_step >= _stepIds.length) _step = _stepIds.length - 1;
       });
     });
+  }
+
+  void _ensureVerifyType() {
+    final edevlet = _security.allowEdevlet;
+    final card = _security.allowStudentCard;
+    final pdf = _security.allowStudentDocumentPdf;
+    if (edevlet &&
+        (_security.verificationMode == RegVerificationMode.edevletOnly ||
+            _verifyType == null)) {
+      _verifyType = 'document';
+      return;
+    }
+    if (_verifyType == 'card' && !card) _verifyType = null;
+    if (_verifyType == 'document' && !edevlet && !pdf) _verifyType = null;
+    if (_verifyType == null) {
+      if (edevlet) {
+        _verifyType = 'document';
+      } else if (card) {
+        _verifyType = 'card';
+      } else if (pdf) {
+        _verifyType = 'document';
+      }
+    }
   }
 
   @override
@@ -131,14 +157,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _edevletParsed && _edevletUserConfirmed == true;
 
   bool get _docsOk {
-    if (!_security.requireStudentVerification) return true;
+    if (!_security.showVerificationStep) return true;
+    if (_security.allowSkipVerification && _deferredSkip) return true;
     if (_verifyType == 'card') {
       final needBack = _security.requireCardBothSides;
       return _frontUrl != null && (!needBack || _backUrl != null);
     }
     if (_verifyType == 'document') {
-      if (_edevletOk) return true;
-      // Reddetti veya otomatik olmadı → PDF ile admin onayı
+      if (_security.allowEdevlet) {
+        if (_edevletOk) return true;
+        if (_security.allowEdevletPdfFallback) {
+          return _pdfUrl != null;
+        }
+        return false;
+      }
+      // Yalnız belge: PDF
       return _pdfUrl != null;
     }
     return false;
@@ -214,7 +247,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
     final auth = context.read<AuthProvider>();
-    final require = _security.requireStudentVerification;
+    final deferred = _security.allowSkipVerification && _deferredSkip;
+    final require = _security.requireDocsNow && !deferred;
     final ok = await auth.register(
       email: _email.text,
       studentNo: _studentNo.text,
@@ -231,9 +265,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       kvkkAccepted: _kvkk,
       marketingConsent: _marketing,
       requireVerification: require,
-      studentVerificationType: require
-          ? (_edevletOk ? 'edevlet' : _verifyType)
-          : null,
+      studentVerificationType: deferred
+          ? 'deferred'
+          : (require
+              ? (_edevletOk ? 'edevlet' : _verifyType)
+              : (_edevletOk ? 'edevlet' : null)),
       studentIdFrontUrl: require && _verifyType == 'card' ? _frontUrl : null,
       studentIdBackUrl: require && _verifyType == 'card' ? _backUrl : null,
       studentIdDocUrl: require && !_edevletOk && _verifyType == 'document'
@@ -986,6 +1022,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget _buildVerificationStep() {
     final cardOk = _security.allowStudentCard;
     final pdfOk = _security.allowStudentDocumentPdf;
+    final edevletOk = _security.allowEdevlet;
+    final fallbackOk = _security.allowEdevletPdfFallback;
+    final showTypePicker = !(edevletOk &&
+            _security.verificationMode == RegVerificationMode.edevletOnly) &&
+        (cardOk || (pdfOk && !edevletOk) || (cardOk && (pdfOk || edevletOk)));
+
+    final intro = switch (_security.verificationMode) {
+      RegVerificationMode.edevletOnly =>
+        'Öğrenci belgeni e-Devlet barkodu ile doğrula. Kart / PDF yükleme kapalı.',
+      RegVerificationMode.edevletPlusDoc =>
+        'Önce e-Devlet barkodu ile doğrula. Olmazsa kart veya PDF yükle — admin onayına düşer.',
+      RegVerificationMode.documentOnly =>
+        'Öğrenci kartı veya PDF belge yükle. Başvuru admin onayına düşer.',
+      RegVerificationMode.defer =>
+        'İstersen şimdi doğrula; istersen “şimdilik geç” — belgeyi sonra isteyeceğiz.',
+      RegVerificationMode.off => '',
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -997,324 +1050,397 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Öğrenci belgesini e-Devlet barkodu ile anında doğrula. '
-          'Doğrulama olmazsa belgeyi yükle — başvuru admin onayına düşer.',
-          style: TextStyle(
+        Text(
+          intro,
+          style: const TextStyle(
             fontSize: 13,
             height: 1.4,
             color: AppColors.textSecondary,
           ),
         ),
-        const SizedBox(height: 16),
-        if (cardOk)
-          _TypeTile(
-            selected: _verifyType == 'card',
-            title: 'Öğrenci kartı',
-            subtitle: _security.requireCardBothSides
-                ? 'Ön ve arka yüz · admin onayı'
-                : 'Kart fotoğrafı · admin onayı',
-            icon: Icons.badge_outlined,
-            onTap: () => setState(() {
-              _verifyType = 'card';
-              _pdfUrl = null;
-              _edevletTicket = null;
-              _edevletFallbackUpload = false;
-              _edevletError = null;
-              _edevletUserConfirmed = null;
-              _edevletUniversity = null;
-              _edevletFaculty = null;
-              _edevletDepartment = null;
-              _edevletStatus = null;
+        if (_security.allowSkipVerification) ...[
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => setState(() {
+              _deferredSkip = !_deferredSkip;
+              if (_deferredSkip) {
+                _edevletTicket = null;
+                _edevletUserConfirmed = null;
+                _pdfUrl = null;
+                _frontUrl = null;
+                _backUrl = null;
+              }
             }),
+            icon: Icon(
+              _deferredSkip
+                  ? Icons.check_circle
+                  : Icons.schedule_outlined,
+            ),
+            label: Text(
+              _deferredSkip
+                  ? 'Belge sonraya bırakıldı — devam edebilirsin'
+                  : 'Şimdilik geç — belgeyi sonra iste',
+            ),
           ),
-        if (cardOk && pdfOk) const SizedBox(height: 8),
-        if (pdfOk)
-          _TypeTile(
-            selected: _verifyType == 'document',
-            title: 'Öğrenci belgesi',
-            subtitle: 'e-Devlet barkod + TC · otomatik doğrulama',
-            icon: Icons.verified_outlined,
-            onTap: () => setState(() {
-              _verifyType = 'document';
-              _frontUrl = null;
-              _backUrl = null;
-              _edevletUserConfirmed = null;
-            }),
+        ],
+        if (_deferredSkip) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Kayıt sonrası hesabın açılır; doğrulamayı daha sonra tamamlaman istenir.',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
-        if (_verifyType == 'card') ...[
+        ] else ...[
           const SizedBox(height: 16),
-          _SideUploadCard(
-            label: 'Ön yüz',
-            done: _frontUrl != null,
-            busy: _uploading && _busySide == 'front',
-            onCamera: _uploading
-                ? null
-                : () => _runUpload(
-                    side: 'front',
-                    pick: StudentDocUpload.captureCardImage,
-                    expectPdf: false,
-                  ),
-            onGallery: _uploading
-                ? null
-                : () => _runUpload(
-                    side: 'front',
-                    pick: StudentDocUpload.pickCardImage,
-                    expectPdf: false,
-                  ),
-          ),
-          if (_security.requireCardBothSides) ...[
-            const SizedBox(height: 10),
+          if (showTypePicker && cardOk) ...[
+            _TypeTile(
+              selected: _verifyType == 'card',
+              title: 'Öğrenci kartı',
+              subtitle: _security.requireCardBothSides
+                  ? 'Ön ve arka yüz · admin onayı'
+                  : 'Kart fotoğrafı · admin onayı',
+              icon: Icons.badge_outlined,
+              onTap: () => setState(() {
+                _verifyType = 'card';
+                _pdfUrl = null;
+                _edevletTicket = null;
+                _edevletFallbackUpload = false;
+                _edevletError = null;
+                _edevletUserConfirmed = null;
+                _edevletUniversity = null;
+                _edevletFaculty = null;
+                _edevletDepartment = null;
+                _edevletStatus = null;
+              }),
+            ),
+            if (edevletOk || pdfOk) const SizedBox(height: 8),
+          ],
+          if (showTypePicker && (edevletOk || pdfOk))
+            _TypeTile(
+              selected: _verifyType == 'document',
+              title: edevletOk ? 'Öğrenci belgesi' : 'PDF belge',
+              subtitle: edevletOk
+                  ? (fallbackOk
+                      ? 'e-Devlet barkod + TC · yedek PDF'
+                      : 'e-Devlet barkod + TC')
+                  : 'PDF yükle · admin onayı',
+              icon: Icons.verified_outlined,
+              onTap: () => setState(() {
+                _verifyType = 'document';
+                _frontUrl = null;
+                _backUrl = null;
+                _edevletUserConfirmed = null;
+              }),
+            ),
+          if (_verifyType == 'card') ...[
+            const SizedBox(height: 16),
             _SideUploadCard(
-              label: 'Arka yüz',
-              done: _backUrl != null,
-              busy: _uploading && _busySide == 'back',
+              label: 'Ön yüz',
+              done: _frontUrl != null,
+              busy: _uploading && _busySide == 'front',
               onCamera: _uploading
                   ? null
                   : () => _runUpload(
-                      side: 'back',
+                      side: 'front',
                       pick: StudentDocUpload.captureCardImage,
                       expectPdf: false,
                     ),
               onGallery: _uploading
                   ? null
                   : () => _runUpload(
-                      side: 'back',
+                      side: 'front',
                       pick: StudentDocUpload.pickCardImage,
                       expectPdf: false,
                     ),
             ),
+            if (_security.requireCardBothSides) ...[
+              const SizedBox(height: 10),
+              _SideUploadCard(
+                label: 'Arka yüz',
+                done: _backUrl != null,
+                busy: _uploading && _busySide == 'back',
+                onCamera: _uploading
+                    ? null
+                    : () => _runUpload(
+                        side: 'back',
+                        pick: StudentDocUpload.captureCardImage,
+                        expectPdf: false,
+                      ),
+                onGallery: _uploading
+                    ? null
+                    : () => _runUpload(
+                        side: 'back',
+                        pick: StudentDocUpload.pickCardImage,
+                        expectPdf: false,
+                      ),
+              ),
+            ],
           ],
-        ],
-        if (_verifyType == 'document') ...[
-          const SizedBox(height: 16),
-          ExpansionTile(
-            initiallyExpanded: false,
-            tilePadding: EdgeInsets.zero,
-            title: const Text(
-              'Barkod nasıl alınır?',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-            ),
-            children: const [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '1) turkiye.gov.tr veya e-Devlet mobil uygulamasına giriş yap.\n'
-                  '2) Arama: “Öğrenci Belgesi Sorgula” (YÖK).\n'
-                  '3) Belgeyi oluştur / görüntüle.\n'
-                  '4) Belgedeki barkod numarasını (ör. YOKOG…) kopyala.\n'
-                  '5) Aynı belgedeki T.C. kimlik no ile burada doğrula.\n\n'
-                  'Not: Barkod tek kullanımlık / süresi dolmuş olabilir; '
-                  '“bulunamadı” hatasında yeni belge oluştur.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.45,
-                    color: AppColors.textSecondary,
-                  ),
+          if (_verifyType == 'document') ...[
+            const SizedBox(height: 16),
+            if (edevletOk) ...[
+              ExpansionTile(
+                initiallyExpanded: false,
+                tilePadding: EdgeInsets.zero,
+                title: const Text(
+                  'Barkod nasıl alınır?',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
                 ),
-              ),
-              SizedBox(height: 8),
-            ],
-          ),
-          ExpansionTile(
-            initiallyExpanded: false,
-            tilePadding: EdgeInsets.zero,
-            title: const Text(
-              'KVKK — ne saklanır?',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-            ),
-            children: const [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Yasal dayanak: KVKK m.5/2-c (sözleşmenin kurulması/ifası) '
-                  've m.5/2-f (meşru menfaat — sahte hesap önleme). '
-                  'Aydınlatma: KVKK m.10.\n\n'
-                  'Saklanır: üniversite, fakülte, bölüm, öğrencilik durumu, '
-                  'sınıf; hesabındaki e-posta ve okul numarasıyla ilişkilendirilir.\n\n'
-                  'Saklanmaz: T.C. kimlik no, anne/baba adı, doğum bilgileri, ham PDF.\n\n'
-                  'Barkod + T.C. yalnızca anlık e-Devlet sorgusu içindir; '
-                  'sonrasında T.C. düz metin tutulmaz.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.45,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ),
-              SizedBox(height: 8),
-            ],
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _tckn,
-            keyboardType: TextInputType.number,
-            maxLength: 11,
-            decoration: const InputDecoration(
-              labelText: 'TC kimlik no',
-              helperText: 'Yalnızca anlık doğrulama — saklanmaz',
-              counterText: '',
-              prefixIcon: Icon(Icons.badge_outlined),
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            controller: _barkod,
-            textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(
-              labelText: 'Belge barkod no',
-              helperText: 'Örn. YOKOG… — belgedeki barkod',
-              prefixIcon: Icon(Icons.qr_code_2_outlined),
-            ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: _edevletBusy ? null : _verifyEdevlet,
-            icon: _edevletBusy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.verified_user_outlined),
-            label: Text(
-              _edevletBusy ? 'Doğrulanıyor…' : 'e-Devlet ile doğrula',
-            ),
-          ),
-          if (_edevletParsed) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _edevletOk
-                    ? AppColors.lime.withValues(alpha: 0.15)
-                    : AppColors.cyan.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _edevletOk ? AppColors.lime : AppColors.cyan,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        _edevletOk
-                            ? Icons.check_circle
-                            : Icons.school_outlined,
-                        color: _edevletOk ? AppColors.lime : AppColors.cyan,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _edevletOk
-                              ? 'Onayladın — kampüs bilgilerin güncellendi.'
-                              : 'Belgeden okunan eğitim bilgileri',
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_edevletStatus != null) ...[
-                    const SizedBox(height: 8),
-                    Text(_edevletStatus!,
-                        style: const TextStyle(fontSize: 13)),
-                  ],
-                  if (_edevletUniversity != null)
-                    Text(_edevletUniversity!,
-                        style: const TextStyle(fontSize: 13)),
-                  if (_edevletFaculty != null)
-                    Text(_edevletFaculty!,
-                        style: const TextStyle(fontSize: 13)),
-                  if (_edevletDepartment != null)
-                    Text(_edevletDepartment!,
-                        style: const TextStyle(fontSize: 13)),
-                  if (_edevletUserConfirmed == null) ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Bu bilgiler sizin için doğru mu?',
+                children: const [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '1) turkiye.gov.tr veya e-Devlet mobil uygulamasına giriş yap.\n'
+                      '2) Arama: “Öğrenci Belgesi Sorgula” (YÖK).\n'
+                      '3) Belgeyi oluştur / görüntüle.\n'
+                      '4) Belgedeki barkod numarasını (ör. YOKOG…) kopyala.\n'
+                      '5) Aynı belgedeki T.C. kimlik no ile burada doğrula.\n\n'
+                      'Not: Barkod tek kullanımlık / süresi dolmuş olabilir; '
+                      '“bulunamadı” hatasında yeni belge oluştur.',
                       style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Evet dersen kampüs profilin güncellenir ve hesap açılır. '
-                      'Hayır dersen PDF yükleyip admin onayına düşersin.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.35,
+                        fontSize: 12.5,
+                        height: 1.45,
                         color: AppColors.textSecondary,
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: _confirmEdevletYes,
-                            child: const Text('Evet, doğru'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _confirmEdevletNo,
-                            child: const Text('Hayır'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
+                  SizedBox(height: 8),
                 ],
               ),
-            ),
-          ],
-          if (_edevletError != null && !_edevletParsed) ...[
-            const SizedBox(height: 12),
-            Text(
-              _edevletError!,
-              style: const TextStyle(
-                color: Colors.redAccent,
-                fontSize: 13,
-                height: 1.35,
-              ),
-            ),
-          ],
-          if (_edevletFallbackUpload ||
-              (!_edevletOk && _pdfUrl != null) ||
-              _edevletUserConfirmed == false) ...[
-            const SizedBox(height: 16),
-            const Text(
-              'Manuel yükleme (admin onayı)',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            _SideUploadCard(
-              label: 'PDF belge',
-              done: _pdfUrl != null,
-              busy: _uploading && _busySide == 'pdf',
-              pdfOnly: true,
-              onCamera: null,
-              onGallery: _uploading
-                  ? null
-                  : () => _runUpload(
-                      side: 'pdf',
-                      pick: StudentDocUpload.pickPdf,
-                      expectPdf: true,
+              ExpansionTile(
+                initiallyExpanded: false,
+                tilePadding: EdgeInsets.zero,
+                title: const Text(
+                  'KVKK — ne saklanır?',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                ),
+                children: const [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Yasal dayanak: KVKK m.5/2-c (sözleşmenin kurulması/ifası) '
+                      've m.5/2-f (meşru menfaat — sahte hesap önleme). '
+                      'Aydınlatma: KVKK m.10.\n\n'
+                      'Saklanır: üniversite, fakülte, bölüm, öğrencilik durumu, '
+                      'sınıf; hesabındaki e-posta ve okul numarasıyla ilişkilendirilir.\n\n'
+                      'Saklanmaz: T.C. kimlik no, anne/baba adı, doğum bilgileri, ham PDF.\n\n'
+                      'Barkod + T.C. yalnızca anlık e-Devlet sorgusu içindir; '
+                      'sonrasında T.C. düz metin tutulmaz.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.45,
+                        color: AppColors.textSecondary,
+                      ),
                     ),
-            ),
-          ],
-          if (!_edevletParsed &&
-              !_edevletFallbackUpload &&
-              _edevletUserConfirmed != false) ...[
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => setState(() => _edevletFallbackUpload = true),
-              child: const Text('Doğrulayamıyorum — PDF yükle'),
-            ),
+                  ),
+                  SizedBox(height: 8),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _tckn,
+                keyboardType: TextInputType.number,
+                maxLength: 11,
+                decoration: const InputDecoration(
+                  labelText: 'TC kimlik no',
+                  helperText: 'Yalnızca anlık doğrulama — saklanmaz',
+                  counterText: '',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _barkod,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'Belge barkod no',
+                  helperText: 'Örn. YOKOG… — belgedeki barkod',
+                  prefixIcon: Icon(Icons.qr_code_2_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _edevletBusy ? null : _verifyEdevlet,
+                icon: _edevletBusy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.verified_user_outlined),
+                label: Text(
+                  _edevletBusy ? 'Doğrulanıyor…' : 'e-Devlet ile doğrula',
+                ),
+              ),
+              if (_edevletParsed) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _edevletOk
+                        ? AppColors.lime.withValues(alpha: 0.15)
+                        : AppColors.cyan.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _edevletOk ? AppColors.lime : AppColors.cyan,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _edevletOk
+                                ? Icons.check_circle
+                                : Icons.school_outlined,
+                            color:
+                                _edevletOk ? AppColors.lime : AppColors.cyan,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _edevletOk
+                                  ? 'Onayladın — kampüs bilgilerin güncellendi.'
+                                  : 'Belgeden okunan eğitim bilgileri',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_edevletStatus != null) ...[
+                        const SizedBox(height: 8),
+                        Text(_edevletStatus!,
+                            style: const TextStyle(fontSize: 13)),
+                      ],
+                      if (_edevletUniversity != null)
+                        Text(_edevletUniversity!,
+                            style: const TextStyle(fontSize: 13)),
+                      if (_edevletFaculty != null)
+                        Text(_edevletFaculty!,
+                            style: const TextStyle(fontSize: 13)),
+                      if (_edevletDepartment != null)
+                        Text(_edevletDepartment!,
+                            style: const TextStyle(fontSize: 13)),
+                      if (_edevletUserConfirmed == null) ...[
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Bu bilgiler sizin için doğru mu?',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          fallbackOk
+                              ? 'Evet dersen kampüs profilin güncellenir ve hesap açılır. '
+                                  'Hayır dersen PDF yükleyip admin onayına düşersin.'
+                              : 'Evet dersen kampüs profilin güncellenir. '
+                                  'Hayır dersen kayıt için admin destek gerekir.',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: _confirmEdevletYes,
+                                child: const Text('Evet, doğru'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: fallbackOk
+                                    ? _confirmEdevletNo
+                                    : () {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Bu modda PDF yedek kapalı. Kendi belgenle tekrar dene veya destek ile iletişim kur.',
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                child: const Text('Hayır'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+              if (_edevletError != null && !_edevletParsed) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _edevletError!,
+                  style: const TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+              if (fallbackOk &&
+                  (_edevletFallbackUpload ||
+                      (!_edevletOk && _pdfUrl != null) ||
+                      _edevletUserConfirmed == false)) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Manuel yükleme (admin onayı)',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                _SideUploadCard(
+                  label: 'PDF belge',
+                  done: _pdfUrl != null,
+                  busy: _uploading && _busySide == 'pdf',
+                  pdfOnly: true,
+                  onCamera: null,
+                  onGallery: _uploading
+                      ? null
+                      : () => _runUpload(
+                          side: 'pdf',
+                          pick: StudentDocUpload.pickPdf,
+                          expectPdf: true,
+                        ),
+                ),
+              ],
+              if (fallbackOk &&
+                  !_edevletParsed &&
+                  !_edevletFallbackUpload &&
+                  _edevletUserConfirmed != false) ...[
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () =>
+                      setState(() => _edevletFallbackUpload = true),
+                  child: const Text('Doğrulayamıyorum — PDF yükle'),
+                ),
+              ],
+            ] else if (pdfOk) ...[
+              _SideUploadCard(
+                label: 'PDF belge',
+                done: _pdfUrl != null,
+                busy: _uploading && _busySide == 'pdf',
+                pdfOnly: true,
+                onCamera: null,
+                onGallery: _uploading
+                    ? null
+                    : () => _runUpload(
+                        side: 'pdf',
+                        pick: StudentDocUpload.pickPdf,
+                        expectPdf: true,
+                      ),
+              ),
+            ],
           ],
         ],
       ],

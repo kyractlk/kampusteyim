@@ -55,14 +55,18 @@ class _AdminRegistrationsTabState extends State<AdminRegistrationsTab> {
               content: Text(
                 n > 0
                     ? 'Ayar kaydedildi · $n bekleyen kayıt otomatik onaylandı'
-                    : 'Ayar kaydedildi',
+                    : 'Ayar kaydedildi · ${next.verificationMode.title}',
               ),
             ),
           );
         }
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Kayıt güvenlik ayarı güncellendi')),
+          SnackBar(
+            content: Text(
+              'Kayıt güvenlik ayarı güncellendi · ${next.verificationMode.title}',
+            ),
+          ),
         );
       }
     } catch (e) {
@@ -169,20 +173,38 @@ class _SecurityPanel extends StatelessWidget {
               'Değişiklikler anında kayıt ekranına yansır. Kullanıcıya gerekçe gösterilmez.',
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Belge doğrulaması zorunlu'),
-              subtitle: const Text(
-                'Kapalıysa belge adımı yok; bekleyen kayıtlar otomatik onaylanır',
-              ),
-              value: security.requireStudentVerification,
-              onChanged: loading || saving
-                  ? null
-                  : (v) => onChanged(
-                        security.copyWith(requireStudentVerification: v),
-                      ),
+            const SizedBox(height: 10),
+            const Text(
+              'Doğrulama modu',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
             ),
-            if (!security.requireStudentVerification)
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final mode in RegVerificationMode.values)
+                  ChoiceChip(
+                    label: Text(mode.title),
+                    selected: security.verificationMode == mode,
+                    onSelected: loading || saving
+                        ? null
+                        : (_) => onChanged(security.withMode(mode)),
+                  ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
+              child: Text(
+                security.verificationMode.subtitle,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+            ),
+            if (security.verificationMode == RegVerificationMode.off)
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
@@ -208,6 +230,48 @@ class _SecurityPanel extends StatelessWidget {
                   label: const Text('Bekleyenleri şimdi onayla'),
                 ),
               ),
+            if (security.verificationMode != RegVerificationMode.off &&
+                security.verificationMode !=
+                    RegVerificationMode.edevletOnly) ...[
+              const Divider(height: 20),
+              const Text(
+                'Belge seçenekleri',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Öğrenci kartı (ön/arka)'),
+                value: security.allowStudentCard,
+                onChanged: loading || saving
+                    ? null
+                    : (v) => onChanged(security.copyWith(allowStudentCard: v)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Kartta iki yüz zorunlu'),
+                value: security.requireCardBothSides,
+                onChanged: loading || saving || !security.allowStudentCard
+                    ? null
+                    : (v) =>
+                        onChanged(security.copyWith(requireCardBothSides: v)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Öğrenci belgesi PDF'),
+                subtitle: Text(
+                  security.allowEdevlet
+                      ? 'e-Devlet olmazsa / reddedilirse yedek yükleme'
+                      : 'Manuel PDF yükleme',
+                ),
+                value: security.allowStudentDocumentPdf,
+                onChanged: loading || saving
+                    ? null
+                    : (v) => onChanged(
+                          security.copyWith(allowStudentDocumentPdf: v),
+                        ),
+              ),
+            ],
+            const Divider(height: 20),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Öğrenci numarası zorunlu'),
@@ -226,32 +290,6 @@ class _SecurityPanel extends StatelessWidget {
               onChanged: loading || saving
                   ? null
                   : (v) => onChanged(security.copyWith(requirePhone: v)),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Öğrenci kartı (ön/arka)'),
-              value: security.allowStudentCard,
-              onChanged: loading || saving
-                  ? null
-                  : (v) => onChanged(security.copyWith(allowStudentCard: v)),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Kartta iki yüz zorunlu'),
-              value: security.requireCardBothSides,
-              onChanged: loading || saving || !security.allowStudentCard
-                  ? null
-                  : (v) =>
-                      onChanged(security.copyWith(requireCardBothSides: v)),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Öğrenci belgesi PDF'),
-              value: security.allowStudentDocumentPdf,
-              onChanged: loading || saving
-                  ? null
-                  : (v) =>
-                      onChanged(security.copyWith(allowStudentDocumentPdf: v)),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -282,8 +320,25 @@ class _PendingCard extends StatelessWidget {
       'card' => 'Kart',
       'document' => 'PDF',
       'edevlet' => 'e-Devlet',
-      _ => 'Belge',
+      'deferred' => 'Sonra doğrulama',
+      _ => user.hasStudentCredential ? 'e-Devlet özeti' : 'Belge',
     };
+
+    final cred = user.studentCredential;
+    final credLines = <String>[
+      if (cred != null) ...[
+        if ('${cred['university'] ?? ''}'.trim().isNotEmpty)
+          'Üni: ${cred['university']}',
+        if ('${cred['faculty'] ?? ''}'.trim().isNotEmpty)
+          'Fak: ${cred['faculty']}',
+        if ('${cred['department'] ?? ''}'.trim().isNotEmpty)
+          'Bölüm: ${cred['department']}',
+        if ('${cred['studentStatus'] ?? ''}'.trim().isNotEmpty)
+          '${cred['studentStatus']}',
+        if ('${cred['linkedStudentNo'] ?? ''}'.trim().isNotEmpty)
+          'Okul no: ${cred['linkedStudentNo']}',
+      ],
+    ];
 
     return Material(
       color: AppColors.surface,
@@ -319,6 +374,23 @@ class _PendingCard extends StatelessWidget {
                 ),
               ),
             ),
+            if (credLines.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'e-Devlet eğitim özeti',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 4),
+              ...credLines.map(
+                (e) => Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(e, style: const TextStyle(fontSize: 12)),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             if (type == 'card') ...[
               Row(
@@ -347,10 +419,20 @@ class _PendingCard extends StatelessWidget {
                 icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
                 label: const Text('PDF belgesini aç'),
               ),
-            ] else
+            ] else if (type == 'edevlet' || user.hasStudentCredential)
+              const Text(
+                'e-Devlet ile doğrulanmış (ham PDF saklanmaz).',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              )
+            else if (type == 'deferred')
+              const Text(
+                'Kullanıcı belgeyi sonraya bıraktı.',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              )
+            else
               const Text(
                 'Belge bulunamadı',
-                style: TextStyle(color: AppColors.textSecondary),
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
             const SizedBox(height: 12),
             Row(

@@ -1,10 +1,80 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+/// Kayıt doğrulama stratejisi (admin seçer).
+enum RegVerificationMode {
+  /// Belge / e-Devlet adımı yok — hesap doğrudan onay.
+  off,
+
+  /// Yalnız e-Devlet barkod; kart/PDF yok.
+  edevletOnly,
+
+  /// e-Devlet tercih + kart/PDF yedek (admin onayı).
+  edevletPlusDoc,
+
+  /// Yalnız kart / PDF yükleme; e-Devlet kapalı.
+  documentOnly,
+
+  /// Adım gösterilir ama “şimdilik geç” ile kayıt; belge sonra istenir.
+  defer,
+}
+
+extension RegVerificationModeX on RegVerificationMode {
+  String get id => name;
+
+  String get title => switch (this) {
+        RegVerificationMode.off => 'Kapalı',
+        RegVerificationMode.edevletOnly => 'Yalnız e-Devlet',
+        RegVerificationMode.edevletPlusDoc => 'e-Devlet + belge',
+        RegVerificationMode.documentOnly => 'Yalnız belge',
+        RegVerificationMode.defer => 'Belgeyi sonra iste',
+      };
+
+  String get subtitle => switch (this) {
+        RegVerificationMode.off =>
+          'Doğrulama adımı yok; kayıtlar otomatik onaylanır',
+        RegVerificationMode.edevletOnly =>
+          'Barkod + TC zorunlu; kart/PDF kapalı',
+        RegVerificationMode.edevletPlusDoc =>
+          'e-Devlet önce; olmazsa kart veya PDF → admin',
+        RegVerificationMode.documentOnly =>
+          'Kart / PDF yükleme; e-Devlet kapalı',
+        RegVerificationMode.defer =>
+          'İsteğe bağlı adım; geçebilir, belge sonra istenir',
+      };
+
+  bool get showVerificationStep => this != RegVerificationMode.off;
+
+  /// Şimdi belge/doğrulama zorunlu mu? (defer’da hayır)
+  bool get requireDocsNow =>
+      this == RegVerificationMode.edevletOnly ||
+      this == RegVerificationMode.edevletPlusDoc ||
+      this == RegVerificationMode.documentOnly;
+
+  bool get allowEdevlet =>
+      this == RegVerificationMode.edevletOnly ||
+      this == RegVerificationMode.edevletPlusDoc ||
+      this == RegVerificationMode.defer;
+
+  bool get allowEdevletPdfFallback =>
+      this == RegVerificationMode.edevletPlusDoc ||
+      this == RegVerificationMode.defer;
+
+  bool get allowSkip => this == RegVerificationMode.defer;
+
+  static RegVerificationMode parse(String? raw) {
+    final s = (raw ?? '').trim();
+    return RegVerificationMode.values.firstWhere(
+      (e) => e.name == s,
+      orElse: () => RegVerificationMode.off,
+    );
+  }
+}
+
 /// Kayıt güvenlik / form alan ayarları — yalnız admin. Kullanıcıya gerekçe gösterilmez.
 class RegistrationSecurityConfig {
   const RegistrationSecurityConfig({
-    this.requireStudentVerification = false,
+    this.verificationMode = RegVerificationMode.off,
     this.requireStudentNo = true,
     this.requirePhone = true,
     this.allowStudentCard = true,
@@ -15,8 +85,17 @@ class RegistrationSecurityConfig {
     this.maxPdfBytes = 12 * 1024 * 1024,
   });
 
-  /// Açıkken kayıtta belge adımı zorunlu; kapalıyken adım hiç gösterilmez, hesap doğrudan onaylanır.
-  final bool requireStudentVerification;
+  final RegVerificationMode verificationMode;
+
+  /// Geriye uyum: belge adımı zorunlu mu?
+  bool get requireStudentVerification => verificationMode.requireDocsNow;
+
+  bool get showVerificationStep => verificationMode.showVerificationStep;
+  bool get allowEdevlet => verificationMode.allowEdevlet;
+  bool get allowEdevletPdfFallback =>
+      verificationMode.allowEdevletPdfFallback;
+  bool get allowSkipVerification => verificationMode.allowSkip;
+  bool get requireDocsNow => verificationMode.requireDocsNow;
 
   /// Açıkken öğrenci no zorunlu; kapalıyken alan gizlenir.
   final bool requireStudentNo;
@@ -35,14 +114,55 @@ class RegistrationSecurityConfig {
 
   static const docPath = 'app_config/registration_security';
 
+  /// Eski bayraklardan mod türet.
+  static RegVerificationMode _legacyMode(Map<String, dynamic> m) {
+    final require = m['requireStudentVerification'] == true;
+    if (!require) {
+      if (m['allowDeferVerification'] == true) {
+        return RegVerificationMode.defer;
+      }
+      return RegVerificationMode.off;
+    }
+    final edevlet = m['allowEdevlet'] != false;
+    final card = m['allowStudentCard'] != false;
+    final pdf = m['allowStudentDocumentPdf'] != false;
+    if (edevlet && !card && !pdf) return RegVerificationMode.edevletOnly;
+    if (!edevlet && (card || pdf)) return RegVerificationMode.documentOnly;
+    if (edevlet) return RegVerificationMode.edevletPlusDoc;
+    return RegVerificationMode.documentOnly;
+  }
+
   factory RegistrationSecurityConfig.fromMap(Map<String, dynamic>? m) {
     if (m == null || m.isEmpty) return defaults;
+    final modeRaw = '${m['verificationMode'] ?? ''}'.trim();
+    final mode = modeRaw.isNotEmpty
+        ? RegVerificationModeX.parse(modeRaw)
+        : _legacyMode(m);
+
+    // Modun önerdiği kart/PDF varsayılanları; admin ince ayarı override edebilir
+    var allowCard = m['allowStudentCard'] != false;
+    var allowPdf = m['allowStudentDocumentPdf'] != false;
+    if (mode == RegVerificationMode.edevletOnly) {
+      allowCard = false;
+      allowPdf = false;
+    } else if (mode == RegVerificationMode.documentOnly) {
+      // en az biri açık kalsın
+      if (!allowCard && !allowPdf) {
+        allowCard = true;
+        allowPdf = true;
+      }
+    } else if (mode == RegVerificationMode.edevletPlusDoc ||
+        mode == RegVerificationMode.defer) {
+      if (m['allowStudentCard'] == null) allowCard = true;
+      if (m['allowStudentDocumentPdf'] == null) allowPdf = true;
+    }
+
     return RegistrationSecurityConfig(
-      requireStudentVerification: m['requireStudentVerification'] == true,
+      verificationMode: mode,
       requireStudentNo: m['requireStudentNo'] != false,
       requirePhone: m['requirePhone'] != false,
-      allowStudentCard: m['allowStudentCard'] != false,
-      allowStudentDocumentPdf: m['allowStudentDocumentPdf'] != false,
+      allowStudentCard: allowCard,
+      allowStudentDocumentPdf: allowPdf,
       requireCardBothSides: m['requireCardBothSides'] != false,
       malwareScanEnabled: m['malwareScanEnabled'] != false,
       maxImageBytes:
@@ -52,7 +172,12 @@ class RegistrationSecurityConfig {
   }
 
   Map<String, dynamic> toMap() => {
+        'verificationMode': verificationMode.id,
+        // Eski istemciler için
         'requireStudentVerification': requireStudentVerification,
+        'allowEdevlet': allowEdevlet,
+        'allowEdevletPdfFallback': allowEdevletPdfFallback,
+        'allowDeferVerification': allowSkipVerification,
         'requireStudentNo': requireStudentNo,
         'requirePhone': requirePhone,
         'allowStudentCard': allowStudentCard,
@@ -82,6 +207,7 @@ class RegistrationSecurityConfig {
   }
 
   RegistrationSecurityConfig copyWith({
+    RegVerificationMode? verificationMode,
     bool? requireStudentVerification,
     bool? requireStudentNo,
     bool? requirePhone,
@@ -90,9 +216,17 @@ class RegistrationSecurityConfig {
     bool? requireCardBothSides,
     bool? malwareScanEnabled,
   }) {
+    var mode = verificationMode ?? this.verificationMode;
+    // Eski API: requireStudentVerification false → off
+    if (requireStudentVerification != null && verificationMode == null) {
+      if (!requireStudentVerification) {
+        mode = RegVerificationMode.off;
+      } else if (mode == RegVerificationMode.off) {
+        mode = RegVerificationMode.edevletPlusDoc;
+      }
+    }
     return RegistrationSecurityConfig(
-      requireStudentVerification:
-          requireStudentVerification ?? this.requireStudentVerification,
+      verificationMode: mode,
       requireStudentNo: requireStudentNo ?? this.requireStudentNo,
       requirePhone: requirePhone ?? this.requirePhone,
       allowStudentCard: allowStudentCard ?? this.allowStudentCard,
@@ -103,6 +237,38 @@ class RegistrationSecurityConfig {
       maxImageBytes: maxImageBytes,
       maxPdfBytes: maxPdfBytes,
     );
+  }
+
+  /// Mod seçince kart/PDF bayraklarını makul varsayılana çek.
+  RegistrationSecurityConfig withMode(RegVerificationMode mode) {
+    switch (mode) {
+      case RegVerificationMode.off:
+        return copyWith(verificationMode: mode);
+      case RegVerificationMode.edevletOnly:
+        return copyWith(
+          verificationMode: mode,
+          allowStudentCard: false,
+          allowStudentDocumentPdf: false,
+        );
+      case RegVerificationMode.edevletPlusDoc:
+        return copyWith(
+          verificationMode: mode,
+          allowStudentCard: true,
+          allowStudentDocumentPdf: true,
+        );
+      case RegVerificationMode.documentOnly:
+        return copyWith(
+          verificationMode: mode,
+          allowStudentCard: true,
+          allowStudentDocumentPdf: true,
+        );
+      case RegVerificationMode.defer:
+        return copyWith(
+          verificationMode: mode,
+          allowStudentCard: true,
+          allowStudentDocumentPdf: true,
+        );
+    }
   }
 }
 
