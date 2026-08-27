@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/app_nav.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../../models/models.dart';
 import '../reels/reel_models.dart';
-import '../reels/reels_provider.dart';
 
 enum _ProfileContentKind { posts, text, reels }
 
@@ -351,8 +348,7 @@ class _ReelsGrid extends StatelessWidget {
         final isVideo = r.mediaType == ReelMediaType.video;
         return InkWell(
           onTap: () {
-            context.read<ReelsProvider>().requestFocusReel(r.id);
-            context.go('/reels');
+            AppNav.openReel(context, reelId: r.id);
           },
           child: Stack(
             fit: StackFit.expand,

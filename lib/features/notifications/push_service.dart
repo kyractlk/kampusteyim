@@ -107,11 +107,14 @@ class PushService {
         final body = n?.body ?? data['body'] ?? '';
         if (body.isEmpty && title == 'KampüsteyimAPP') return;
         final isAdmin = data['type'] == 'admin_broadcast';
-        final link = data['link'] ?? '';
-        final targetId = data['targetId'] ?? '';
-        final payload = link.isNotEmpty
-            ? link
-            : (targetId.isNotEmpty ? '/post/$targetId' : '');
+        final link = '${data['link'] ?? ''}';
+        final targetId = '${data['targetId'] ?? ''}';
+        final type = '${data['type'] ?? ''}';
+        final payload = _payloadFor(
+          link: link,
+          targetId: targetId,
+          type: type,
+        );
         showLocal(
           title: title,
           body: body,
@@ -119,7 +122,6 @@ class PushService {
           payload: payload,
         );
         // Hikâye / reels push'u → arka planda medyayı hemen ısıt.
-        final type = '${data['type'] ?? ''}';
         if (type.contains('story') ||
             type.contains('reel') ||
             type == 'promo' ||
@@ -150,11 +152,25 @@ class PushService {
   void _handleMessageTap(Map<String, dynamic> data) {
     final link = '${data['link'] ?? ''}';
     final targetId = '${data['targetId'] ?? ''}';
-    if (link.isNotEmpty) {
-      onNotificationTap?.call(link);
-    } else if (targetId.isNotEmpty) {
-      onNotificationTap?.call('/post/$targetId');
+    final type = '${data['type'] ?? ''}';
+    final payload = _payloadFor(link: link, targetId: targetId, type: type);
+    if (payload.isNotEmpty) {
+      onNotificationTap?.call(payload);
     }
+  }
+
+  String _payloadFor({
+    required String link,
+    required String targetId,
+    required String type,
+  }) {
+    if (link.trim().isNotEmpty) return link.trim();
+    if (targetId.isEmpty) return '';
+    final t = type.toLowerCase();
+    if (t == 'reel' || t.startsWith('reel_')) {
+      return '/reels?id=${Uri.encodeComponent(targetId)}';
+    }
+    return '/post/${Uri.encodeComponent(targetId)}';
   }
 
   bool _loggedPermissionBlock = false;

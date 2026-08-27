@@ -450,6 +450,9 @@ function userAllowsPush(userData, type) {
     case 'community':
       return prefs.community !== false;
     case 'activity':
+    case 'reel':
+    case 'reel_like':
+    case 'reel_comment':
       return prefs.activity !== false;
     case 'admin_broadcast':
       return prefs.admin !== false;
@@ -1355,10 +1358,17 @@ exports.dispatchPush = onCall({ region: 'europe-west1' }, async (request) => {
     }
   }
 
-  const postLink =
-    targetId
-      ? `${BRAND_HOME}/post/${encodeURIComponent(String(targetId))}`
-      : '';
+  const typeStr = String(type || '');
+  const isReelPush =
+    typeStr === 'reel' ||
+    typeStr.startsWith('reel_') ||
+    typeStr === 'reel_like' ||
+    typeStr === 'reel_comment';
+  const deepLink = targetId
+    ? isReelPush
+      ? `${BRAND_HOME}/reels?id=${encodeURIComponent(String(targetId))}`
+      : `${BRAND_HOME}/post/${encodeURIComponent(String(targetId))}`
+    : '';
 
   const inbox = {
     title,
@@ -1367,7 +1377,7 @@ exports.dispatchPush = onCall({ region: 'europe-west1' }, async (request) => {
     type,
     actorId: actorId || null,
     targetId: targetId || null,
-    link: postLink || null,
+    link: deepLink || null,
     read: false,
     createdAt: new Date().toISOString(),
   };
@@ -1388,7 +1398,7 @@ exports.dispatchPush = onCall({ region: 'europe-west1' }, async (request) => {
           toUserId: String(inboxUid),
           actorId: String(actorId || ''),
           targetId: String(targetId || ''),
-          link: postLink,
+          link: deepLink,
         },
       }),
     );
@@ -1538,10 +1548,15 @@ async function deliverToUserDoc({
     return { delivered: 0, mailed: 0, skipped: true };
   }
   const inboxUid = doc.id;
+  const typeStr = String(type || '');
+  const isReelPush =
+    typeStr === 'reel' || typeStr.startsWith('reel_');
   const link = linkPath
     ? `${BRAND_HOME}${linkPath.startsWith('/') ? linkPath : `/${linkPath}`}`
     : targetId
-      ? `${BRAND_HOME}/post/${encodeURIComponent(String(targetId))}`
+      ? isReelPush
+        ? `${BRAND_HOME}/reels?id=${encodeURIComponent(String(targetId))}`
+        : `${BRAND_HOME}/post/${encodeURIComponent(String(targetId))}`
       : BRAND_HOME;
 
   await db.collection('users').doc(inboxUid).collection('notifications').add({
@@ -6594,13 +6609,15 @@ exports.onReelCreatedPush = onDocumentCreated(
     const authorId = String(r.authorId || '');
     if (!authorId) return null;
     const name = String(r.authorName || 'Birisi');
+    const reelId = String(event.params.reelId || '');
     return notifyFollowersOfActor({
       actorId: authorId,
       title: 'Yeni Reels',
       body: `${name} yeni bir Reels paylaştı`,
       emoji: '🎬',
-      type: 'activity',
-      targetId: event.params.reelId,
+      type: 'reel',
+      targetId: reelId,
+      linkPath: `/reels?id=${encodeURIComponent(reelId)}`,
       sendEmail: false,
     });
   },

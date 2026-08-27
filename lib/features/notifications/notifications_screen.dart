@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/icons/mt_icons.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/app_nav.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
@@ -33,6 +34,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return t.isEmpty ? 'Bildirim' : t;
   }
 
+  bool _looksLikeReel(AppNotification n) {
+    final type = n.type.toLowerCase();
+    if (type == 'reel' || type.startsWith('reel_')) return true;
+    final link = (n.link ?? '').toLowerCase();
+    if (link.contains('/reels')) return true;
+    final blob = '${n.title} ${n.body}'.toLowerCase();
+    return blob.contains('reels');
+  }
+
   void _open(
     BuildContext context, {
     required AppNotification n,
@@ -42,6 +52,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final targetId = n.targetId;
     final actorId = n.actorId;
     final userRoute = actorId ?? targetId;
+    final link = n.link?.trim();
+
+    if (link != null &&
+        link.isNotEmpty &&
+        AppNav.tryOpenReelLink(context, link)) {
+      return;
+    }
+    if (_looksLikeReel(n)) {
+      AppNav.openReel(context, reelId: targetId);
+      return;
+    }
+
     switch (type) {
       case 'follow':
       case 'follow_request':
@@ -60,9 +82,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           context.push('/post/${Uri.encodeComponent(targetId)}');
         }
         return;
+      case 'reel':
       case 'reel_like':
       case 'reel_comment':
-        context.go('/reels');
+        AppNav.openReel(context, reelId: targetId);
         return;
       case 'story_like':
         final me = context.read<AuthProvider>().user?.id;

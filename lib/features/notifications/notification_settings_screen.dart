@@ -163,7 +163,7 @@ class _NotificationSettingsScreenState
           ),
           SwitchListTile(
             title: const Text('Takip edilenlerin hareketleri'),
-            subtitle: const Text('Yeni gönderi, duyuru (Twitter tarzı)'),
+            subtitle: const Text('Yeni gönderi, duyuru'),
             value: _prefs.activity,
             onChanged: !_prefs.pushEnabled
                 ? null

@@ -18,6 +18,7 @@ import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
 import '../feed/location_picker_sheet.dart';
+import '../home/shell_chrome.dart';
 import '../reels/reels_provider.dart';
 import 'camera_mirror.dart';
 import 'stories_provider.dart';
@@ -162,12 +163,14 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    ShellChrome.setBottomNavHidden(true);
     unawaited(_initCamera());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    ShellChrome.setBottomNavHidden(false);
     _captionCtrl.dispose();
     unawaited(_disposeCam());
     super.dispose();
@@ -1220,218 +1223,246 @@ class _PublishPanelState extends State<_PublishPanel> {
     final fixed = widget.mode != CampusShareMode.choose;
     final uniqueTags = HashtagUtils.uniqueCount(widget.captionCtrl.text);
     final showMentions = _mentionQuery != null && _mentionHits.isNotEmpty;
+    final isReels = widget.mode == CampusShareMode.reels;
+    final accent = isReels ? AppColors.lime : AppColors.cyan;
 
     return Material(
-      color: Colors.black.withValues(alpha: 0.88),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_showCaption) ...[
-                TextField(
-                  controller: widget.captionCtrl,
-                  focusNode: _focus,
-                  style: const TextStyle(color: Colors.white),
-                  maxLines: 3,
-                  minLines: 2,
-                  cursorColor: AppColors.cyan,
-                  onTapOutside: (_) {
-                    _focus.unfocus();
-                    setState(() {
-                      _mentionQuery = null;
-                      _mentionHits = const [];
-                    });
-                  },
-                  textInputAction: TextInputAction.done,
-                  onEditingComplete: () {
-                    _focus.unfocus();
-                    setState(() {
-                      _mentionQuery = null;
-                      _mentionHits = const [];
-                    });
-                  },
-                  decoration: InputDecoration(
-                    hintText:
-                        'Açıklama · @kullanıcı / @topluluk · #hashtag',
-                    hintStyle: const TextStyle(color: Colors.white38),
-                    filled: true,
-                    fillColor: const Color(0xFF1A1A1A),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
+      color: Colors.transparent,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.55),
+              Colors.black.withValues(alpha: 0.92),
+            ],
+            stops: const [0.0, 0.28, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 28, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_showCaption) ...[
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
                     ),
-                  ),
-                ),
-                if (_focus.hasFocus)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () {
+                    child: TextField(
+                      controller: widget.captionCtrl,
+                      focusNode: _focus,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.35,
+                      ),
+                      maxLines: 3,
+                      minLines: 2,
+                      cursorColor: accent,
+                      onTapOutside: (_) {
                         _focus.unfocus();
                         setState(() {
                           _mentionQuery = null;
                           _mentionHits = const [];
                         });
                       },
-                      child: const Text(
-                        'Klavye kapat',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    ),
-                  ),
-                if (showMentions)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    constraints: const BoxConstraints(maxHeight: 180),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E1E1E),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white24),
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: _mentionHits.length,
-                      separatorBuilder: (_, _) => const Divider(
-                        height: 1,
-                        color: Colors.white12,
-                      ),
-                      itemBuilder: (context, i) {
-                        final u = _mentionHits[i];
-                        return ListTile(
-                          dense: true,
-                          onTap: () => _pickMention(u),
-                          leading: UserAvatar(
-                            name: u.fullName,
-                            photoUrl: u.communityLogoUrl ?? u.photoUrl,
-                            isCommunity: u.isCommunity,
-                            radius: 16,
-                          ),
-                          title: Text(
-                            u.fullName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                            ),
-                          ),
-                          subtitle: Text(
-                            MentionUtils.displayHandle(u.handle),
-                            style: TextStyle(
-                              color: u.isCommunity
-                                  ? AppColors.lime
-                                  : AppColors.cyan,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          trailing: Text(
-                            u.isCommunity
-                                ? 'Topluluk'
-                                : (u.isCompany ? 'Firma' : 'Kullanıcı'),
-                            style: const TextStyle(
-                              color: Colors.white54,
-                              fontSize: 11,
-                            ),
-                          ),
-                        );
+                      textInputAction: TextInputAction.done,
+                      onEditingComplete: () {
+                        _focus.unfocus();
+                        setState(() {
+                          _mentionQuery = null;
+                          _mentionHits = const [];
+                        });
                       },
+                      decoration: const InputDecoration(
+                        hintText: 'Açıklama yaz…',
+                        hintStyle: TextStyle(color: Colors.white38),
+                        filled: false,
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      ),
                     ),
                   ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _CaptionQuickChip(
-                      label: '@ etiket',
-                      onTap: () => _insertToken('@'),
-                    ),
-                    const SizedBox(width: 8),
-                    _CaptionQuickChip(
-                      label: '# hashtag',
-                      onTap: () => _insertToken('#'),
-                    ),
-                    const Spacer(),
-                    if (uniqueTags > 0)
-                      Text(
-                        '$uniqueTags hashtag',
-                        style: const TextStyle(
-                          color: AppColors.cyan,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                  if (_focus.hasFocus)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {
+                          _focus.unfocus();
+                          setState(() {
+                            _mentionQuery = null;
+                            _mentionHits = const [];
+                          });
+                        },
+                        child: const Text(
+                          'Klavye kapat',
+                          style: TextStyle(color: Colors.white70),
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-              ],
-              if (fixed)
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: widget.mode == CampusShareMode.reels
-                        ? AppColors.lime
-                        : AppColors.cyan,
-                    foregroundColor: AppColors.navy,
-                    minimumSize: const Size.fromHeight(46),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  if (showMentions)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      constraints: const BoxConstraints(maxHeight: 180),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E1E1E),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _mentionHits.length,
+                        separatorBuilder: (_, _) => const Divider(
+                          height: 1,
+                          color: Colors.white12,
+                        ),
+                        itemBuilder: (context, i) {
+                          final u = _mentionHits[i];
+                          return ListTile(
+                            dense: true,
+                            onTap: () => _pickMention(u),
+                            leading: UserAvatar(
+                              name: u.fullName,
+                              photoUrl: u.communityLogoUrl ?? u.photoUrl,
+                              isCommunity: u.isCommunity,
+                              radius: 16,
+                            ),
+                            title: Text(
+                              u.fullName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                            subtitle: Text(
+                              MentionUtils.displayHandle(u.handle),
+                              style: TextStyle(
+                                color: u.isCommunity
+                                    ? AppColors.lime
+                                    : AppColors.cyan,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            trailing: Text(
+                              u.isCommunity
+                                  ? 'Topluluk'
+                                  : (u.isCompany ? 'Firma' : 'Kullanıcı'),
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 11,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _CaptionQuickChip(
+                        label: '@',
+                        onTap: () => _insertToken('@'),
+                      ),
+                      const SizedBox(width: 8),
+                      _CaptionQuickChip(
+                        label: '#',
+                        onTap: () => _insertToken('#'),
+                      ),
+                      const Spacer(),
+                      if (uniqueTags > 0)
+                        Text(
+                          '$uniqueTags etiket',
+                          style: TextStyle(
+                            color: accent,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                if (fixed)
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: AppColors.navy,
+                      minimumSize: const Size.fromHeight(50),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    onPressed: widget.onModePublish,
+                    child: Text(
+                      isReels ? 'Paylaş' : 'Hikâye olarak paylaş',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                  )
+                else ...[
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.cyan,
+                      foregroundColor: AppColors.navy,
+                      minimumSize: const Size.fromHeight(50),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    onPressed: widget.onStory,
+                    child: const Text(
+                      'Hikâye olarak paylaş',
+                      style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
-                  onPressed: widget.onModePublish,
-                  child: Text(
-                    widget.mode == CampusShareMode.reels
-                        ? 'Kampüs Reels olarak paylaş'
-                        : 'Hikâye olarak paylaş',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                )
-              else ...[
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.cyan,
-                    foregroundColor: AppColors.navy,
-                    minimumSize: const Size.fromHeight(46),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.lime,
+                      foregroundColor: AppColors.navy,
+                      minimumSize: const Size.fromHeight(50),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    onPressed: widget.onReels,
+                    child: Text(
+                      widget.isVideo ? 'Reels olarak paylaş' : 'Reels’e koy',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
-                  onPressed: widget.onStory,
+                ],
+                TextButton(
+                  onPressed: widget.onRetake,
                   child: const Text(
-                    'Hikâye olarak paylaş',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.lime,
-                    foregroundColor: AppColors.navy,
-                    minimumSize: const Size.fromHeight(46),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                    'Yeniden çek',
+                    style: TextStyle(
+                      color: Colors.white60,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ),
-                  onPressed: widget.onReels,
-                  child: Text(
-                    widget.isVideo
-                        ? 'Kampüs Reels olarak paylaş'
-                        : 'Kampüs Reels’e koy',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
               ],
-              TextButton(
-                onPressed: widget.onRetake,
-                child: const Text(
-                  'Yeniden çek',
-                  style: TextStyle(color: Colors.white70),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1447,19 +1478,19 @@ class _CaptionQuickChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF2A2A2A),
-      borderRadius: BorderRadius.circular(20),
+      color: Colors.white.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           child: Text(
             label,
             style: const TextStyle(
               color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
             ),
           ),
         ),

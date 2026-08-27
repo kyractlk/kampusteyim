@@ -557,7 +557,7 @@ class _ReelPageState extends State<_ReelPage> {
           style: const TextStyle(color: Colors.white),
           cursorColor: AppColors.cyan,
           decoration: InputDecoration(
-            hintText: 'Açıklama · @etiket · #hashtag',
+            hintText: 'Açıklama yaz…',
             hintStyle: const TextStyle(color: Colors.white38),
             filled: true,
             fillColor: Colors.white10,
@@ -1255,7 +1255,7 @@ class _ReelCommentsSheetState extends State<_ReelCommentsSheet> {
                           style: const TextStyle(color: Colors.white),
                           cursorColor: AppColors.cyan,
                           decoration: InputDecoration(
-                            hintText: 'Yorum yaz… @kullanici',
+                            hintText: 'Yorum yaz…',
                             hintStyle: const TextStyle(color: muted),
                             filled: true,
                             fillColor: Colors.white10,

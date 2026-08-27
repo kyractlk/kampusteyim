@@ -676,7 +676,6 @@ class _ComposerCardState extends State<_ComposerCard> {
                   autofocus: true,
                   decoration: const InputDecoration(
                     labelText: 'Soru',
-                    hintText: 'Ne oylansın?',
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -934,7 +933,7 @@ class _ComposerCardState extends State<_ComposerCard> {
                 onEditingComplete: _dismissCompose,
                 decoration: InputDecoration(
                   hintText: widget.enabled
-                      ? 'Kampüste neler oluyor?  ·  @etiket  ·  #hashtag'
+                      ? 'Kampüste neler oluyor?'
                       : widget.lockMessage,
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
@@ -1317,7 +1316,7 @@ class PostCard extends StatelessWidget {
                           builder: (ctx) => AlertDialog(
                             title: const Text('Gönderiyi sil'),
                             content: const Text(
-                              'Bu gönderi silinsin mi? (Twitter tarzı — akıştan kalkar.)',
+                              'Bu gönderi silinsin mi?',
                             ),
                             actions: [
                               TextButton(

@@ -8,6 +8,7 @@ class AppNotification {
     required this.createdAt,
     this.actorId,
     this.targetId,
+    this.link,
     this.read = false,
   });
 
@@ -15,10 +16,11 @@ class AppNotification {
   final String title;
   final String body;
   final String emoji;
-  final String type; // like|comment|follow|repost|job|offer|community
+  final String type; // like|comment|follow|repost|job|offer|community|reel
   final DateTime createdAt;
   final String? actorId;
   final String? targetId;
+  final String? link;
   final bool read;
 
   AppNotification copyWith({bool? read}) => AppNotification(
@@ -30,6 +32,7 @@ class AppNotification {
         createdAt: createdAt,
         actorId: actorId,
         targetId: targetId,
+        link: link,
         read: read ?? this.read,
       );
 
@@ -41,6 +44,7 @@ class AppNotification {
         'createdAt': createdAt.toIso8601String(),
         'actorId': actorId,
         'targetId': targetId,
+        'link': link,
         'read': read,
       };
 
@@ -54,6 +58,7 @@ class AppNotification {
       createdAt: DateTime.tryParse('${json['createdAt']}') ?? DateTime.now(),
       actorId: json['actorId'] as String?,
       targetId: json['targetId'] as String?,
+      link: json['link'] as String?,
       read: json['read'] == true,
     );
   }
