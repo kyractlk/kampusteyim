@@ -16,6 +16,7 @@ import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
 import '../reels/reels_provider.dart';
+import 'shell_chrome.dart';
 
 /// Reels alt menü — içerik yüksekliği (home indicator / sistem inset hariç).
 const double kReelsBottomNavHeight = 50;
@@ -99,24 +100,31 @@ class HomeShell extends StatelessWidget {
       return PopScope(
         canPop: false,
         onPopInvokedWithResult: _onPop,
-        child: Scaffold(
-          resizeToAvoidBottomInset: true,
-          extendBody: true,
-          backgroundColor: reelsMode ? Colors.black : null,
-          body: navigationShell,
-          bottomNavigationBar: glass || reelsMode
-              ? _LiquidGlassNavBar(
-                  index: index,
-                  reelsMode: reelsMode,
-                  onTap: (i) => _onTap(context, i),
-                  destinations: _destinations(loggedIn),
-                )
-              : _ShellBottomNavBar(
-                  index: index,
-                  reelsMode: reelsMode,
-                  onTap: (i) => _onTap(context, i),
-                  destinations: _destinations(loggedIn),
-                ),
+        child: ValueListenableBuilder<bool>(
+          valueListenable: ShellChrome.hideBottomNav,
+          builder: (context, hideNav, _) {
+            return Scaffold(
+              resizeToAvoidBottomInset: true,
+              extendBody: true,
+              backgroundColor: reelsMode ? Colors.black : null,
+              body: navigationShell,
+              bottomNavigationBar: hideNav
+                  ? null
+                  : glass || reelsMode
+                      ? _LiquidGlassNavBar(
+                          index: index,
+                          reelsMode: reelsMode,
+                          onTap: (i) => _onTap(context, i),
+                          destinations: _destinations(loggedIn),
+                        )
+                      : _ShellBottomNavBar(
+                          index: index,
+                          reelsMode: reelsMode,
+                          onTap: (i) => _onTap(context, i),
+                          destinations: _destinations(loggedIn),
+                        ),
+            );
+          },
         ),
       );
     }

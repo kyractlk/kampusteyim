@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,13 +11,72 @@ import '../../core/widgets/web_safe_image.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../study/music_link_meta.dart';
-import 'music_player_sheet.dart';
+import '../study/music_preview.dart';
 
-/// Spotify / Apple kapak + play kartı (gönderi).
-class PostMusicCard extends StatelessWidget {
+/// Spotify / Apple kapak + play — önizleme MP3 doğrudan kartta çalar.
+class PostMusicCard extends StatefulWidget {
   const PostMusicCard({super.key, required this.meta});
 
   final MusicLinkMeta meta;
+
+  @override
+  State<PostMusicCard> createState() => _PostMusicCardState();
+}
+
+class _PostMusicCardState extends State<PostMusicCard> {
+  bool _loading = false;
+  bool _playing = false;
+  String? _previewUrl;
+  StreamSubscription<PlayerState>? _sub;
+
+  MusicLinkMeta get meta => widget.meta;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = MusicPreviewResolver.sharedPlayer.onPlayerStateChanged.listen((s) {
+      if (!mounted) return;
+      final mine = MusicPreviewResolver.currentlyPlayingUrl == _previewUrl &&
+          _previewUrl != null;
+      setState(() => _playing = mine && s == PlayerState.playing);
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _togglePlay() async {
+    setState(() => _loading = true);
+    try {
+      _previewUrl ??= await MusicPreviewResolver.resolvePreview(meta);
+      if (_previewUrl == null || _previewUrl!.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Bu parça için önizleme bulunamadı. Uygulamada açılıyor…'),
+            ),
+          );
+          final uri = Uri.tryParse(meta.url);
+          if (uri != null) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        }
+        return;
+      }
+      await MusicPreviewResolver.playOrToggle(_previewUrl!);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Çalınamadı: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,66 +86,82 @@ class PostMusicCard extends StatelessWidget {
     return Material(
       color: AppColors.surfaceMuted,
       borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => openMusicPlayer(context, meta: meta),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: meta.thumbnailUrl != null
-                      ? webSafeNetworkImage(
-                          meta.thumbnailUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _artFallback(),
-                        )
-                      : _artFallback(),
-                ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: meta.thumbnailUrl != null
+                    ? webSafeNetworkImage(
+                        meta.thumbnailUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _artFallback(),
+                      )
+                    : _artFallback(),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    meta.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  if ((meta.artist ?? '').isNotEmpty)
                     Text(
-                      meta.title,
-                      maxLines: 2,
+                      meta.artist!,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    if ((meta.artist ?? '').isNotEmpty)
-                      Text(
-                        meta.artist!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    Text(
-                      meta.provider == 'apple' ? 'Apple Music · Çal' : 'Spotify · Çal',
                       style: TextStyle(
-                        color: accent,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
                       ),
                     ),
-                  ],
-                ),
+                  Text(
+                    _playing
+                        ? 'Çalıyor · 30 sn önizleme'
+                        : (meta.provider == 'apple'
+                            ? 'Apple Music · Önizleme'
+                            : 'Spotify · Önizleme'),
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
-              Icon(
-                Icons.play_circle_filled_rounded,
-                size: 40,
-                color: accent,
-              ),
-            ],
-          ),
+            ),
+            IconButton(
+              tooltip: _playing ? 'Duraklat' : 'Çal',
+              onPressed: _loading ? null : _togglePlay,
+              iconSize: 40,
+              icon: _loading
+                  ? SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: accent,
+                      ),
+                    )
+                  : Icon(
+                      _playing
+                          ? Icons.pause_circle_filled_rounded
+                          : Icons.play_circle_filled_rounded,
+                      color: accent,
+                      size: 40,
+                    ),
+            ),
+          ],
         ),
       ),
     );

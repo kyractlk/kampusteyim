@@ -29,6 +29,7 @@ import '../ads/ads_provider.dart';
 import '../auth/data/auth_provider.dart';
 import '../commerce/commerce_service.dart';
 import '../home/home_shell.dart';
+import '../home/shell_chrome.dart';
 import '../moderation/moderation_models.dart';
 import '../moderation/report_sheet.dart';
 import '../notifications/notification_provider.dart';
@@ -574,6 +575,72 @@ class _ComposerCardState extends State<_ComposerCard> {
     } catch (_) {}
   }
 
+  Future<void> _openAttachMenu() async {
+    if (!widget.enabled) {
+      widget.onTapLocked();
+      return;
+    }
+    ShellChrome.setBottomNavHidden(true);
+    final v = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Fotoğraf'),
+              onTap: () => Navigator.pop(ctx, 'image'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam_outlined),
+              title: const Text('Video'),
+              onTap: () => Navigator.pop(ctx, 'video'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.attach_file_rounded),
+              title: const Text('Dosya (Plus)'),
+              onTap: () => Navigator.pop(ctx, 'doc'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.place_outlined),
+              title: const Text('Konum'),
+              onTap: () => Navigator.pop(ctx, 'location'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.poll_outlined),
+              title: const Text('Oylama'),
+              onTap: () => Navigator.pop(ctx, 'poll'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    // Konum kendi sheet'inde nav'ı yönetir; diğerlerinde geri aç.
+    if (v != 'location') {
+      ShellChrome.setBottomNavHidden(false);
+    }
+    if (!mounted || v == null) {
+      ShellChrome.setBottomNavHidden(false);
+      return;
+    }
+    switch (v) {
+      case 'image':
+        await _pickImage();
+      case 'video':
+        await _pickVideo();
+      case 'doc':
+        await _pickDoc();
+      case 'location':
+        await _attachLocation();
+      case 'poll':
+        await _attachPoll();
+    }
+  }
+
   Future<void> _attachLocation() async {
     if (!widget.enabled) {
       widget.onTapLocked();
@@ -590,10 +657,7 @@ class _ComposerCardState extends State<_ComposerCard> {
       return;
     }
     final qCtrl = TextEditingController();
-    final o1 = TextEditingController();
-    final o2 = TextEditingController();
-    final o3 = TextEditingController();
-    final o4 = TextEditingController();
+    final options = <TextEditingController>[TextEditingController()];
     var multi = false;
     var timed = false;
     var hours = 24;
@@ -601,41 +665,68 @@ class _ComposerCardState extends State<_ComposerCard> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Oylama oluştur'),
+          title: const Text('Oylama'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 TextField(
                   controller: qCtrl,
-                  decoration: const InputDecoration(labelText: 'Soru'),
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Soru',
+                    hintText: 'Ne oylansın?',
+                  ),
                 ),
-                TextField(
-                  controller: o1,
-                  decoration: const InputDecoration(labelText: 'Seçenek 1'),
-                ),
-                TextField(
-                  controller: o2,
-                  decoration: const InputDecoration(labelText: 'Seçenek 2'),
-                ),
-                TextField(
-                  controller: o3,
-                  decoration:
-                      const InputDecoration(labelText: 'Seçenek 3 (opsiyonel)'),
-                ),
-                TextField(
-                  controller: o4,
-                  decoration:
-                      const InputDecoration(labelText: 'Seçenek 4 (opsiyonel)'),
+                const SizedBox(height: 10),
+                for (var i = 0; i < options.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: options[i],
+                          decoration: InputDecoration(
+                            labelText: 'Seçenek ${i + 1}',
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      if (options.length > 1)
+                        IconButton(
+                          tooltip: 'Kaldır',
+                          onPressed: () => setLocal(() {
+                            options[i].dispose();
+                            options.removeAt(i);
+                          }),
+                          icon: const Icon(Icons.close, size: 18),
+                        ),
+                    ],
+                  ),
+                ],
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: options.length >= 6
+                        ? null
+                        : () => setLocal(
+                              () => options.add(TextEditingController()),
+                            ),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Seçenek ekle'),
+                  ),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
+                  dense: true,
                   title: const Text('Çok seçimli'),
                   value: multi,
                   onChanged: (v) => setLocal(() => multi = v),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
+                  dense: true,
                   title: const Text('Süreli'),
                   value: timed,
                   onChanged: (v) => setLocal(() => timed = v),
@@ -669,12 +760,17 @@ class _ComposerCardState extends State<_ComposerCard> {
         ),
       ),
     );
-    if (ok != true) return;
-    final opts = [o1, o2, o3, o4]
+    final question = qCtrl.text.trim();
+    final opts = options
         .map((c) => c.text.trim())
         .where((e) => e.isNotEmpty)
         .toList();
-    if (qCtrl.text.trim().isEmpty || opts.length < 2) {
+    for (final c in options) {
+      c.dispose();
+    }
+    qCtrl.dispose();
+    if (ok != true) return;
+    if (question.isEmpty || opts.length < 2) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Soru ve en az 2 seçenek gerekli')),
@@ -684,7 +780,7 @@ class _ComposerCardState extends State<_ComposerCard> {
     }
     setState(() {
       _poll = {
-        'question': qCtrl.text.trim(),
+        'question': question,
         'options': opts,
         'multi': multi,
         if (timed)
@@ -965,83 +1061,19 @@ class _ComposerCardState extends State<_ComposerCard> {
                 ),
               Row(
                 children: [
-                  PopupMenuButton<String>(
+                  IconButton(
                     tooltip: 'Ekle',
-                    enabled: !_busy,
-                    onSelected: (v) {
-                      switch (v) {
-                        case 'image':
-                          _pickImage();
-                        case 'video':
-                          _pickVideo();
-                        case 'doc':
-                          _pickDoc();
-                        case 'location':
-                          _attachLocation();
-                        case 'poll':
-                          _attachPoll();
-                      }
-                    },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(
-                        value: 'image',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.image_outlined),
-                          title: Text('Fotoğraf'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'video',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.videocam_outlined),
-                          title: Text('Video'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'doc',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.attach_file_rounded),
-                          title: Text('Dosya (Plus)'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'location',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.place_outlined),
-                          title: Text('Konum / harita'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'poll',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.poll_outlined),
-                          title: Text('Oylama'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                    ],
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                      child: Icon(
-                        Icons.attach_file_rounded,
-                        color: (_imageFile != null ||
-                                _videoFile != null ||
-                                _docFile != null ||
-                                _location != null ||
-                                _poll != null ||
-                                _music != null)
-                            ? AppColors.navy
-                            : AppColors.textSecondary,
-                      ),
+                    onPressed: _busy ? null : _openAttachMenu,
+                    icon: Icon(
+                      Icons.attach_file_rounded,
+                      color: (_imageFile != null ||
+                              _videoFile != null ||
+                              _docFile != null ||
+                              _location != null ||
+                              _poll != null ||
+                              _music != null)
+                          ? AppColors.navy
+                          : AppColors.textSecondary,
                     ),
                   ),
                   if (_music != null)
