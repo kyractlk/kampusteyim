@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_colors.dart';
 
@@ -17,6 +18,9 @@ class StoryOverlay {
     this.postId,
     this.postPreview,
     this.locationLabel,
+    this.locationLat,
+    this.locationLng,
+    this.locationMapsUrl,
   });
 
   final String id;
@@ -32,6 +36,9 @@ class StoryOverlay {
   final String? postId;
   final String? postPreview;
   final String? locationLabel;
+  final double? locationLat;
+  final double? locationLng;
+  final String? locationMapsUrl;
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -46,6 +53,9 @@ class StoryOverlay {
         if (postId != null) 'postId': postId,
         if (postPreview != null) 'postPreview': postPreview,
         if (locationLabel != null) 'locationLabel': locationLabel,
+        if (locationLat != null) 'locationLat': locationLat,
+        if (locationLng != null) 'locationLng': locationLng,
+        if (locationMapsUrl != null) 'locationMapsUrl': locationMapsUrl,
       };
 
   factory StoryOverlay.fromMap(Map<String, dynamic> m) => StoryOverlay(
@@ -61,6 +71,9 @@ class StoryOverlay {
         postId: m['postId'] as String?,
         postPreview: m['postPreview'] as String?,
         locationLabel: m['locationLabel'] as String?,
+        locationLat: (m['locationLat'] as num?)?.toDouble(),
+        locationLng: (m['locationLng'] as num?)?.toDouble(),
+        locationMapsUrl: m['locationMapsUrl'] as String?,
       );
 
   TextStyle resolveTextStyle() {
@@ -150,7 +163,18 @@ class StoryOverlayLayer extends StatelessWidget {
                       : null,
                   onTap: o.type == 'post' && o.postId != null
                       ? () => onTapPost?.call(o.postId!)
-                      : null,
+                      : o.type == 'location' &&
+                              (o.locationMapsUrl ?? '').trim().isNotEmpty
+                          ? () {
+                              final uri = Uri.tryParse(o.locationMapsUrl!);
+                              if (uri != null) {
+                                launchUrl(
+                                  uri,
+                                  mode: LaunchMode.externalApplication,
+                                );
+                              }
+                            }
+                          : null,
                   child: Transform.rotate(
                     angle: o.rotation,
                     child: Transform.scale(

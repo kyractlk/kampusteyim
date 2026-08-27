@@ -8,6 +8,7 @@ import '../../core/widgets/web_safe_image.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../study/music_link_meta.dart';
+import 'music_player_sheet.dart';
 
 /// Spotify / Apple kapak + play kartı (gönderi).
 class PostMusicCard extends StatelessWidget {
@@ -17,17 +18,15 @@ class PostMusicCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = meta.provider == 'apple'
+        ? const Color(0xFFFA233B)
+        : const Color(0xFF1DB954);
     return Material(
       color: AppColors.surfaceMuted,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () async {
-          final uri = Uri.tryParse(meta.url);
-          if (uri != null) {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-          }
-        },
+        onTap: () => openMusicPlayer(context, meta: meta),
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Row(
@@ -68,9 +67,9 @@ class PostMusicCard extends StatelessWidget {
                         ),
                       ),
                     Text(
-                      meta.provider == 'apple' ? 'Apple Music' : 'Spotify',
-                      style: const TextStyle(
-                        color: AppColors.cyan,
+                      meta.provider == 'apple' ? 'Apple Music · Çal' : 'Spotify · Çal',
+                      style: TextStyle(
+                        color: accent,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
@@ -80,10 +79,8 @@ class PostMusicCard extends StatelessWidget {
               ),
               Icon(
                 Icons.play_circle_filled_rounded,
-                size: 36,
-                color: meta.provider == 'apple'
-                    ? const Color(0xFFFA233B)
-                    : const Color(0xFF1DB954),
+                size: 40,
+                color: accent,
               ),
             ],
           ),

@@ -17,6 +17,7 @@ import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
+import '../feed/location_picker_sheet.dart';
 import '../reels/reels_provider.dart';
 import 'camera_mirror.dart';
 import 'stories_provider.dart';
@@ -450,29 +451,10 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
   }
 
   Future<void> _addStoryLocation() async {
-    final ctrl = TextEditingController();
-    final label = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Konum ekle'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(hintText: 'Kampüs / yer'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('Ekle'),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    if (label == null || label.isEmpty) return;
+    final picked = await showLocationPickerSheet(context);
+    if (picked == null || !mounted) return;
+    final label = '${picked['label'] ?? ''}'.trim();
+    if (label.isEmpty) return;
     setState(() {
       _storyOverlays.add(
         StoryOverlay(
@@ -481,6 +463,9 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
           x: 0.5,
           y: 0.75,
           locationLabel: label,
+          locationLat: (picked['lat'] as num?)?.toDouble(),
+          locationLng: (picked['lng'] as num?)?.toDouble(),
+          locationMapsUrl: picked['mapsUrl'] as String?,
         ),
       );
     });
@@ -646,6 +631,9 @@ class _CampusCameraScreenState extends State<CampusCameraScreen>
                           postId: o.postId,
                           postPreview: o.postPreview,
                           locationLabel: o.locationLabel,
+                          locationLat: o.locationLat,
+                          locationLng: o.locationLng,
+                          locationMapsUrl: o.locationMapsUrl,
                         );
                       });
                     },
