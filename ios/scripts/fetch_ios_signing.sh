@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Codemagic iOS imza — cert + provisioning profile --create ile üretilir.
-# ios_signing YAML bloğu KULLANMA (hazır profil arar → "No matching profiles" hatası).
+# Codemagic iOS imza — eski Distribution cert sil → yeni key + cert + profil.
 set -uo pipefail
 
 PROFILE_TYPE="${1:-IOS_APP_STORE}"
@@ -57,40 +56,90 @@ prepare_pem_file() {
   return 1
 }
 
-delete_all_distribution() {
-  echo "Mevcut IOS_DISTRIBUTION sertifikaları siliniyor…"
-  set +e
-  app-store-connect certificates list --type IOS_DISTRIBUTION --json > /tmp/dist_certs.json
-  LIST_RC=$?
-  set -e
-  if [ "$LIST_RC" -ne 0 ] || [ ! -s /tmp/dist_certs.json ]; then
-    echo "WARN: cert listesi alınamadı (rc=$LIST_RC)"
+delete_certs_from_json() {
+  local json_file="$1"
+  local label="$2"
+  if [ ! -s "$json_file" ]; then
+    echo "  $label: liste boş"
     return 0
   fi
-  python3 /dev/stdin /tmp/dist_certs.json <<'PY'
+  python3 - "$json_file" "$label" <<'PY'
 import json, subprocess, sys
+path, label = sys.argv[1], sys.argv[2]
 try:
-    data = json.load(open(sys.argv[1], encoding="utf-8"))
-except Exception:
+    data = json.load(open(path, encoding="utf-8"))
+except Exception as e:
+    print(f"  {label}: JSON okunamadı ({e})")
     sys.exit(0)
 items = data if isinstance(data, list) else data.get("data", data.get("certificates", []))
+if not items:
+    print(f"  {label}: 0 sertifika")
+    sys.exit(0)
+deleted = 0
 for c in items:
-    cid = c.get("id") or (c.get("attributes") or {}).get("id")
+    cid = c.get("id")
+    attrs = c.get("attributes") or {}
+    ctype = attrs.get("certificateType") or attrs.get("name") or "?"
     if not cid:
         continue
-    print(f"Delete cert {cid}")
-    subprocess.run(
+    print(f"  Delete {ctype} · id={cid}")
+    r = subprocess.run(
         ["app-store-connect", "certificates", "delete", str(cid), "--ignore-not-found"],
-        check=False,
+        capture_output=True,
+        text=True,
     )
+    if r.returncode == 0:
+        deleted += 1
+    else:
+        err = (r.stderr or r.stdout or "").strip()
+        print(f"    WARN rc={r.returncode} {err[:200]}")
+print(f"  {label}: {deleted}/{len(items)} silindi")
 PY
+}
+
+delete_all_distribution() {
+  echo "Distribution sertifikaları siliniyor…"
+  for cert_type in IOS_DISTRIBUTION DISTRIBUTION; do
+    local out="/tmp/certs_${cert_type}.json"
+    set +e
+    app-store-connect certificates list --type "$cert_type" --json > "$out" 2>/tmp/cert_list_err.txt
+    local rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+      echo "  WARN list --type $cert_type rc=$rc"
+      cat /tmp/cert_list_err.txt 2>/dev/null | head -3 || true
+      continue
+    fi
+    delete_certs_from_json "$out" "$cert_type"
+  done
+
+  # Tip filtresi kaçırırsa: tüm listeyi tara
+  set +e
+  app-store-connect certificates list --json > /tmp/certs_all.json 2>/dev/null
+  set -e
+  if [ -s /tmp/certs_all.json ]; then
+    python3 - /tmp/certs_all.json <<'PY'
+import json, subprocess, sys
+data = json.load(open(sys.argv[1]))
+items = data if isinstance(data, list) else data.get("data", [])
+dist = {"IOS_DISTRIBUTION", "DISTRIBUTION", "APPLE_DISTRIBUTION"}
+for c in items:
+    attrs = c.get("attributes") or {}
+    ctype = attrs.get("certificateType", "")
+    cid = c.get("id")
+    if cid and ctype in dist:
+        print(f"  Delete (all) {ctype} · id={cid}")
+        subprocess.run(
+            ["app-store-connect", "certificates", "delete", str(cid), "--ignore-not-found"],
+            check=False,
+        )
+PY
+  fi
 }
 
 create_signing() {
   local args=(fetch-signing-files "$BUNDLE_ID" --type "$PROFILE_TYPE" --create)
-  if [ "$USE_PEM" -eq 1 ]; then
-    args+=(--certificate-key="@file:${PEM_FILE}")
-  fi
+  args+=(--certificate-key="@file:${PEM_FILE}")
   echo "app-store-connect ${args[*]}"
   app-store-connect "${args[@]}"
 }
@@ -99,9 +148,12 @@ if prepare_pem_file; then
   USE_PEM=1
   echo "Private key PEM bulundu ($(wc -c < "$PEM_FILE" | tr -d ' ') byte)"
 else
-  echo "PEM yok — API yeni Distribution cert + profil oluşturacak."
+  echo "PEM yok — yeni RSA private key üretiliyor (openssl)…"
+  openssl genrsa -out "$PEM_FILE" 2048
+  chmod 600 "$PEM_FILE"
+  USE_PEM=1
   if [ -n "${CERTIFICATE_PRIVATE_KEY:-}" ]; then
-    echo "  WARN: CERTIFICATE_PRIVATE_KEY geçersiz, yok sayılıyor."
+    echo "  WARN: CERTIFICATE_PRIVATE_KEY geçersiz, yeni key kullanılıyor."
   fi
 fi
 
@@ -109,9 +161,9 @@ keychain initialize
 
 echo "iOS signing · bundle=$BUNDLE_ID · profile=$PROFILE_TYPE · pem=$USE_PEM"
 
-# 409 önlemek: eski Distribution cert'leri sil, sonra yenisini oluştur
 delete_all_distribution
-sleep 2
+echo "Apple API cert silme sonrası bekleniyor…"
+sleep 5
 
 set +e
 create_signing
@@ -121,7 +173,7 @@ set -e
 if [ "$RC" -ne 0 ]; then
   echo "İlk --create başarısız (rc=$RC). Cert'ler tekrar silinip deneniyor…"
   delete_all_distribution
-  sleep 3
+  sleep 8
   set +e
   create_signing
   RC=$?
@@ -130,10 +182,11 @@ fi
 
 if [ "$RC" -ne 0 ]; then
   echo "ERROR: iOS imza oluşturulamadı (rc=$RC)."
-  echo "Kontrol:"
-  echo "  • App Store Connect → Identifiers → $BUNDLE_ID kayıtlı mı?"
-  echo "  • Codemagic integration AYSCODEMAGIC → Admin rolü"
-  echo "  • developer.apple.com → Certificates → eski Distribution delete"
+  echo ""
+  echo "Manuel (1 dk): developer.apple.com → Certificates"
+  echo "  → Apple Distribution / iOS Distribution → hepsini DELETE"
+  echo "  → Pending certificate request varsa iptal et"
+  echo "Sonra build'i yeniden başlat."
   exit 1
 fi
 
@@ -142,6 +195,5 @@ xcode-project use-profiles
 
 echo "Profil dosyaları:"
 find "$HOME/Library/MobileDevice/Provisioning Profiles" -name "*.mobileprovision" 2>/dev/null | head -5 || true
-ls -la ~/export_options.plist 2>/dev/null || true
 
 echo "iOS signing hazır ($PROFILE_TYPE)"
