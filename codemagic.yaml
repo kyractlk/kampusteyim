@@ -1,9 +1,8 @@
 # Windows'tan iOS: Codemagic bulut Mac
 # Team: 8496F2PR53 · Bundle: com.aystech.mtMobil
 # SPM kapalı → CocoaPods (permission_handler Podfile flags)
-# İmza: App Store Connect API (AYSCODEMAGIC) otomatik — PEM zorunlu değil.
-# İsteğe bağlı ios_code_signing:
-#   CERTIFICATE_PRIVATE_KEY_BASE64 = PEM dosyasının base64 (tek satır)
+# İmza: ios_signing BLOĞU KULLANMA — hazır profil arar ve düşer.
+# fetch_ios_signing.sh → --create ile cert + profil üretir.
 #
 # KRİTİK: App Store’a yalnızca --release IPA.
 # Debug IPA home screen’den açılmaz (Guideline 2.1) ve
@@ -22,9 +21,6 @@ workflows:
     environment:
       groups:
         - ios_code_signing
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.aystech.mtMobil
       vars:
         BUNDLE_ID: com.aystech.mtMobil
       flutter: stable
@@ -137,9 +133,6 @@ workflows:
     environment:
       groups:
         - ios_code_signing
-      ios_signing:
-        distribution_type: ad_hoc
-        bundle_identifier: com.aystech.mtMobil
       vars:
         BUNDLE_ID: com.aystech.mtMobil
         DEVICE_UDID: 00008120-000631242151A01E

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Codemagic iOS imza.
-# PEM varsa kullanır; yoksa App Store Connect API ile otomatik cert oluşturur.
+# Codemagic iOS imza — cert + provisioning profile --create ile üretilir.
+# ios_signing YAML bloğu KULLANMA (hazır profil arar → "No matching profiles" hatası).
 set -uo pipefail
 
 PROFILE_TYPE="${1:-IOS_APP_STORE}"
@@ -57,12 +57,6 @@ prepare_pem_file() {
   return 1
 }
 
-key_args() {
-  if [ "$USE_PEM" -eq 1 ]; then
-    echo "--certificate-key=@file:${PEM_FILE}"
-  fi
-}
-
 revoke_all_distribution() {
   echo "IOS_DISTRIBUTION sertifikaları iptal ediliyor…"
   set +e
@@ -88,15 +82,12 @@ for c in items:
 PY
 }
 
-fetch_signing() {
-  local mode="$1" # fetch | create
-  local args=(fetch-signing-files "$BUNDLE_ID" --type "$PROFILE_TYPE")
+create_signing() {
+  local args=(fetch-signing-files "$BUNDLE_ID" --type "$PROFILE_TYPE" --create)
   if [ "$USE_PEM" -eq 1 ]; then
     args+=(--certificate-key="@file:${PEM_FILE}")
   fi
-  if [ "$mode" = "create" ]; then
-    args+=(--create)
-  fi
+  echo "app-store-connect ${args[*]}"
   app-store-connect "${args[@]}"
 }
 
@@ -104,10 +95,9 @@ if prepare_pem_file; then
   USE_PEM=1
   echo "Private key PEM bulundu ($(wc -c < "$PEM_FILE" | tr -d ' ') byte)"
 else
-  echo "PEM yok — App Store Connect API otomatik imza kullanılacak."
-  echo "  (İsteğe bağlı: ios_code_signing → CERTIFICATE_PRIVATE_KEY_BASE64)"
+  echo "PEM yok — API yeni Distribution cert + profil oluşturacak."
   if [ -n "${CERTIFICATE_PRIVATE_KEY:-}" ]; then
-    echo "  WARN: CERTIFICATE_PRIVATE_KEY set ama geçersiz (${#CERTIFICATE_PRIVATE_KEY} karakter)"
+    echo "  WARN: CERTIFICATE_PRIVATE_KEY geçersiz, yok sayılıyor."
   fi
 fi
 
@@ -116,26 +106,34 @@ keychain initialize
 echo "iOS signing · bundle=$BUNDLE_ID · profile=$PROFILE_TYPE · pem=$USE_PEM"
 
 set +e
-fetch_signing fetch
+create_signing
 RC=$?
 set -e
 
 if [ "$RC" -ne 0 ]; then
-  echo "İlk fetch başarısız (rc=$RC). Eski cert'ler temizlenip yenisi oluşturuluyor…"
+  echo "İlk --create başarısız (rc=$RC). Eski Distribution cert'ler iptal ediliyor…"
   revoke_all_distribution
-  sleep 2
+  sleep 3
   set +e
-  fetch_signing create
+  create_signing
   RC=$?
   set -e
 fi
 
 if [ "$RC" -ne 0 ]; then
   echo "ERROR: iOS imza oluşturulamadı (rc=$RC)."
-  echo "Kontrol: App Store Connect API (AYSCODEMAGIC) · Admin rolü · Bundle ID $BUNDLE_ID"
+  echo "Kontrol:"
+  echo "  • App Store Connect → Identifiers → $BUNDLE_ID kayıtlı mı?"
+  echo "  • Codemagic integration AYSCODEMAGIC → Admin rolü"
+  echo "  • developer.apple.com → Certificates → eski Distribution revoke"
   exit 1
 fi
 
 keychain add-certificates
 xcode-project use-profiles
+
+echo "Profil dosyaları:"
+find "$HOME/Library/MobileDevice/Provisioning Profiles" -name "*.mobileprovision" 2>/dev/null | head -5 || true
+ls -la ~/export_options.plist 2>/dev/null || true
+
 echo "iOS signing hazır ($PROFILE_TYPE)"
