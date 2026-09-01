@@ -29,6 +29,7 @@ import 'features/feed/feed_provider.dart';
 import 'features/jobs/jobs_provider.dart';
 import 'features/maintenance/maintenance_provider.dart';
 import 'features/maintenance/maintenance_screen.dart';
+import 'features/maintenance/test_mode_provider.dart';
 import 'features/notifications/notification_provider.dart';
 import 'features/notifications/push_service.dart';
 import 'features/partners/partners_provider.dart';
@@ -114,6 +115,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
   late final JobsProvider _jobs;
   late final AdminProvider _admin;
   late final MaintenanceProvider _maintenance;
+  late final TestModeProvider _testMode;
   late final AppUpdateProvider _appUpdate;
   late final StoriesProvider _stories;
   late final ReelsProvider _reels;
@@ -135,6 +137,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
     unawaited(_jobs.bindJobsFromFirestore());
     _admin = AdminProvider();
     _maintenance = MaintenanceProvider();
+    _testMode = TestModeProvider();
     _appUpdate = AppUpdateProvider();
     _theme = ThemeProvider();
     _stories = StoriesProvider()..attachAuth(_auth);
@@ -178,6 +181,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _jobs.dispose();
     _admin.dispose();
     _maintenance.dispose();
+    _testMode.dispose();
     _appUpdate.dispose();
     _stories.dispose();
     _reels.dispose();
@@ -198,6 +202,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
         ChangeNotifierProvider.value(value: _jobs),
         ChangeNotifierProvider.value(value: _admin),
         ChangeNotifierProvider.value(value: _maintenance),
+        ChangeNotifierProvider.value(value: _testMode),
         ChangeNotifierProvider.value(value: _appUpdate),
         ChangeNotifierProvider.value(value: _theme),
         ChangeNotifierProvider.value(value: _stories),
@@ -228,6 +233,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
             ],
             builder: (context, child) {
               final maint = context.watch<MaintenanceProvider>();
+              final testMode = context.watch<TestModeProvider>();
               final auth = context.watch<AuthProvider>();
               final bypass = context
                   .read<AdminProvider>()
@@ -248,6 +254,45 @@ class _MtMobilAppState extends State<MtMobilApp> {
               Widget content = KeyboardDismissOnTap(
                 child: child ?? const SizedBox.shrink(),
               );
+              if (testMode.isActive && !staffPath) {
+                content = Column(
+                  children: [
+                    Material(
+                      color: const Color(0xFFFFF3E0),
+                      child: SafeArea(
+                        bottom: false,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.science_outlined,
+                                size: 18,
+                                color: Color(0xFFE65100),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  testMode.state.message,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF5D4037),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(child: content),
+                  ],
+                );
+              }
               if (media == null) return content;
               return MediaQuery(
                 data: media.copyWith(

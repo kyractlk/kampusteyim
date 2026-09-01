@@ -9,6 +9,7 @@ import '../../core/widgets/app_circle_logo.dart';
 import '../auth/data/auth_provider.dart';
 import '../maintenance/maintenance_provider.dart';
 import 'admin_provider.dart';
+import 'admin_test_mode_panel.dart';
 
 /// Admin · AYS Tech planlı bakım paneli.
 class AdminMaintenanceTab extends StatefulWidget {
@@ -314,6 +315,9 @@ class _AdminMaintenanceTabState extends State<AdminMaintenanceTab> {
             ),
           ),
         ),
+        const SizedBox(height: 28),
+        const Divider(height: 32),
+        AdminTestModePanel(admin: admin),
         const SizedBox(height: 28),
         const _AppVersionGatePanel(),
       ],

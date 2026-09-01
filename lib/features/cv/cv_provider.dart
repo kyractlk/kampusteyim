@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/models.dart';
+import '../../core/storage/media_upload.dart';
 import '../auth/data/auth_provider.dart' show AuthProvider;
 import 'cv_models.dart';
 import 'cv_pdf.dart';
@@ -22,8 +23,15 @@ class CvProvider extends ChangeNotifier {
   CvLanguageOption selectedLanguage = kCvWorldLanguages.first;
   /// Plus CV tema rengi (ARGB) — backend whitelist ile kilitlenir.
   int accentArgb = kCvAccentDefault;
+  /// CV'ye özel foto — profil yenilemesi bunu ezmez.
+  String? dedicatedPhotoUrl;
+  bool bootstrapped = false;
+  bool onboardingDone = false;
 
   bool get isReadyForJobs => data.isReadyForJobs;
+  bool get hasExistingCv => exports.isNotEmpty || onboardingDone;
+  String get cvPhotoUrl =>
+      (dedicatedPhotoUrl ?? data.personalInfo.photoUrl).trim();
 
   String get _authUid =>
       fa.FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -38,9 +46,13 @@ class CvProvider extends ChangeNotifier {
     if (user.city.trim().isNotEmpty) {
       p.address = user.city;
     }
-    final photo = (user.photoUrl ?? '').trim();
-    if (photo.isNotEmpty && (forcePhoto || p.photoUrl.trim().isEmpty)) {
-      p.photoUrl = photo;
+    // CV fotoğrafı yalnızca kullanıcı CV ekranından yükler; profilden kopyalanmaz.
+    if (dedicatedPhotoUrl != null && dedicatedPhotoUrl!.trim().isNotEmpty) {
+      p.photoUrl = dedicatedPhotoUrl!.trim();
+    } else if (!forcePhoto && p.photoUrl.trim().isEmpty) {
+      // İlk kurulumda boşsa profil fotoğrafı öneri olarak gösterilebilir.
+      final photo = (user.photoUrl ?? '').trim();
+      if (photo.isNotEmpty) p.photoUrl = photo;
     }
     for (final link in user.links) {
       final label = link.label.toLowerCase();
@@ -74,15 +86,60 @@ class CvProvider extends ChangeNotifier {
     await loadRemote(user.id);
     applyProfileFromUser(user);
     await loadExports(user.id);
+    bootstrapped = true;
     notifyListeners();
   }
 
   Future<void> refreshFromProfile(AuthProvider auth) async {
     final user = auth.user;
     if (user == null) return;
-    applyProfileFromUser(user, forcePhoto: true);
+    applyProfileFromUser(user);
     await saveLocal();
     notifyListeners();
+  }
+
+  Future<void> setCvPhoto(String url, String userId) async {
+    dedicatedPhotoUrl = url.trim();
+    data.personalInfo.photoUrl = dedicatedPhotoUrl!;
+    await _persistCvPhoto(userId);
+    await saveLocal();
+    notifyListeners();
+  }
+
+  Future<void> _persistCvPhoto(String userId) async {
+    final photo = dedicatedPhotoUrl?.trim();
+    if (photo == null || photo.isEmpty) return;
+    final docId = _authUid.isNotEmpty ? _authUid : userId;
+    await FirebaseFirestore.instance.collection('cvs').doc(docId).set({
+      'cv_photo_url': photo,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, SetOptions(merge: true));
+  }
+
+  /// Bölüm düzenlemesinden sonra sessiz kayıt (PDF üretmez).
+  Future<bool> saveQuiet(String userId, {bool markComplete = false}) async {
+    try {
+      final docId = _authUid.isNotEmpty ? _authUid : userId;
+      if (markComplete) onboardingDone = true;
+      await FirebaseFirestore.instance.collection('cvs').doc(docId).set({
+        'user_id': userId,
+        'stableId': userId,
+        'cv_data': data.toJson(),
+        'has_cv': data.isReadyForJobs,
+        'cv_photo_url': cvPhotoUrl.isEmpty ? null : cvPhotoUrl,
+        if (markComplete) 'cv_onboarding_done': true,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+      await saveLocal();
+      status = markComplete ? 'CV kaydedildi' : 'Kaydedildi';
+      error = null;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      error = 'Kayıt başarısız: $e';
+      notifyListeners();
+      return false;
+    }
   }
 
   Future<void> loadLocal() async {
@@ -120,6 +177,7 @@ class CvProvider extends ChangeNotifier {
         'stableId': userId,
         'cv_data': data.toJson(),
         'has_cv': data.isReadyForJobs,
+        if (cvPhotoUrl.isNotEmpty) 'cv_photo_url': cvPhotoUrl,
         'updated_at': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
       await saveLocal();
@@ -144,9 +202,18 @@ class CvProvider extends ChangeNotifier {
         doc = await FirebaseFirestore.instance.collection('cvs').doc(userId).get();
       }
       if (!doc.exists) return;
-      final cvData = doc.data()?['cv_data'];
+      final raw = doc.data();
+      onboardingDone = raw?['cv_onboarding_done'] == true;
+      final storedPhoto = '${raw?['cv_photo_url'] ?? ''}'.trim();
+      if (storedPhoto.isNotEmpty) {
+        dedicatedPhotoUrl = storedPhoto;
+      }
+      final cvData = raw?['cv_data'];
       if (cvData is Map) {
         data = CvData.fromJson(cvData.cast<String, dynamic>());
+      }
+      if (dedicatedPhotoUrl != null && dedicatedPhotoUrl!.trim().isNotEmpty) {
+        data.personalInfo.photoUrl = dedicatedPhotoUrl!;
       }
     } catch (_) {}
   }
@@ -252,15 +319,54 @@ class CvProvider extends ChangeNotifier {
 
       final fileHint =
           '${user.studentNo}_${user.fullName.replaceAll(' ', '_')}_CV_${selectedLanguage.code.toUpperCase()}.pdf';
+      final pdfBytes = await CvPdfBuilder.buildBytes(
+        polished: polished,
+        languageName: selectedLanguage.name,
+        languageCode: selectedLanguage.code,
+        accentArgb: resolvedAccent,
+      );
+
+      final authUid = _authUid.isNotEmpty ? _authUid : user.id;
+      final storagePath = 'cv/$authUid/exports/$exportId.pdf';
+      try {
+        await MediaUpload.uploadBytes(
+          bytes: pdfBytes,
+          storagePath: storagePath,
+          contentType: 'application/pdf',
+        );
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('sendCvPdfEmail')
+            .call(<String, dynamic>{
+          'exportId': exportId,
+          'storagePath': storagePath,
+          'fileName': fileHint,
+          'languageName': selectedLanguage.name,
+        });
+        status =
+            'ATS CV hazır · ${selectedLanguage.name} · ${user.email} adresine gönderildi';
+      } catch (mailErr) {
+        debugPrint('[cv] sendCvPdfEmail: $mailErr');
+        status =
+            'ATS CV hazır · e-posta gönderilemedi (${user.email})';
+      }
+
       await CvPdfBuilder.previewAndShare(
         polished: polished,
         languageName: selectedLanguage.name,
         languageCode: selectedLanguage.code,
         fileHint: fileHint,
         accentArgb: resolvedAccent,
+        bytes: pdfBytes,
       );
 
-      status = 'ATS CV hazır · ${selectedLanguage.name} (canlı AI)';
+      onboardingDone = true;
+      final docId = _authUid.isNotEmpty ? _authUid : user.id;
+      await FirebaseFirestore.instance.collection('cvs').doc(docId).set({
+        'cv_onboarding_done': true,
+        'last_export_id': exportId,
+        'last_language': selectedLanguage.code,
+        'last_accent_argb': resolvedAccent,
+      }, SetOptions(merge: true));
       busy = false;
       notifyListeners();
       return true;
@@ -313,7 +419,7 @@ class CvProvider extends ChangeNotifier {
 
   /// AI çıktısı photoUrl düşürürse profil / taslak fotoğrafını koru.
   void _preservePhoto(Map<String, dynamic> polished) {
-    final src = data.personalInfo.photoUrl.trim();
+    final src = cvPhotoUrl;
     if (src.isEmpty) return;
     final pi = (polished['personal_info'] as Map?)?.cast<String, dynamic>() ??
         <String, dynamic>{};

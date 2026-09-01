@@ -15,6 +15,7 @@ import '../maintenance/maintenance_provider.dart';
 import '../moderation/moderation_models.dart';
 import '../notifications/notification_provider.dart';
 import 'admin_content_tabs.dart';
+import 'admin_users_tab.dart';
 import 'admin_feedback_tab.dart';
 import 'admin_legal_tab.dart';
 import 'admin_maintenance_tab.dart';
@@ -25,9 +26,11 @@ import 'admin_registrations_tab.dart';
 import 'admin_study_rooms_tab.dart';
 import 'admin_promo_hub_tab.dart';
 import 'admin_ambassador_hub.dart';
+import 'admin_create_accounts_tab.dart';
 import 'admin_cv_ai_limits_tab.dart';
 import 'admin_events_tab.dart';
 import 'admin_commerce_tab.dart';
+import 'admin_staff_tab.dart';
 import '../plus/admin_plus_tab.dart';
 import '../plus/plus_provider.dart';
 
@@ -128,14 +131,19 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           required: const [AdminPermission.manageUsers],
           builder: () => const AdminRegistrationsTab(),
         ),
-      if (admin.can(me, AdminPermission.manageUsers))
+      if (admin.can(me, AdminPermission.manageCvAi) ||
+          admin.can(me, AdminPermission.manageUsers))
         _AdminTab(
           label: 'CV-AI limit',
           icon: const Icon(Icons.auto_awesome_outlined),
-          required: const [AdminPermission.manageUsers],
+          required: const [
+            AdminPermission.manageCvAi,
+            AdminPermission.manageUsers,
+          ],
           builder: () => const AdminCvAiLimitsTab(),
         ),
-      if (admin.can(me, AdminPermission.managePlus) ||
+      if (admin.can(me, AdminPermission.manageMarket) ||
+          admin.can(me, AdminPermission.managePlus) ||
           admin.can(me, AdminPermission.createCompany) ||
           admin.can(me, AdminPermission.reviewLeads) ||
           admin.can(me, AdminPermission.manageAds) ||
@@ -145,6 +153,7 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           label: 'Market',
           icon: const Icon(Icons.storefront_outlined),
           required: const [
+            AdminPermission.manageMarket,
             AdminPermission.managePlus,
             AdminPermission.createCompany,
             AdminPermission.reviewLeads,
@@ -185,7 +194,7 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
             AdminPermission.createCompany,
             AdminPermission.createCommunity,
           ],
-          builder: () => _CreateAccountsTab(auth: auth, admin: admin, me: me),
+          builder: () => const AdminCreateAccountsTab(),
         ),
       if (admin.can(me, AdminPermission.manageRoles))
         _AdminTab(
@@ -199,7 +208,7 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           label: 'Adminler',
           icon: const Icon(Icons.badge_outlined, size: 22),
           required: const [AdminPermission.manageAdmins],
-          builder: () => _StaffTab(auth: auth, admin: admin, me: me),
+          builder: () => const AdminStaffTab(),
         ),
       if (admin.can(me, AdminPermission.sendBroadcast))
         _AdminTab(
@@ -231,11 +240,13 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
         ),
       if (admin.can(me, AdminPermission.reviewLeads) ||
           admin.can(me, AdminPermission.manageAmbassadors) ||
+          admin.can(me, AdminPermission.approveEvents) ||
           admin.can(me, AdminPermission.manageUsers))
         _AdminTab(
           label: 'Etkinlik onay',
           icon: const Icon(Icons.event_available_outlined, size: 22),
           required: const [
+            AdminPermission.approveEvents,
             AdminPermission.manageUsers,
             AdminPermission.reviewLeads,
           ],
@@ -892,212 +903,6 @@ Future<String?> _pickRole(BuildContext context, AdminProvider admin) {
 
 // ─── Hesap aç / Roller / Push ───
 
-class _CreateAccountsTab extends StatefulWidget {
-  const _CreateAccountsTab({
-    required this.auth,
-    required this.admin,
-    required this.me,
-  });
-  final AuthProvider auth;
-  final AdminProvider admin;
-  final AppUser me;
-
-  @override
-  State<_CreateAccountsTab> createState() => _CreateAccountsTabState();
-}
-
-class _CreateAccountsTabState extends State<_CreateAccountsTab> {
-  final _companyName = TextEditingController();
-  final _companyEmail = TextEditingController();
-  final _companyPass = TextEditingController();
-  final _commName = TextEditingController();
-  final _commEmail = TextEditingController();
-  final _commPass = TextEditingController();
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _companyName.dispose();
-    _companyEmail.dispose();
-    _companyPass.dispose();
-    _commName.dispose();
-    _commEmail.dispose();
-    _commPass.dispose();
-    super.dispose();
-  }
-
-  Future<void> _showCreds({
-    required String title,
-    required String email,
-    required String password,
-  }) async {
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: SelectableText(
-          'E-posta: $email\nGeçici şifre: $password\n\n'
-          'Bu şifreyi ilgili kişiye güvenli kanaldan ilet. '
-          'İlk girişten sonra değiştirilmesini öner.',
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Tamam'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final canCompany = widget.admin.can(
-      widget.me,
-      AdminPermission.createCompany,
-    );
-    final canCommunity = widget.admin.can(
-      widget.me,
-      AdminPermission.createCommunity,
-    );
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const AppCircleLogo(logo: AppLogo.ays, size: 56),
-        const SizedBox(height: 8),
-        Text(
-          'Firma ve topluluk hesapları Firebase Auth + profil olarak açılır. '
-          'Boş bırakırsan geçici şifre otomatik üretilir.',
-          style: TextStyle(
-            color: AppColors.textSecondary.withValues(alpha: 0.95),
-          ),
-        ),
-        if (canCompany) ...[
-          const SizedBox(height: 20),
-          Text('Firma hesabı', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _companyName,
-            decoration: const InputDecoration(
-              labelText: 'Firma adı',
-              hintText: 'Örn. AYS Tech',
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _companyEmail,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(labelText: 'Firma e-posta'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _companyPass,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Şifre (opsiyonel)',
-              hintText: 'Boş = otomatik',
-            ),
-          ),
-          const SizedBox(height: 10),
-          FilledButton(
-            onPressed: _busy
-                ? null
-                : () async {
-                    if (_companyName.text.trim().isEmpty ||
-                        _companyEmail.text.trim().isEmpty) {
-                      return;
-                    }
-                    setState(() => _busy = true);
-                    final manual = _companyPass.text.trim();
-                    final result = await widget.admin.createManagedAccount(
-                      auth: widget.auth,
-                      displayName: _companyName.text,
-                      email: _companyEmail.text,
-                      kind: 'company',
-                      password: manual.length >= 6 ? manual : null,
-                    );
-                    final pass = result.password;
-                    setState(() => _busy = false);
-                    _companyName.clear();
-                    _companyEmail.clear();
-                    _companyPass.clear();
-                    await _showCreds(
-                      title: 'Firma hesabı hazır',
-                      email: result.user.email,
-                      password: pass,
-                    );
-                  },
-            child: Text(_busy ? 'Oluşturuluyor…' : 'Firma hesabı aç'),
-          ),
-        ],
-        if (canCommunity) ...[
-          const Divider(height: 36),
-          Text(
-            'Topluluk hesabı',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _commName,
-            decoration: const InputDecoration(
-              labelText: 'Topluluk adı',
-              hintText: 'Örn. Mühendislik Topluluğu',
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _commEmail,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(labelText: 'Topluluk e-posta'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _commPass,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Şifre (opsiyonel)',
-              hintText: 'Boş = otomatik',
-            ),
-          ),
-          const SizedBox(height: 10),
-          FilledButton(
-            onPressed: _busy
-                ? null
-                : () async {
-                    if (_commName.text.trim().isEmpty ||
-                        _commEmail.text.trim().isEmpty) {
-                      return;
-                    }
-                    setState(() => _busy = true);
-                    final manual = _commPass.text.trim();
-                    final result = await widget.admin.createManagedAccount(
-                      auth: widget.auth,
-                      displayName: _commName.text,
-                      email: _commEmail.text,
-                      kind: 'community',
-                      password: manual.length >= 6 ? manual : null,
-                    );
-                    final pass = result.password;
-                    setState(() => _busy = false);
-                    _commName.clear();
-                    _commEmail.clear();
-                    _commPass.clear();
-                    await _showCreds(
-                      title: 'Topluluk hesabı hazır',
-                      email: result.user.email,
-                      password: pass,
-                    );
-                  },
-            child: Text(_busy ? 'Oluşturuluyor…' : 'Topluluk hesabı aç'),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
 // ─── Roller ───
 
 class _RolesTab extends StatelessWidget {
@@ -1448,169 +1253,7 @@ class _RolesTab extends StatelessWidget {
   }
 }
 
-// ─── Adminler ───
-
-class _StaffTab extends StatefulWidget {
-  const _StaffTab({required this.auth, required this.admin, required this.me});
-  final AuthProvider auth;
-  final AdminProvider admin;
-  final AppUser me;
-
-  @override
-  State<_StaffTab> createState() => _StaffTabState();
-}
-
-class _StaffTabState extends State<_StaffTab> {
-  final _first = TextEditingController();
-  final _last = TextEditingController();
-  final _email = TextEditingController();
-  String? _roleId;
-
-  @override
-  void initState() {
-    super.initState();
-    final list = widget.admin.roles.where((r) => !r.isSuper).toList();
-    _roleId = list.isEmpty ? null : list.first.id;
-  }
-
-  @override
-  void dispose() {
-    _first.dispose();
-    _last.dispose();
-    _email.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final staff = widget.admin.staffMembers(widget.auth);
-    final assignable = widget.admin.roles.where((r) => !r.isSuper).toList();
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          'Yeni admin ekle',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _first,
-          decoration: const InputDecoration(labelText: 'Ad'),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _last,
-          decoration: const InputDecoration(labelText: 'Soyad'),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _email,
-          decoration: const InputDecoration(labelText: 'E-posta'),
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          initialValue: _roleId,
-          decoration: const InputDecoration(labelText: 'Rol'),
-          items: assignable
-              .map(
-                (r) => DropdownMenuItem(
-                  value: r.id,
-                  child: Text('${r.name} (${r.permissions.length} yetki)'),
-                ),
-              )
-              .toList(),
-          onChanged: (v) => setState(() => _roleId = v),
-        ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: () async {
-            if (_first.text.trim().isEmpty ||
-                _email.text.trim().isEmpty ||
-                _roleId == null) {
-              return;
-            }
-            await widget.admin.createAdminAccount(
-              auth: widget.auth,
-              firstName: _first.text,
-              lastName: _last.text,
-              email: _email.text,
-              roleId: _roleId!,
-            );
-            _first.clear();
-            _last.clear();
-            _email.clear();
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(widget.admin.status ?? 'Oluşturuldu')),
-              );
-            }
-          },
-          icon: const MtIcon(MtIcons.admin, size: 18, color: Colors.white),
-          label: const Text('Admin oluştur ve rol ata'),
-        ),
-        const Divider(height: 36),
-        Text(
-          'Mevcut adminler (${staff.length})',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 8),
-        ...staff.map((u) {
-          final role = widget.admin.roleById(u.staffRoleId);
-          return Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: ListTile(
-              title: Text(
-                u.fullName,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              subtitle: Text(
-                '${u.email}\n${role?.name ?? 'rol yok'}'
-                '${u.isSuperAdmin ? ' · süper' : ''}',
-              ),
-              isThreeLine: true,
-              trailing: u.isSuperAdmin
-                  ? const Chip(label: Text('Süper'))
-                  : PopupMenuButton<String>(
-                      onSelected: (v) async {
-                        if (v == 'revoke') {
-                          await widget.admin.revokeStaffAccess(
-                            auth: widget.auth,
-                            userId: u.id,
-                          );
-                        } else if (v == 'role') {
-                          final id = await _pickRole(context, widget.admin);
-                          if (id != null) {
-                            await widget.admin.assignStaffRole(
-                              auth: widget.auth,
-                              userId: u.id,
-                              roleId: id,
-                            );
-                          }
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(
-                          value: 'role',
-                          child: Text('Rol değiştir'),
-                        ),
-                        PopupMenuItem(
-                          value: 'revoke',
-                          child: Text('Adminliği kaldır'),
-                        ),
-                      ],
-                    ),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-}
+// ─── Adminler → admin_staff_tab.dart ───
 
 // ─── Push yayın ───
 

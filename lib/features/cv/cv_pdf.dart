@@ -48,24 +48,26 @@ class CvPdfBuilder {
     required String fileHint,
     String languageCode = 'en',
     int? accentArgb,
+    Uint8List? bytes,
   }) async {
-    final bytes = await buildBytes(
-      polished: polished,
-      languageName: languageName,
-      languageCode: languageCode,
-      accentArgb: accentArgb,
-    );
+    final pdfBytes = bytes ??
+        await buildBytes(
+          polished: polished,
+          languageName: languageName,
+          languageCode: languageCode,
+          accentArgb: accentArgb,
+        );
     // Önce paylaş / kaydet (ölçek bozulmasın); sonra A4 baskı önizlemesi.
     final name = fileHint.toLowerCase().endsWith('.pdf')
         ? fileHint
         : '$fileHint.pdf';
     try {
-      await Printing.sharePdf(bytes: bytes, filename: name);
+      await Printing.sharePdf(bytes: pdfBytes, filename: name);
     } catch (_) {
       await Printing.layoutPdf(
         name: name,
         format: _a4,
-        onLayout: (_) async => bytes,
+        onLayout: (_) async => pdfBytes,
       );
     }
   }

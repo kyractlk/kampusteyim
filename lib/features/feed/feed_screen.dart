@@ -62,23 +62,21 @@ class FeedScreen extends StatelessWidget {
               // Şehir / üniversite — yazar profili VEYA post denormalize alanları.
               final author = auth.findUser(p.authorId);
               if (scope == FeedScope.city) {
-                final myCity = user.city.trim().toLowerCase();
-                if (myCity.isEmpty) return false;
+                if (user.city.trim().isEmpty) return false;
                 final their = (author?.city.trim().isNotEmpty == true
                         ? author!.city
                         : p.authorCity)
-                    .trim()
-                    .toLowerCase();
-                if (their.isEmpty || their != myCity) return false;
+                    .trim();
+                if (!CampusAffinity.sameLabel(user.city, their)) return false;
               } else if (scope == FeedScope.university) {
-                final myUni = user.university.trim().toLowerCase();
-                if (myUni.isEmpty) return false;
+                if (user.university.trim().isEmpty) return false;
                 final their = (author?.university.trim().isNotEmpty == true
                         ? author!.university
                         : p.authorUniversity)
-                    .trim()
-                    .toLowerCase();
-                if (their.isEmpty || their != myUni) return false;
+                    .trim();
+                if (!CampusAffinity.sameLabel(user.university, their)) {
+                  return false;
+                }
               }
               return true;
             }).toList();
@@ -124,6 +122,8 @@ class FeedScreen extends StatelessWidget {
                     }(),
                     hashtags: a.hashtags,
                     signals: signals,
+                    postCity: a.authorCity,
+                    postUniversity: a.authorUniversity,
                   ) *
                   recencyBoost;
               final sb = CampusAffinity.scorePost(
@@ -145,6 +145,8 @@ class FeedScreen extends StatelessWidget {
                     }(),
                     hashtags: b.hashtags,
                     signals: signals,
+                    postCity: b.authorCity,
+                    postUniversity: b.authorUniversity,
                   ) *
                   recencyBoost;
               final cmp = sb.compareTo(sa);

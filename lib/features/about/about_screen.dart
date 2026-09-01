@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_info.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/widgets/app_circle_logo.dart';
+import '../../core/widgets/brand_widgets.dart';
 import '../partners/partners_about_section.dart';
 
 class AboutScreen extends StatelessWidget {
@@ -37,22 +37,7 @@ class AboutScreen extends StatelessWidget {
           _row('Sürüm', AppInfo.versionLabel),
           const PartnersAboutSection(),
           const SizedBox(height: 28),
-          Opacity(
-            opacity: 0.5,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Altyapı',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                ),
-                const SizedBox(width: 8),
-                const AppCircleLogo(logo: AppLogo.ays, size: 28, showBorder: false),
-              ],
-            ),
-          ),
+          const AysProductBadge(logoSize: 32, opacity: 0.55),
           const SizedBox(height: 16),
           Text(
             AppInfo.copyright,

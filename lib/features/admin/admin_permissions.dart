@@ -39,7 +39,12 @@ enum AdminPermission {
   ),
   moderateFeed(
     'moderate_feed',
-    'Akışta gönderi sil / kullanıcıyı sustur',
+    'Akış: gönderi / yorum sil · kullanıcı sustur',
+    'Moderasyon',
+  ),
+  moderateChats(
+    'moderate_chats',
+    'Çalışma odası sohbet mesajlarını sil',
     'Moderasyon',
   ),
   reviewFeedback(
@@ -74,11 +79,26 @@ enum AdminPermission {
     'Sistem',
   ),
   managePlus('manage_plus', 'KampüsteyimPlus ayarları / atama', 'Sistem'),
+  manageCvAi(
+    'manage_cv_ai',
+    'CV-AI kota / limit ayarları',
+    'Sistem',
+  ),
+  manageMarket(
+    'manage_market',
+    'Market: ürün, sipariş, kampanya, uygulama içi aç/kapa',
+    'Ticaret',
+  ),
   manageAds('manage_ads', 'Reklam / sponsor teklif / push-mail bot', 'Ticaret'),
   reviewPayments(
     'review_payments',
     'Reklam, etkinlik ve ticari ödeme onayları',
     'Ticaret',
+  ),
+  approveEvents(
+    'approve_events',
+    'Kampüs / kampüs dışı etkinlik onayları',
+    'İçerik',
   );
 
   const AdminPermission(this.key, this.label, this.group);
@@ -223,15 +243,17 @@ class StaffRole {
     StaffRole(
       id: 'role_moderator',
       name: 'Moderatör',
-      description: 'Şikayet, paylaşım, kısıtlama ve içerik denetimi.',
+      description:
+          'Akış + yorum + çalışma odası mesaj silme, şikayet, kısıtlama.',
       permissions: {
         AdminPermission.reviewReports,
         AdminPermission.viewPosts,
         AdminPermission.restrictUsers,
         AdminPermission.moderateFeed,
+        AdminPermission.moderateChats,
         AdminPermission.manageUsers,
-        AdminPermission.sendBroadcast,
         AdminPermission.reviewStudyRooms,
+        AdminPermission.approveEvents,
         AdminPermission.accessDuringMaintenance,
       },
       isSystem: true,
@@ -239,7 +261,7 @@ class StaffRole {
     StaffRole(
       id: 'role_community_mgr',
       name: 'Topluluk Yöneticisi',
-      description: 'Topluluk hesapları, rozet ve kampüs elçiliği.',
+      description: 'Topluluk hesapları, rozet, elçilik ve kampüs içerik.',
       permissions: {
         AdminPermission.manageUsers,
         AdminPermission.manageBadges,
@@ -247,10 +269,11 @@ class StaffRole {
         AdminPermission.viewPosts,
         AdminPermission.reviewReports,
         AdminPermission.moderateFeed,
-        AdminPermission.sendBroadcast,
+        AdminPermission.moderateChats,
         AdminPermission.reviewStudyRooms,
         AdminPermission.manageAmbassadors,
         AdminPermission.reviewLeads,
+        AdminPermission.approveEvents,
         AdminPermission.accessDuringMaintenance,
       },
       isSystem: true,
@@ -272,7 +295,7 @@ class StaffRole {
     StaffRole(
       id: 'role_sysops',
       name: 'Sistem & Yayın',
-      description: 'Bakım, push, Plus, KVKK, tanıtım ve landing CMS.',
+      description: 'Bakım, push, Plus, Market, KVKK, tanıtım ve CV-AI.',
       permissions: {
         AdminPermission.manageMaintenance,
         AdminPermission.accessDuringMaintenance,
@@ -283,7 +306,10 @@ class StaffRole {
         AdminPermission.managePromo,
         AdminPermission.manageLanding,
         AdminPermission.managePlus,
+        AdminPermission.manageMarket,
+        AdminPermission.manageCvAi,
         AdminPermission.manageAds,
+        AdminPermission.reviewPayments,
       },
       isSystem: true,
     ),
@@ -305,9 +331,11 @@ class StaffRole {
     StaffRole(
       id: 'role_ads_commerce',
       name: 'Reklam & Ticaret',
-      description: 'Reklam onayı, sponsor teklifi ve firma ticareti.',
+      description: 'Market, reklam onayı, sponsor teklifi ve firma ticareti.',
       permissions: {
+        AdminPermission.manageMarket,
         AdminPermission.manageAds,
+        AdminPermission.reviewPayments,
         AdminPermission.createCompany,
         AdminPermission.reviewLeads,
         AdminPermission.manageBadges,
@@ -322,6 +350,7 @@ class StaffRole {
           'Reklam, etkinlik ve diğer ticari ödeme bildirimlerini inceler.',
       permissions: {
         AdminPermission.reviewPayments,
+        AdminPermission.manageMarket,
         AdminPermission.accessDuringMaintenance,
       },
       isSystem: true,
@@ -350,6 +379,21 @@ class StaffRole {
         AdminPermission.viewPosts,
         AdminPermission.reviewFeedback,
         AdminPermission.reviewLeads,
+        AdminPermission.reviewStudyRooms,
+        AdminPermission.accessDuringMaintenance,
+      },
+      isSystem: true,
+    ),
+    StaffRole(
+      id: 'role_content_mod',
+      name: 'İçerik Moderasyon',
+      description:
+          'Hafif moderasyon: gönderi/yorum/chat silme + şikayet (ban yok).',
+      permissions: {
+        AdminPermission.viewPosts,
+        AdminPermission.moderateFeed,
+        AdminPermission.moderateChats,
+        AdminPermission.reviewReports,
         AdminPermission.reviewStudyRooms,
         AdminPermission.accessDuringMaintenance,
       },

@@ -77,9 +77,15 @@ async function getMailer() {
   return { transporter, from: secrets.smtp_user };
 }
 
-async function sendMail({ to, subject, html }) {
+async function sendMail({ to, subject, html, attachments }) {
   const { transporter, from } = await getMailer();
-  await transporter.sendMail({ from, to, subject, html });
+  await transporter.sendMail({
+    from,
+    to,
+    subject,
+    html,
+    ...(attachments?.length ? { attachments } : {}),
+  });
 }
 
 const BRAND_LOGO =
@@ -422,7 +428,7 @@ function companyBrandedEmail({
             <td style="padding:8px 28px 28px;">
               <hr style="border:none;border-top:1px solid #E2E8F0;margin:0 0 16px;"/>
               <p style="margin:0 0 14px;font-size:12px;color:#94A3B8;line-height:1.5;text-align:center;">
-                Bu e-posta ${brandName} tarafından KampüsteyimAPP altyapısıyla gönderildi.
+                KampüsteyimAPP — <strong style="color:#3A5A78;">bir AYS ürünüdür</strong>
               </p>
               <p style="margin:0;text-align:center;">
                 <a href="${BRAND_HOME}" style="display:inline-block;background:#0EA5E9;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:10px;font-weight:700;font-size:13px;">
@@ -928,27 +934,7 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
     { merge: true },
   );
 
-  // Mail bildirimi (başarısız olsa CV yine döner)
-  if (userEmail) {
-    try {
-      await sendMail({
-        to: userEmail,
-        subject: `KampüsteyimAPP · ATS CV hazır (${languageName})`,
-        html: brandedEmail({
-          title: 'ATS CV hazır',
-          greeting: userName ? `Merhaba ${userName},` : 'Merhaba,',
-          bodyHtml:
-            `<p><b>${languageName}</b> dilinde ATS uyumlu CV’n canlı AI ile üretildi (tam içerik çevirisi).</p>` +
-            '<p>Uygulamadan <b>Profil → CV-AI → Önceki CV’lerim</b> üzerinden tekrar indirebilirsin.</p>',
-          ctaLabel: 'KampüsteyimAPP’i aç',
-          ctaUrl: BRAND_HOME,
-        }),
-      });
-    } catch (mailErr) {
-      console.warn('[mail]', mailErr.message);
-    }
-  }
-
+  // PDF istemcide üretilip Storage'a yüklenir; sendCvPdfEmail ekte gönderir.
   return {
     exportId,
     languageCode,
@@ -956,6 +942,90 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
     accentArgb,
     polished,
   };
+});
+
+/**
+ * Callable: sendCvPdfEmail
+ * CV PDF'i Storage'dan indirip kayıtlı e-postaya ek gönderir.
+ * data: { exportId, storagePath, fileName?, languageName? }
+ */
+exports.sendCvPdfEmail = onCall({ region: 'europe-west1', timeoutSeconds: 60 }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Giriş gerekli');
+  }
+
+  const uid = request.auth.uid;
+  const { exportId, storagePath, fileName, languageName } = request.data || {};
+  if (!exportId || !storagePath) {
+    throw new HttpsError('invalid-argument', 'exportId ve storagePath zorunlu');
+  }
+
+  const path = String(storagePath).trim();
+  const expectedPrefix = `cv/${uid}/`;
+  if (!path.startsWith(expectedPrefix)) {
+    throw new HttpsError('permission-denied', 'Geçersiz dosya yolu');
+  }
+
+  const expRef = db.collection('users').doc(uid).collection('cv_exports').doc(String(exportId));
+  const expSnap = await expRef.get();
+  if (!expSnap.exists) {
+    throw new HttpsError('not-found', 'CV export kaydı bulunamadı');
+  }
+  const exp = expSnap.data() || {};
+
+  const userSnap = await db.collection('users').doc(uid).get();
+  const u = userSnap.exists ? userSnap.data() || {} : {};
+  const to = String(u.email || request.auth.token?.email || '').trim();
+  if (!to) {
+    throw new HttpsError('failed-precondition', 'Kayıtlı e-posta adresi bulunamadı');
+  }
+
+  const bucket = getStorage().bucket();
+  const file = bucket.file(path);
+  const [exists] = await file.exists();
+  if (!exists) {
+    throw new HttpsError('not-found', 'PDF dosyası bulunamadı — önce yüklenmeli');
+  }
+  const [buffer] = await file.download();
+
+  const langLabel = languageName || exp.languageName || 'ATS';
+  const userName =
+    u.fullName || u.displayName || [u.firstName, u.lastName].filter(Boolean).join(' ') || '';
+  const rawName = String(fileName || `CV_${exportId}.pdf`).trim();
+  const safeName = rawName.replace(/[^\w.\-]/g, '_');
+  const attachmentName = safeName.toLowerCase().endsWith('.pdf') ? safeName : `${safeName}.pdf`;
+
+  await sendMail({
+    to,
+    subject: `KampüsteyimAPP · CV'niz hazır (${langLabel})`,
+    html: brandedEmail({
+      title: 'ATS CV e-posta eki',
+      greeting: userName ? `Merhaba ${escapeHtml(userName)},` : 'Merhaba,',
+      bodyHtml:
+        `<p><b>${escapeHtml(langLabel)}</b> dilinde ATS uyumlu CV PDF'in ekte.</p>` +
+        '<p>Uygulamadan <b>Profil → CV-AI</b> bölümünden güncelleyebilir veya tekrar indirebilirsin.</p>',
+      ctaLabel: 'KampüsteyimAPP’i aç',
+      ctaUrl: BRAND_HOME,
+    }),
+    attachments: [
+      {
+        filename: attachmentName,
+        content: buffer,
+        contentType: 'application/pdf',
+      },
+    ],
+  });
+
+  await expRef.set(
+    {
+      pdfStoragePath: path,
+      emailedAt: new Date().toISOString(),
+      emailedTo: to,
+    },
+    { merge: true },
+  );
+
+  return { ok: true, emailedTo: to };
 });
 
 /**
@@ -2454,21 +2524,21 @@ async function propagateAuthorHandle(uid, username) {
   return { updated };
 }
 
-exports.claimUsername = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Giriş gerekli');
-  }
-  const uid = request.auth.uid;
-  let {
-    username = '',
-    firstName = '',
-    lastName = '',
-    replaceTemp = false,
-  } = request.data || {};
-  username = String(username).trim().replace(/^@/, '').toLowerCase();
+exports.claimUsername = onCall(
+  { region: 'europe-west1', timeoutSeconds: 60 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    }
+    const uid = request.auth.uid;
+    let {
+      username = '',
+      firstName = '',
+      lastName = '',
+      replaceTemp = false,
+    } = request.data || {};
+    username = String(username).trim().replace(/^@/, '').toLowerCase();
 
-  // Silinmiş hesabı username claim ile canlandırma.
-  try {
     const existingUser = await db.collection('users').doc(uid).get();
     if (existingUser.exists) {
       const ed = existingUser.data() || {};
@@ -2479,15 +2549,8 @@ exports.claimUsername = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
         );
       }
     }
-  } catch (e) {
-    if (e instanceof HttpsError) throw e;
-  }
 
-  const makeTemp = () => `user_${uid.slice(0, 8)}_${Date.now() % 10000}`;
-
-  if (!/^[a-z0-9_]{3,24}$/.test(username)) {
-    // Profil değişikliğinde geçersiz format → temp atama yok, hata dön.
-    if (replaceTemp) {
+    if (!/^[a-z0-9_]{3,24}$/.test(username)) {
       return {
         allowed: false,
         status: 'rejected',
@@ -2495,156 +2558,155 @@ exports.claimUsername = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
         message: 'Kullanıcı adı formatı geçersiz (3–24, a-z, 0-9, _).',
       };
     }
-    const temp = makeTemp();
-    await db.collection('handles').doc(temp).set({
-      uid,
-      createdAt: new Date().toISOString(),
-      temp: true,
-    });
-    await db.collection('users').doc(uid).set(
-      { username: temp, usernameStatus: 'temp' },
-      { merge: true },
-    );
-    return {
-      allowed: false,
-      status: 'temp',
-      username: temp,
-      message: 'Kullanıcı adı formatı geçersiz. Geçici ad atandı.',
-    };
-  }
 
-  const { client, model } = await getOpenAI();
-  let allowed = true;
-  let reason = '';
-  try {
-    const completion = await client.chat.completions.create({
-      model,
-      temperature: 0,
-      max_tokens: 300,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You moderate usernames for a Turkish university campus app. Reject hate, sexual, insulting, impersonation (admin/mt/ays/gaun official), or spam handles. Return ONLY JSON: {"allowed":true|false,"reason":"short Turkish"}',
-        },
-        {
-          role: 'user',
-          content: JSON.stringify({ username, firstName, lastName }),
-        },
-      ],
-    });
-    let text = completion.choices[0]?.message?.content?.trim() || '{}';
-    if (text.startsWith('```')) {
-      text = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-    }
-    const parsed = JSON.parse(text);
-    allowed = parsed.allowed !== false;
-    reason = String(parsed.reason || '');
-  } catch (e) {
-    allowed = true;
-  }
-
-  if (!allowed) {
-    if (replaceTemp) {
+    const reserved = [
+      'admin',
+      'administrator',
+      'root',
+      'support',
+      'yardim',
+      'kampusteyim',
+      'kampusteyimapp',
+      'aystech',
+      'ays_tech',
+      'mtmobil',
+      'official',
+      'resmi',
+    ];
+    if (reserved.includes(username) || username.startsWith('admin_')) {
       return {
         allowed: false,
         status: 'rejected',
         username: '',
-        message:
-          reason ||
-          'Bu kullanıcı adı uygun değil. Lütfen başka bir ad dene.',
+        message: 'Bu kullanıcı adı rezerve. Başka bir ad dene.',
       };
     }
-    const temp = makeTemp();
-    await db.collection('handles').doc(temp).set({
-      uid,
-      createdAt: new Date().toISOString(),
-      temp: true,
-    });
-    await db.collection('users').doc(uid).set(
-      { username: temp, usernameStatus: 'temp' },
-      { merge: true },
-    );
-    return {
-      allowed: false,
-      status: 'temp',
-      username: temp,
-      message:
-        reason ||
-        'Bu kullanıcı adı uygun değil. Geçici bir ad atandı; lütfen değiştir.',
-    };
-  }
 
-  const handleRef = db.collection('handles').doc(username);
-  const existing = await handleRef.get();
-  if (existing.exists && existing.data()?.uid !== uid) {
-    if (replaceTemp) {
-      return {
-        allowed: false,
-        status: 'rejected',
-        username: '',
-        message: 'Bu kullanıcı adı başkasına ait.',
-      };
-    }
-    const temp = makeTemp();
-    await db.collection('handles').doc(temp).set({
-      uid,
-      createdAt: new Date().toISOString(),
-      temp: true,
-    });
-    await db.collection('users').doc(uid).set(
-      { username: temp, usernameStatus: 'temp' },
-      { merge: true },
-    );
-    return {
-      allowed: false,
-      status: 'temp',
-      username: temp,
-      message: 'Bu kullanıcı adı başkasına ait. Geçici ad atandı.',
-    };
-  }
-
-  if (replaceTemp) {
-    const userSnap = await db.collection('users').doc(uid).get();
-    const prev = userSnap.data()?.username;
-    if (prev && prev !== username) {
-      const prevDoc = await db.collection('handles').doc(prev).get();
-      if (prevDoc.exists && prevDoc.data()?.uid === uid) {
-        await db.collection('handles').doc(prev).delete();
+    try {
+      const { client, model } = await getOpenAI();
+      const completion = await Promise.race([
+        client.chat.completions.create({
+          model,
+          temperature: 0,
+          max_tokens: 120,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Moderate usernames for a Turkish campus app. Reject hate/sexual/insult/impersonation. JSON only: {"allowed":true|false,"reason":"short Turkish"}',
+            },
+            {
+              role: 'user',
+              content: JSON.stringify({ username, firstName, lastName }),
+            },
+          ],
+        }),
+        new Promise((_, rej) =>
+          setTimeout(() => rej(new Error('ai_timeout')), 8000),
+        ),
+      ]);
+      let textAi = completion.choices[0]?.message?.content?.trim() || '{}';
+      if (textAi.startsWith('```')) {
+        textAi = textAi.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
       }
+      const parsed = JSON.parse(textAi);
+      if (parsed.allowed === false) {
+        return {
+          allowed: false,
+          status: 'rejected',
+          username: '',
+          message:
+            String(parsed.reason || '') ||
+            'Bu kullanıcı adı uygun değil. Başka bir ad dene.',
+        };
+      }
+    } catch (e) {
+      console.warn('[claimUsername] moderation skipped', e?.message || e);
     }
-  }
 
-  await handleRef.set({
-    uid,
-    createdAt: new Date().toISOString(),
-    temp: false,
-  });
-  await db.collection('users').doc(uid).set(
-    { username, usernameStatus: 'ok' },
-    { merge: true },
-  );
+    try {
+      await db.runTransaction(async (tx) => {
+        const handleRef = db.collection('handles').doc(username);
+        const handleSnap = await tx.get(handleRef);
+        if (handleSnap.exists) {
+          const owner = String(handleSnap.data()?.uid || '').trim();
+          if (owner && owner !== uid) {
+            const ownerDoc = await tx.get(db.collection('users').doc(owner));
+            const od = ownerDoc.exists ? ownerDoc.data() || {} : {};
+            const ownerGone =
+              !ownerDoc.exists ||
+              od.deleted === true ||
+              od.accountDeleted === true ||
+              `${od.usernameStatus || ''}` === 'deleted';
+            if (!ownerGone) {
+              throw new HttpsError(
+                'already-exists',
+                'Bu kullanıcı adı başkasına ait.',
+              );
+            }
+          }
+        }
 
-  let propagated = 0;
-  try {
-    const prop = await propagateAuthorHandle(uid, username);
-    propagated = prop.updated || 0;
-  } catch (e) {
-    console.warn('[claimUsername] propagateAuthorHandle', e?.message || e);
-  }
+        if (replaceTemp) {
+          const userRef = db.collection('users').doc(uid);
+          const userSnap = await tx.get(userRef);
+          const prev = String(userSnap.data()?.username || '')
+            .trim()
+            .toLowerCase();
+          if (prev && prev !== username) {
+            const prevRef = db.collection('handles').doc(prev);
+            const prevSnap = await tx.get(prevRef);
+            if (
+              prevSnap.exists &&
+              String(prevSnap.data()?.uid || '') === uid
+            ) {
+              tx.delete(prevRef);
+            }
+          }
+        }
 
-  return {
-    allowed: true,
-    status: 'ok',
-    username,
-    message: 'Kullanıcı adı kaydedildi',
-    postsUpdated: propagated,
-  };
-});
+        tx.set(handleRef, {
+          uid,
+          authUid: uid,
+          createdAt: new Date().toISOString(),
+          temp: false,
+        });
+        tx.set(
+          db.collection('users').doc(uid),
+          { username, usernameStatus: 'ok' },
+          { merge: true },
+        );
+      });
+    } catch (e) {
+      if (e instanceof HttpsError) {
+        return {
+          allowed: false,
+          status: 'rejected',
+          username: '',
+          message: e.message || 'Bu kullanıcı adı alınmış.',
+        };
+      }
+      throw e;
+    }
 
-/**
- * Şikayet AI ön denetimi
- */
+    let propagated = 0;
+    try {
+      const prop = await propagateAuthorHandle(uid, username);
+      propagated = prop.updated || 0;
+    } catch (e) {
+      console.warn('[claimUsername] propagateAuthorHandle', e?.message || e);
+    }
+
+    return {
+      allowed: true,
+      status: 'ok',
+      username,
+      message: 'Kullanıcı adı kaydedildi',
+      postsUpdated: propagated,
+    };
+  },
+);
+
 exports.preReviewReport = onCall({ region: 'europe-west1', timeoutSeconds: 60 }, async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Giriş gerekli');
@@ -4476,6 +4538,331 @@ exports.endMaintenance = onCall({ region: 'europe-west1', timeoutSeconds: 180 },
   };
 });
 
+// ─── Test modu (beta) — kapanınca admin hariç tüm veri silinir ─────
+
+function isPlatformAdminUserData(data) {
+  if (!data || data.deleted === true || data.accountDeleted === true) return false;
+  if (data.isSuperAdmin === true) return true;
+  if (data.role === 'admin') return true;
+  return false;
+}
+
+async function deleteCollectionRef(colRef, batchSize = 400) {
+  let deleted = 0;
+  for (let round = 0; round < 500; round += 1) {
+    const snap = await colRef.limit(batchSize).get();
+    if (snap.empty) break;
+    deleted += await batchDeleteDocs(snap.docs);
+    if (snap.size < batchSize) break;
+  }
+  return deleted;
+}
+
+async function deleteDocTree(docRef) {
+  const subs = await docRef.listCollections();
+  for (const sub of subs) {
+    await deleteCollectionRef(sub);
+  }
+  await docRef.delete();
+  return 1;
+}
+
+async function purgeReelsTree() {
+  let rooms = 0;
+  for (let round = 0; round < 300; round += 1) {
+    const snap = await db.collection('reels').limit(40).get();
+    if (snap.empty) break;
+    for (const doc of snap.docs) {
+      await deleteCollectionRef(doc.ref.collection('comments'));
+      await doc.ref.delete();
+      rooms += 1;
+    }
+    if (snap.size < 40) break;
+  }
+  return rooms;
+}
+
+async function purgeStudyRoomsTree() {
+  let rooms = 0;
+  for (let round = 0; round < 200; round += 1) {
+    const snap = await db.collection('study_rooms').limit(25).get();
+    if (snap.empty) break;
+    for (const doc of snap.docs) {
+      await deleteDocTree(doc.ref);
+      rooms += 1;
+    }
+    if (snap.size < 25) break;
+  }
+  return rooms;
+}
+
+async function purgeNonAdminUsers(actorId) {
+  const { getAuth } = require('firebase-admin/auth');
+  const auth = getAuth();
+  const keepIds = new Set();
+  let scanned = 0;
+  let removed = 0;
+  let kept = 0;
+  let lastId = null;
+
+  for (let page = 0; page < 300; page += 1) {
+    let q = db.collection('users').orderBy(FieldPath.documentId()).limit(200);
+    if (lastId) q = q.startAfter(lastId);
+    const snap = await q.get();
+    if (snap.empty) break;
+    lastId = snap.docs[snap.docs.length - 1].id;
+
+    for (const doc of snap.docs) {
+      scanned += 1;
+      const data = doc.data() || {};
+      if (isPlatformAdminUserData(data)) {
+        keepIds.add(doc.id);
+        const linked = String(data.authUid || '').trim();
+        if (linked) keepIds.add(linked);
+        const stable = String(data.stableId || '').trim();
+        if (stable) keepIds.add(stable);
+        kept += 1;
+        continue;
+      }
+
+      const authUid = String(data.authUid || doc.id).trim();
+      for (const sub of ['notifications', 'cv', 'cv_exports', 'cv_ai_usage']) {
+        try {
+          await deleteCollectionRef(doc.ref.collection(sub));
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      const username = String(data.username || '').trim().toLowerCase();
+      if (username) {
+        try {
+          await db.collection('handles').doc(username).delete();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      const tcknHash = String(data.edevletTcknHash || '').trim();
+      if (tcknHash) {
+        try {
+          await db.collection('registration_edevlet_claims').doc(tcknHash).delete();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      try {
+        await doc.ref.delete();
+      } catch (e) {
+        console.warn('[testModePurge] user doc', doc.id, e?.message || e);
+      }
+
+      const authIds = new Set(
+        [authUid, doc.id, String(data.stableId || '').trim()].filter(Boolean),
+      );
+      for (const id of authIds) {
+        if (keepIds.has(id)) continue;
+        try {
+          await auth.deleteUser(id);
+        } catch (_) {
+          try {
+            await auth.updateUser(id, { disabled: true });
+          } catch (_) {}
+        }
+      }
+
+      const mail = String(data.email || '').trim().toLowerCase();
+      if (mail.includes('@') && !mail.includes('@invalid.local')) {
+        try {
+          const byEmail = await auth.getUserByEmail(mail);
+          if (byEmail?.uid && !keepIds.has(byEmail.uid)) {
+            try {
+              await auth.deleteUser(byEmail.uid);
+            } catch (_) {
+              try {
+                await auth.updateUser(byEmail.uid, { disabled: true });
+              } catch (_) {}
+            }
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      removed += 1;
+    }
+  }
+
+  await db.collection('test_mode_purge_logs').add({
+    actorId,
+    scanned,
+    removed,
+    kept,
+    at: new Date().toISOString(),
+  });
+
+  return { scanned, removed, kept };
+}
+
+async function purgeTestModeStorage() {
+  const bucket = getStorage().bucket();
+  const prefixes = [
+    'users/',
+    'posts/',
+    'reels/',
+    'stories/',
+    'student_docs/',
+    'companies/',
+    'cv_exports/',
+    'chat/',
+    'events/',
+    'jobs/',
+  ];
+  let ok = 0;
+  for (const prefix of prefixes) {
+    try {
+      await bucket.deleteFiles({ prefix, force: true });
+      ok += 1;
+    } catch (e) {
+      console.warn('[testModePurge] storage', prefix, e?.message || e);
+    }
+  }
+  return { prefixes: ok };
+}
+
+async function executeTestModePurge(actorId) {
+  const stats = {
+    collections: {},
+    reels: 0,
+    studyRooms: 0,
+    users: {},
+    storage: {},
+    startedAt: new Date().toISOString(),
+  };
+
+  const rootCollections = [
+    'posts',
+    'stories',
+    'comments',
+    'companies',
+    'jobs',
+    'offers',
+    'events',
+    'announcements',
+    'partners',
+    'feedback',
+    'reports',
+    'moderation_actions',
+    'cvs',
+    'handles',
+    'withdrawal_requests',
+    'ad_campaigns',
+    'ad_reach',
+    'ad_email_events',
+    'org_invites',
+    'organizer_ledger',
+    'event_tickets',
+    'maintenance_subscribers',
+    'account_deletions',
+    'password_resets',
+    'lead_applications',
+    'ambassador_applications',
+    'ambassador_forms',
+    'promo_scans',
+    'payment_orders',
+    'market_campaign_uses',
+    'registration_edevlet_claims',
+    'embassies',
+    'nfc_probe_logs',
+    'mail_outbox',
+  ];
+
+  stats.reels = await purgeReelsTree();
+  stats.studyRooms = await purgeStudyRoomsTree();
+
+  for (const name of rootCollections) {
+    try {
+      stats.collections[name] = await deleteCollectionRef(db.collection(name));
+    } catch (e) {
+      console.warn('[testModePurge] col', name, e?.message || e);
+      stats.collections[name] = -1;
+    }
+  }
+
+  stats.users = await purgeNonAdminUsers(actorId);
+  stats.storage = await purgeTestModeStorage();
+  stats.finishedAt = new Date().toISOString();
+  return stats;
+}
+
+/**
+ * Admin: test modunu aç/kapat. Kapatılınca admin hariç tüm veri silinir.
+ */
+exports.setTestMode = onCall(
+  { region: 'europe-west1', timeoutSeconds: 540, memory: '1GiB' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+
+    const {
+      active = false,
+      message = 'KampüsteyimAPP şu an test modundadır. Paylaşımlar canlı yayına geçmeden önce silinebilir.',
+    } = request.data || {};
+
+    const ref = db.collection('app_config').doc('test_mode');
+    const prev = (await ref.get()).data() || {};
+    const wasActive = prev.active === true;
+    const nowActive = !!active;
+    const nowIso = new Date().toISOString();
+
+    if (wasActive && !nowActive) {
+      const stats = await executeTestModePurge(request.auth.uid);
+      const payload = {
+        active: false,
+        message:
+          sanitizePlainText(message, 400) ||
+          'Test modu sona erdi. Sistem test verilerinden arındırıldı.',
+        endedAt: nowIso,
+        purgedAt: nowIso,
+        lastPurgeStats: stats,
+        updatedAt: nowIso,
+        updatedBy: request.auth.uid,
+      };
+      await ref.set(payload, { merge: true });
+      return {
+        ok: true,
+        active: false,
+        purged: true,
+        stats,
+        message: `Test modu kapatıldı · ${stats.users?.removed || 0} kullanıcı silindi`,
+      };
+    }
+
+    const payload = {
+      active: nowActive,
+      message:
+        sanitizePlainText(message, 400) ||
+        'KampüsteyimAPP şu an test modundadır. Paylaşımlar canlı yayına geçmeden önce silinebilir.',
+      updatedAt: nowIso,
+      updatedBy: request.auth.uid,
+    };
+    if (nowActive && !wasActive) {
+      payload.startedAt = nowIso;
+      payload.endedAt = null;
+      payload.purgedAt = null;
+    }
+    await ref.set(payload, { merge: true });
+
+    return {
+      ok: true,
+      active: nowActive,
+      purged: false,
+      message: nowActive ? 'Test modu açık' : 'Test modu kapalı',
+    };
+  },
+);
+
 /**
  * Kullanıcı: bakım bitince haber ver (e-posta / push)
  */
@@ -6017,6 +6404,9 @@ exports.adminCreateManagedAccount = onCall(
     const logoUrl = request.data?.logoUrl
       ? String(request.data.logoUrl).slice(0, 500)
       : null;
+    const city =
+      sanitizePlainText(request.data?.city || '', 80) || 'Gaziantep';
+    const universityIn = sanitizePlainText(request.data?.university || '', 160);
 
     if (!isValidEmail(email)) {
       throw new HttpsError('invalid-argument', 'Geçerli e-posta gerekli');
@@ -6067,6 +6457,9 @@ exports.adminCreateManagedAccount = onCall(
       .replace(/^_+|_+$/g, '')
       .slice(0, 18);
     const username = `${usernameBase || kind}_${uid.slice(0, 6)}`.toLowerCase();
+    const university = isCompany
+      ? '—'
+      : universityIn || 'Gaziantep Üniversitesi';
 
     const profile = {
       email,
@@ -6082,8 +6475,8 @@ exports.adminCreateManagedAccount = onCall(
       stableId: uid,
       username,
       usernameStatus: 'ok',
-      city: 'Gaziantep',
-      university: isCompany ? '—' : 'Gaziantep Üniversitesi',
+      city,
+      university,
       bio: isCompany
         ? 'Firma hesabı · admin tarafından açıldı'
         : `${displayName} resmi topluluk hesabı`,
@@ -7581,22 +7974,226 @@ exports.adminUpsertEmbassy = onCall(
     const ref = id
       ? db.collection('embassies').doc(id)
       : db.collection('embassies').doc();
+
+    // Sadece aktif/pasif anahtarı
+    if (data.patchActiveOnly === true) {
+      if (!id) {
+        throw new HttpsError('invalid-argument', 'Pozisyon id gerekli');
+      }
+      const snap = await ref.get();
+      if (!snap.exists) {
+        throw new HttpsError('not-found', 'Pozisyon bulunamadı');
+      }
+      await ref.set(
+        {
+          active: data.active !== false,
+          updatedAt: new Date().toISOString(),
+          updatedBy: request.auth.uid,
+        },
+        { merge: true },
+      );
+      return { ok: true, id };
+    }
+
+    const nationwide = data.nationwide === true;
+    const city = nationwide
+      ? 'Türkiye geneli'
+      : sanitizePlainText(data.city || '', 80);
+    const university = nationwide
+      ? sanitizePlainText(data.university || 'Türkiye geneli', 160) ||
+        'Türkiye geneli'
+      : sanitizePlainText(data.university || '', 160);
+    const slotsTotal = Math.max(
+      0,
+      Math.min(500, parseInt(data.slotsTotal, 10) || 0),
+    );
+    const slotsFilled = Math.max(
+      0,
+      Math.min(
+        slotsTotal > 0 ? slotsTotal : 500,
+        parseInt(data.slotsFilled, 10) || 0,
+      ),
+    );
     const payload = {
       name: sanitizePlainText(data.name || '', 120),
-      university: sanitizePlainText(data.university || '', 160),
-      city: sanitizePlainText(data.city || '', 80),
+      university,
+      city,
+      nationwide,
       description: sanitizePlainText(data.description || '', 2000),
+      slotsTotal,
+      slotsFilled,
+      formSlug:
+        sanitizePlainText(data.formSlug || 'kampus-elcisi', 80)
+          .toLowerCase()
+          .replace(/[^a-z0-9\-]+/g, '-')
+          .replace(/^-+|-+$/g, '') || 'kampus-elcisi',
       active: data.active !== false,
       updatedAt: new Date().toISOString(),
       updatedBy: request.auth.uid,
     };
-    if (!payload.name || !payload.university) {
-      throw new HttpsError('invalid-argument', 'Ad ve üniversite gerekli');
+    if (!payload.name) {
+      throw new HttpsError('invalid-argument', 'Elçilik / pozisyon adı gerekli');
+    }
+    if (!nationwide && (!payload.university || !city)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Şehir ve üniversite seçilmeli (veya Türkiye geneli)',
+      );
     }
     const existing = await ref.get();
-    if (!existing.exists) payload.createdAt = new Date().toISOString();
+    if (!existing.exists) {
+      payload.createdAt = new Date().toISOString();
+      payload.applicationCount = 0;
+    } else if (typeof data.applicationCount === 'number') {
+      payload.applicationCount = Math.max(0, data.applicationCount);
+    }
     await ref.set(payload, { merge: true });
-    return { ok: true, id: ref.id };
+
+    // Varsayılan başvuru formu yoksa oluştur
+    const slug = payload.formSlug;
+    const fq = await db
+      .collection('ambassador_forms')
+      .where('slug', '==', slug)
+      .limit(1)
+      .get();
+    if (fq.empty) {
+      await db.collection('ambassador_forms').add({
+        title: 'Kampüs Elçiliği Başvurusu',
+        slug,
+        active: true,
+        embassyId: null,
+        fields: [
+          { id: 'fullName', label: 'Ad Soyad', type: 'text', required: true },
+          { id: 'email', label: 'E-posta', type: 'email', required: true },
+          { id: 'phone', label: 'Telefon', type: 'tel', required: true },
+          {
+            id: 'motivation',
+            label: 'Neden kampüs elçisi olmak istiyorsun?',
+            type: 'textarea',
+            required: true,
+          },
+          {
+            id: 'experience',
+            label: 'Kulüp / etkinlik deneyimin',
+            type: 'textarea',
+            required: false,
+          },
+          { id: 'instagram', label: 'Instagram', type: 'text', required: false },
+        ],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        updatedBy: request.auth.uid,
+      });
+    }
+
+    return {
+      ok: true,
+      id: ref.id,
+      slotsOpen:
+        slotsTotal <= 0 ? null : Math.max(0, slotsTotal - slotsFilled),
+    };
+  },
+);
+
+/** Elçilik / açık pozisyon sil. */
+exports.adminDeleteEmbassy = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    await assertPlatformAdmin(request.auth?.uid);
+    const id = String(request.data?.id || '').trim();
+    if (!id) {
+      throw new HttpsError('invalid-argument', 'Pozisyon id gerekli');
+    }
+    const ref = db.collection('embassies').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      throw new HttpsError('not-found', 'Pozisyon bulunamadı');
+    }
+    await ref.delete();
+    return { ok: true, id };
+  },
+);
+
+/** Açık elçilik pozisyonları (landing elcilik.html). */
+exports.listAmbassadorPositionsPublic = onRequest(
+  { region: 'europe-west1', cors: true },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    try {
+      const landing = await readLandingConfig();
+      if (!landing.ambassadorPageEnabled) {
+        res.status(403).json({ ok: false, error: 'Elçilik sayfası kapalı' });
+        return;
+      }
+      const cityFilter = String(req.query.city || '')
+        .trim()
+        .toLowerCase();
+      const snap = await db
+        .collection('embassies')
+        .where('active', '==', true)
+        .limit(200)
+        .get();
+      const cities = new Set();
+      const positions = [];
+      for (const doc of snap.docs) {
+        const d = doc.data() || {};
+        const city = String(d.city || '').trim();
+        const nationwide = d.nationwide === true;
+        const slotsTotal = Math.max(0, parseInt(d.slotsTotal, 10) || 0);
+        const slotsFilled = Math.max(0, parseInt(d.slotsFilled, 10) || 0);
+        const slotsOpen =
+          slotsTotal <= 0 ? 0 : Math.max(0, slotsTotal - slotsFilled);
+        const applicationCount = Math.max(
+          0,
+          parseInt(d.applicationCount, 10) || 0,
+        );
+        if (city) cities.add(city);
+        if (nationwide) cities.add('Türkiye geneli');
+        if (cityFilter) {
+          const cf = cityFilter;
+          const match =
+            nationwide ||
+            city.toLowerCase() === cf ||
+            (cf === 'türkiye geneli' && nationwide) ||
+            (cf === 'turkiye geneli' && nationwide);
+          if (!match) continue;
+        }
+        positions.push({
+          id: doc.id,
+          name: d.name || '',
+          university: d.university || '',
+          city: nationwide ? 'Türkiye geneli' : city,
+          nationwide,
+          description: d.description || '',
+          slotsTotal,
+          slotsFilled,
+          slotsOpen,
+          applicationCount,
+          formSlug: d.formSlug || 'kampus-elcisi',
+          isOpen: slotsOpen > 0 || slotsTotal === 0,
+        });
+      }
+      positions.sort((a, b) => {
+        if (a.isOpen !== b.isOpen) return a.isOpen ? -1 : 1;
+        return String(a.city).localeCompare(String(b.city), 'tr');
+      });
+      const cityList = Array.from(cities).sort((a, b) =>
+        a.localeCompare(b, 'tr'),
+      );
+      res.status(200).json({
+        ok: true,
+        landing,
+        cities: cityList,
+        positions,
+        count: positions.length,
+      });
+    } catch (e) {
+      console.error('[listAmbassadorPositionsPublic]', e);
+      res.status(500).json({ ok: false, error: 'Pozisyonlar okunamadı' });
+    }
   },
 );
 
@@ -7727,6 +8324,25 @@ exports.submitAmbassadorApplication = onRequest(
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
       const formId = sanitizePlainText(body.formId || '', 80);
       const formSlug = sanitizePlainText(body.formSlug || '', 80) || 'kampus-elcisi';
+      const embassyId = sanitizePlainText(body.embassyId || '', 80);
+      let embassy = null;
+      if (embassyId) {
+        const embSnap = await db.collection('embassies').doc(embassyId).get();
+        if (!embSnap.exists || embSnap.data()?.active === false) {
+          res.status(400).json({ ok: false, error: 'Pozisyon bulunamadı veya kapalı' });
+          return;
+        }
+        embassy = { id: embSnap.id, ...(embSnap.data() || {}) };
+        const slotsTotal = Math.max(0, parseInt(embassy.slotsTotal, 10) || 0);
+        const slotsFilled = Math.max(0, parseInt(embassy.slotsFilled, 10) || 0);
+        if (slotsTotal > 0 && slotsFilled >= slotsTotal) {
+          res.status(409).json({
+            ok: false,
+            error: 'Bu pozisyonun kontenjanı doldu. Başka bir pozisyon seç.',
+          });
+          return;
+        }
+      }
       const defaultFields = [
         { id: 'fullName', label: 'Ad Soyad', type: 'text', required: true },
         { id: 'email', label: 'E-posta', type: 'email', required: true },
@@ -7798,12 +8414,31 @@ exports.submitAmbassadorApplication = onRequest(
         formId: formSnap && formSnap.exists ? formSnap.id : 'default',
         formSlug: form.slug || formSlug,
         formTitle: form.title || 'Kampüs Elçiliği Başvurusu',
-        embassyId: form.embassyId || null,
+        embassyId: embassyId || form.embassyId || null,
+        embassyName: embassy ? embassy.name || '' : null,
+        embassyCity: embassy
+          ? embassy.nationwide
+            ? 'Türkiye geneli'
+            : embassy.city || ''
+          : null,
+        embassyUniversity: embassy ? embassy.university || '' : null,
         name,
         email,
         phone: sanitizePlainText(answers.phone || body.phone || '', 40),
-        university: sanitizePlainText(answers.university || body.university || '', 160),
-        city: sanitizePlainText(answers.city || body.city || '', 80),
+        university: sanitizePlainText(
+          answers.university ||
+            body.university ||
+            (embassy && embassy.university) ||
+            '',
+          160,
+        ),
+        city: sanitizePlainText(
+          answers.city ||
+            body.city ||
+            (embassy && (embassy.nationwide ? 'Türkiye geneli' : embassy.city)) ||
+            '',
+          80,
+        ),
         answers,
         status: 'open',
         source: 'landing_elcilik',
@@ -7813,6 +8448,22 @@ exports.submitAmbassadorApplication = onRequest(
         kvkkAccepted: body.kvkkAccepted === true,
         disclaimerAccepted: body.disclaimerAccepted === true,
       });
+      if (embassyId) {
+        try {
+          await db
+            .collection('embassies')
+            .doc(embassyId)
+            .set(
+              {
+                applicationCount: FieldValue.increment(1),
+                updatedAt: now,
+              },
+              { merge: true },
+            );
+        } catch (e) {
+          console.warn('[submitAmbassador] count', e?.message || e);
+        }
+      }
       res.status(200).json({ ok: true, id: ref.id });
     } catch (e) {
       console.error('[submitAmbassadorApplication]', e);
@@ -7838,6 +8489,24 @@ exports.adminUpdateAmbassadorApplication = onCall(
       },
       { merge: true },
     );
+    // Onay → pozisyon kontenjanını doldur
+    if (status === 'approved') {
+      try {
+        const appSnap = await db.collection('ambassador_applications').doc(id).get();
+        const embId = String(appSnap.data()?.embassyId || '').trim();
+        if (embId) {
+          await db.collection('embassies').doc(embId).set(
+            {
+              slotsFilled: FieldValue.increment(1),
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true },
+          );
+        }
+      } catch (e) {
+        console.warn('[adminUpdateAmbassador] fill slot', e?.message || e);
+      }
+    }
     return { ok: true };
   },
 );

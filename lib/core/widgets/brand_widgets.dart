@@ -5,6 +5,61 @@ import '../constants/app_assets.dart';
 import '../theme/app_colors.dart';
 import 'app_circle_logo.dart';
 
+/// AYS markası — logo ortada, "bir AYS ürünüdür" ifadesi.
+class AysProductBadge extends StatelessWidget {
+  const AysProductBadge({
+    super.key,
+    this.logoSize = 26,
+    this.opacity = 0.62,
+    this.compact = false,
+  });
+
+  final double logoSize;
+  final double opacity;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: AppColors.textSecondary,
+          fontSize: compact ? 11 : 12,
+          letterSpacing: 0.15,
+        );
+    return Opacity(
+      opacity: opacity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppCircleLogo(
+            logo: AppLogo.ays,
+            size: logoSize,
+            showBorder: false,
+          ),
+          SizedBox(height: compact ? 5 : 7),
+          Text.rich(
+            TextSpan(
+              style: base,
+              children: [
+                const TextSpan(text: 'bir '),
+                TextSpan(
+                  text: 'AYS',
+                  style: base?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.navy,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const TextSpan(text: ' ürünüdür'),
+              ],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class BrandHeader extends StatelessWidget {
   const BrandHeader({
     super.key,
@@ -42,26 +97,9 @@ class BrandHeader extends StatelessWidget {
         ).animate().fadeIn(delay: 180.ms),
         if (showAys) ...[
           const SizedBox(height: 14),
-          Opacity(
-            opacity: 0.55,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Altyapı',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                ),
-                const SizedBox(width: 6),
-                const AppCircleLogo(
-                  logo: AppLogo.ays,
-                  size: 20,
-                  showBorder: false,
-                ),
-              ],
-            ),
-          ).animate().fadeIn(delay: 280.ms),
+          AysProductBadge(compact: compact, logoSize: 22)
+              .animate()
+              .fadeIn(delay: 280.ms),
         ],
       ],
     );

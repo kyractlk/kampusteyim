@@ -93,23 +93,41 @@ class EngagementSignals {
 class CampusAffinity {
   CampusAffinity._();
 
-  static String _norm(String? raw) =>
-      (raw ?? '').trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  /// Türkçe İ/I/ı/i güvenli katlama — şehir/üni filtreleri için.
+  static String fold(String? raw) {
+    if (raw == null) return '';
+    var s = raw.trim();
+    if (s.isEmpty) return '';
+    s = s
+        .replaceAll('İ', 'i')
+        .replaceAll('I', 'ı')
+        .replaceAll('Ş', 'ş')
+        .replaceAll('Ğ', 'ğ')
+        .replaceAll('Ü', 'ü')
+        .replaceAll('Ö', 'ö')
+        .replaceAll('Ç', 'ç');
+    s = s.toLowerCase();
+    // NFC bozulması: "i̇" (i + combining dot) → "i"
+    s = s.replaceAll('i\u0307', 'i');
+    return s.replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  /// İki metin (şehir / üniversite adı) eşleşiyor mu?
+  static bool sameLabel(String? a, String? b) {
+    final na = fold(a);
+    final nb = fold(b);
+    if (na.isEmpty || nb.isEmpty) return false;
+    return na == nb;
+  }
 
   static bool sameUniversity(AppUser? a, AppUser? b) {
     if (a == null || b == null) return false;
-    final ua = _norm(a.university);
-    final ub = _norm(b.university);
-    if (ua.isEmpty || ub.isEmpty) return false;
-    return ua == ub;
+    return sameLabel(a.university, b.university);
   }
 
   static bool sameCity(AppUser? a, AppUser? b) {
     if (a == null || b == null) return false;
-    final ca = _norm(a.city);
-    final cb = _norm(b.city);
-    if (ca.isEmpty || cb.isEmpty) return false;
-    return ca == cb;
+    return sameLabel(a.city, b.city);
   }
 
   /// Aynı topluluk / firma rozeti veya bağlı kurum.
@@ -150,13 +168,21 @@ class CampusAffinity {
     required AuthProvider auth,
     EngagementSignals signals = EngagementSignals.empty,
   }) {
+    final sameUni = sameUniversity(viewer, candidate);
+    if (candidate.isCampusAmbassador && sameUni) {
+      return 'Kampüsün elçisi';
+    }
+    if (candidate.isCommunity && sameUni) return 'Üniversite topluluğu';
     if (isFriendOfFriend(viewer: viewer, candidate: candidate, auth: auth)) {
       return 'Takip ettiklerinin takip ettiği';
     }
     if (signals.authorBoost(candidate, auth) > 0) {
       return 'Beğendiğin içeriklerden';
     }
-    if (sameUniversity(viewer, candidate)) return 'Aynı üniversite';
+    if (sameUni) return 'Aynı üniversite';
+    if (candidate.isCampusAmbassador && sameCity(viewer, candidate)) {
+      return 'Şehrindeki kampüs elçisi';
+    }
     if (sameCity(viewer, candidate)) return 'Aynı şehir';
     if (sameOrgBadge(viewer, candidate)) return 'Ortak rozet';
     if (candidate.followers.length >= 25) return 'Popüler hesap';
@@ -175,21 +201,49 @@ class CampusAffinity {
     Iterable<String> candidateTags = const [],
   }) {
     var s = 0.0;
+    final sameUni = sameUniversity(viewer, candidate);
+    final sameTown = sameCity(viewer, candidate);
+
     if (isFriendOfFriend(viewer: viewer, candidate: candidate, auth: auth)) {
-      s += 3.4;
+      s += 3.2;
     }
-    if (sameUniversity(viewer, candidate)) s += 3.0;
-    if (sameCity(viewer, candidate)) s += 1.4;
-    if (sameOrgBadge(viewer, candidate)) s += 1.7;
+    // Aynı üni / şehir — ana sinyal
+    if (sameUni) s += 5.2;
+    if (sameTown) s += 2.2;
+    if (sameOrgBadge(viewer, candidate)) s += 1.8;
+
+    // Kampüs elçisi: kendi kampüsünde çok önde
+    if (candidate.isCampusAmbassador) {
+      if (sameUni) {
+        s += 5.5;
+      } else if (sameTown) {
+        s += 2.4;
+      } else {
+        s += 0.55;
+      }
+    }
+
+    // Kulüp / topluluk hesabı: aynı üni öğrencilerine
+    if (candidate.isCommunity) {
+      if (sameUni) {
+        s += 4.2;
+      } else if (sameTown) {
+        s += 1.6;
+      } else {
+        s += 0.35;
+      }
+    }
+
+    // Firma: aynı şehir etkinlik/ilan görünürlüğü
+    if (candidate.isCompany && sameTown) s += 1.8;
+
     s += signals.authorBoost(candidate, auth);
     s += signals.tagsBoost(candidateTags);
-    if (candidate.showGoldBadge) s += 0.7;
-    if (candidate.showBlueBadge) s += 0.5;
-    if (candidate.isCommunity) s += 0.45;
-    if (candidate.isCampusAmbassador) s += 0.4;
-    // Takipçi popülerliği
+    if (candidate.showGoldBadge) s += 0.55;
+    if (candidate.showBlueBadge) s += 0.4;
+    // Takipçi popülerliği (hafif)
     final fol = candidate.followers.length.clamp(0, 200);
-    s += (fol / 200.0) * 1.5;
+    s += (fol / 200.0) * 1.1;
     return s;
   }
 
@@ -205,6 +259,8 @@ class CampusAffinity {
     bool friendOfFriend = false,
     List<String> hashtags = const [],
     EngagementSignals signals = EngagementSignals.empty,
+    String? postCity,
+    String? postUniversity,
   }) {
     final ageHours =
         DateTime.now().difference(createdAt).inMinutes.clamp(0, 72 * 60) / 60.0;
@@ -213,24 +269,51 @@ class CampusAffinity {
         (likeCount * 1.0 + replyCount * 2.2 + repostCount * 3.0).clamp(0, 400);
     final engNorm = engagement / (40 + engagement);
 
+    final sameUni = sameUniversity(viewer, author) ||
+        (viewer != null && sameLabel(viewer.university, postUniversity));
+    final sameTown = sameCity(viewer, author) ||
+        (viewer != null && sameLabel(viewer.city, postCity));
+
     var campus = 0.0;
-    if (sameUniversity(viewer, author)) campus += 0.50;
+    if (sameUni) campus += 0.72;
+    if (sameTown) campus += 0.22;
     if (followingAuthor) {
-      campus += 0.30;
+      campus += 0.26;
     } else if (friendOfFriend) {
-      campus += 0.18;
+      campus += 0.14;
     }
-    if (sameOrgBadge(viewer, author)) campus += 0.10;
-    if (sameCity(viewer, author)) campus += 0.06;
+    if (sameOrgBadge(viewer, author)) campus += 0.12;
+
+    // Kampüs elçisi postları — o kampüsteki öğrencilere
+    if (author?.isCampusAmbassador == true) {
+      if (sameUni) {
+        campus += 0.58;
+      } else if (sameTown) {
+        campus += 0.28;
+      } else {
+        campus += 0.06;
+      }
+    }
+
     if (author?.showGoldBadge == true || author?.showBlueBadge == true) {
-      campus += 0.10;
+      campus += 0.08;
     }
-    if (author?.isCommunity == true || author?.isCompany == true) {
-      campus += 0.06;
+    // Kulüp / firma: aynı üni veya şehir
+    if (author?.isCommunity == true) {
+      if (sameUni) {
+        campus += 0.42;
+      } else if (sameTown) {
+        campus += 0.16;
+      } else {
+        campus += 0.04;
+      }
     }
+    if (author?.isCompany == true && sameTown) campus += 0.18;
+
     final tagBoost = signals.tagsBoost(hashtags) / 8.0;
 
-    return recency * 0.36 + engNorm * 0.24 + campus * 0.34 + tagBoost * 0.06;
+    // Kampüs sinyali daha baskın (özellikle "Tümü" akışında)
+    return recency * 0.28 + engNorm * 0.18 + campus * 0.48 + tagBoost * 0.06;
   }
 
   /// Reels skoru.
@@ -252,25 +335,36 @@ class CampusAffinity {
     final engagement = (likeCount * 1.2 + commentCount * 2.4).clamp(0, 500);
     final engNorm = engagement / (30 + engagement);
 
+    final sameUni = sameUniversity(viewer, author);
+    final sameTown = sameCity(viewer, author);
+
     var campus = 0.0;
-    if (sameUniversity(viewer, author)) campus += 0.48;
+    if (sameUni) campus += 0.70;
+    if (sameTown) campus += 0.20;
     if (followingAuthor) {
-      campus += 0.26;
+      campus += 0.22;
     } else if (friendOfFriend) {
-      campus += 0.16;
+      campus += 0.12;
     }
     if (sameOrgBadge(viewer, author)) campus += 0.10;
-    if (sameCity(viewer, author)) campus += 0.06;
-    if (unseen) campus += 0.16;
+    if (author?.isCampusAmbassador == true) {
+      if (sameUni) {
+        campus += 0.55;
+      } else if (sameTown) {
+        campus += 0.24;
+      }
+    }
+    if (author?.isCommunity == true && sameUni) campus += 0.36;
+    if (unseen) campus += 0.14;
 
     final tags = [...hashtags];
     final lower = tags.map((e) => e.toLowerCase()).toSet();
     if (lower.contains('reels') || lower.contains('reel')) {
-      campus += 0.12;
+      campus += 0.10;
     }
     final tagBoost = signals.tagsBoost(tags) / 7.0;
 
-    return recency * 0.28 + engNorm * 0.22 + campus * 0.42 + tagBoost * 0.08;
+    return recency * 0.24 + engNorm * 0.18 + campus * 0.50 + tagBoost * 0.08;
   }
 }
 
@@ -345,7 +439,7 @@ class PeopleSuggestions {
         signals: signals,
         candidateTags: tags,
       );
-      if (score < 0.45) continue;
+      if (score < 0.35) continue;
       scored.add(
         SuggestedPerson(
           user: u,

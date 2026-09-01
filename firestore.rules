@@ -142,7 +142,10 @@ service cloud.firestore {
 
     match /handles/{handle} {
       allow read: if true;
-      allow create, update, delete: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if signedIn()
+        && resource.data.uid == request.auth.uid;
     }
 
     match /moderation_actions/{id} {

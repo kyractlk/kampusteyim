@@ -1,17 +1,10 @@
-import 'package:firebase_auth/firebase_auth.dart' as fa;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:uuid/uuid.dart';
 
-import '../../core/icons/brand_svgs.dart';
-import '../../core/storage/media_upload.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_gate.dart';
 import '../auth/data/auth_provider.dart';
-import '../plus/plus_gate.dart';
-import '../plus/plus_provider.dart';
-import 'cv_models.dart';
+import 'cv_ai_widgets.dart';
 import 'cv_provider.dart';
 
 class CvAiScreen extends StatefulWidget {
@@ -21,27 +14,21 @@ class CvAiScreen extends StatefulWidget {
   State<CvAiScreen> createState() => _CvAiScreenState();
 }
 
-class _CvAiScreenState extends State<CvAiScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs;
+class _CvAiScreenState extends State<CvAiScreen> {
   late final CvProvider _cv;
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
     _cv = CvProvider();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
-      if (auth.isAuthenticated) {
-        _cv.bootstrap(auth);
-      }
+      if (auth.isAuthenticated) _cv.bootstrap(auth);
     });
   }
 
   @override
   void dispose() {
-    _tabs.dispose();
     _cv.dispose();
     super.dispose();
   }
@@ -66,687 +53,441 @@ class _CvAiScreenState extends State<CvAiScreen>
 
     return ChangeNotifierProvider.value(
       value: _cv,
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(
-          backgroundColor: AppColors.surface,
-          title: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListenableBuilder(
+        listenable: _cv,
+        builder: (context, _) {
+          if (!_cv.bootstrapped) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('CV-AI')),
+              body: const Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (_cv.hasExistingCv) {
+            return _CvHubScreen(cv: _cv);
+          }
+          return _CvWizardScreen(cv: _cv);
+        },
+      ),
+    );
+  }
+}
+
+/// İlk kurulum — adım adım sihirbaz.
+class _CvWizardScreen extends StatefulWidget {
+  const _CvWizardScreen({required this.cv});
+  final CvProvider cv;
+
+  @override
+  State<_CvWizardScreen> createState() => _CvWizardScreenState();
+}
+
+class _CvWizardScreenState extends State<_CvWizardScreen> {
+  final _page = PageController();
+  int _step = 0;
+
+  List<CvSection> get _steps => CvSection.wizardSteps;
+
+  @override
+  void dispose() {
+    _page.dispose();
+    super.dispose();
+  }
+
+  Future<void> _next() async {
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+    if (user == null) return;
+
+    if (_steps[_step] == CvSection.photo && widget.cv.cvPhotoUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('CV fotoğrafı yükleyin (bir kez yeterli).')),
+      );
+      return;
+    }
+
+    if (_step < _steps.length - 1) {
+      await widget.cv.saveQuiet(user.id);
+      setState(() => _step++);
+      await _page.nextPage(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
+
+    // Son adım: PDF zorunlu değil — kaydet ve hub'a geç
+    final ok = await widget.cv.saveQuiet(user.id, markComplete: true);
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'CV kaydedildi. PDF’i istediğin zaman aşağıdan oluşturabilirsin.',
+          ),
+        ),
+      );
+    } else if (widget.cv.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(widget.cv.error!)),
+      );
+    }
+  }
+
+  void _back() {
+    if (_step == 0) {
+      Navigator.maybePop(context);
+      return;
+    }
+    setState(() => _step--);
+    _page.previousPage(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final section = _steps[_step];
+    final isExport = section == CvSection.export;
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.surface,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _back,
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Adım ${_step + 1}/${_steps.length}',
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            Text(
+              section.title,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+            ),
+          ],
+        ),
+      ),
+      body: Column(
+        children: [
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: CvStepDots(current: _step, total: _steps.length),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              section.subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: PageView.builder(
+              controller: _page,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _steps.length,
+              itemBuilder: (_, i) {
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+                  children: [
+                    CvSectionBody(section: _steps[i], cv: widget.cv),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: Row(
             children: [
-              Text('CV-AI', style: TextStyle(fontWeight: FontWeight.w800)),
-              Text(
-                'ATS özgeçmiş · motivasyon · foto yükle',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w500,
+              if (_step > 0)
+                TextButton(onPressed: _back, child: const Text('Geri')),
+              const Spacer(),
+              FilledButton(
+                onPressed: widget.cv.busy ? null : _next,
+                child: Text(
+                  isExport ? 'Kaydet ve bitir' : 'Devam',
                 ),
               ),
             ],
           ),
-          bottom: TabBar(
-            controller: _tabs,
-            tabs: const [
-              Tab(text: 'Profil'),
-              Tab(text: 'Deneyim'),
-              Tab(text: 'Üret / İndir'),
-            ],
-          ),
-          actions: [
-            IconButton(
-              tooltip: 'Kaydet',
-              onPressed: () async {
-                await _cv.saveRemote(auth.user!.id);
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(_cv.status ?? 'Kaydedildi')),
-                );
-              },
-              icon: const Icon(Icons.save_outlined),
-            ),
-          ],
-        ),
-        body: TabBarView(
-          controller: _tabs,
-          children: [
-            _PersonalTab(cv: _cv),
-            _CareerTab(cv: _cv),
-            _GenerateTab(cv: _cv),
-          ],
         ),
       ),
     );
   }
 }
 
-class _PersonalTab extends StatelessWidget {
-  const _PersonalTab({required this.cv});
+/// CV oluşturulmuş — hub ekranı.
+class _CvHubScreen extends StatelessWidget {
+  const _CvHubScreen({required this.cv});
   final CvProvider cv;
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final p = cv.data.personalInfo;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceMuted,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Kişisel bilgiler platform profilinden otomatik dolar.',
-                style: TextStyle(fontWeight: FontWeight.w700),
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.surface,
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('CV-AI', style: TextStyle(fontWeight: FontWeight.w800)),
+            Text(
+              'Özgeçmişiniz hazır',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
               ),
-              const SizedBox(height: 4),
-              const Text(
-                'Ad, e-posta, telefon, öğrenci no ve şehir CV’ye tekrar yazılmaz.',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
+            ),
+          ],
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        children: [
+          _HubHero(cv: cv),
+          const SizedBox(height: 20),
+          const Text(
+            'Ne güncellemek istiyorsunuz?',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Bir bölüm seçin, düzenleyin ve kaydedin. PDF yalnızca indirirken sorulur.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 14),
+          ...CvSection.hubSections.map(
+            (s) => _HubSectionTile(
+              section: s,
+              cv: cv,
+              onTap: () => _openSection(context, s),
+            ),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            onPressed: () => showCvExportSheet(context, cv),
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('Yeni PDF oluştur & indir'),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            auth.user?.email.isNotEmpty == true
+                ? 'PDF, ${auth.user!.email} adresine de ek olarak gönderilir.'
+                : 'PDF oluşturulunca kayıtlı e-postanıza da gönderilir.',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          if (cv.exports.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Text(
+              'Son indirmeler',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            ...cv.exports.take(5).map(
+              (e) => Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: const Icon(Icons.picture_as_pdf_outlined),
+                  title: Text(e.languageName),
+                  subtitle: Text(_fmtDate(e.createdAt)),
+                  trailing: IconButton(
+                    tooltip: 'Tekrar indir',
+                    icon: const Icon(Icons.download_outlined),
+                    onPressed: () => cv.redownload(e),
+                  ),
                 ),
               ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: auth.user == null
-                    ? null
-                    : () => cv.refreshFromProfile(auth),
-                icon: const Icon(Icons.sync, size: 18),
-                label: const Text('Profilden yenile'),
-              ),
-            ],
+            ),
+          ],
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: auth.user == null
+                ? null
+                : () async {
+                    await cv.refreshFromProfile(auth);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Profil bilgileri güncellendi')),
+                      );
+                    }
+                  },
+            icon: const Icon(Icons.sync, size: 18),
+            label: const Text('Profil bilgilerini yenile'),
           ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtDate(String raw) {
+    if (raw.isEmpty) return '';
+    final d = DateTime.tryParse(raw);
+    if (d == null) return raw;
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+  }
+
+  void _openSection(BuildContext context, CvSection section) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChangeNotifierProvider.value(
+          value: cv,
+          child: _CvSectionEditScreen(section: section),
         ),
-        const SizedBox(height: 16),
-        Center(
-          child: Column(
-            children: [
-              Stack(
-                alignment: Alignment.bottomRight,
-                children: [
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.surfaceMuted,
-                      border: Border.all(color: AppColors.border, width: 2),
+      ),
+    );
+  }
+}
+
+class _HubPhoto extends StatelessWidget {
+  const _HubPhoto({required this.cv});
+  final CvProvider cv;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = cv.cvPhotoUrl;
+    final name = cv.data.personalInfo.name;
+
+    return Column(
+      children: [
+        Stack(
+          alignment: Alignment.bottomRight,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white30, width: 2),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: url.isNotEmpty
+                  ? Image.network(url, fit: BoxFit.cover)
+                  : const ColoredBox(
+                      color: Colors.white12,
+                      child: Icon(Icons.person, color: Colors.white70, size: 40),
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: p.photoUrl.trim().isNotEmpty
-                        ? Image.network(
-                            p.photoUrl.trim(),
-                            fit: BoxFit.cover,
-                            width: 96,
-                            height: 96,
-                            alignment: Alignment.center,
-                            errorBuilder: (_, _, _) => const Icon(
-                              Icons.person,
-                              size: 44,
-                              color: AppColors.textSecondary,
-                            ),
-                          )
-                        : const Icon(
-                            Icons.person,
-                            size: 44,
-                            color: AppColors.textSecondary,
-                          ),
-                  ),
-                  Material(
-                    color: AppColors.navy,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: () async {
-                        final user = auth.user;
-                        if (user == null) return;
-                        try {
-                          final file = await MediaUpload.pickImage();
-                          if (file == null) return;
-                          final authUid =
-                              fa.FirebaseAuth.instance.currentUser?.uid ??
-                                  user.id;
-                          final url = await MediaUpload.uploadXFile(
-                            file: file,
-                            folder: 'cv/$authUid',
-                            firstName: user.firstName,
-                            lastName: user.lastName,
-                            studentNo: user.studentNo,
-                            isVideo: false,
-                          );
-                          p.photoUrl = url;
-                          cv.touch();
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('$e')),
-                            );
-                          }
-                        }
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Icon(Icons.photo_camera,
-                            color: Colors.white, size: 18),
+            ),
+            Material(
+              color: AppColors.lime,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ChangeNotifierProvider.value(
+                        value: cv,
+                        child: const _CvSectionEditScreen(section: CvSection.photo),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                p.name.isEmpty ? 'Ad Soyad' : p.name,
-                style:
-                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
-              ),
-              Text(
-                [p.email, p.phone, p.studentNo, p.address]
-                    .where((e) => e.trim().isNotEmpty)
-                    .join(' · '),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
+                  );
+                },
+                child: const Padding(
+                  padding: EdgeInsets.all(7),
+                  child: Icon(Icons.edit, color: AppColors.navy, size: 14),
                 ),
               ),
-              const SizedBox(height: 4),
-              const Text(
-                'CV fotoğrafı placeholder’a sığacak şekilde kırpılır. Profilden yenile ile profil foto da gelir.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-              ),
-            ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          name.isEmpty ? 'Öğrenci' : name,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            fontSize: 17,
           ),
-        ),
-        const SizedBox(height: 16),
-        _field('Ünvan / Headline', p.headline, (v) => p.headline = v, cv),
-        _field('Bölüm', p.department, (v) => p.department = v, cv),
-        _field('Sınıf', p.classYear, (v) => p.classYear = v, cv),
-        _field('LinkedIn', p.linkedin, (v) => p.linkedin = v, cv,
-            brandSvg: BrandSvgs.linkedin, linkKind: 'linkedin'),
-        _field('GitHub', p.github, (v) => p.github = v, cv,
-            brandSvg: BrandSvgs.github, linkKind: 'github'),
-        _field('Website', p.website, (v) => p.website = v, cv,
-            brandSvg: BrandSvgs.website, linkKind: 'website'),
-        _field('Hakkımda / Özet', p.about, (v) => p.about = v, cv, maxLines: 5),
-        _field(
-          'Motivasyon mektubu',
-          p.motivationLetter,
-          (v) => p.motivationLetter = v,
-          cv,
-          maxLines: 7,
-        ),
-        const Text(
-          'Motivasyon mektubu firmalara başvurunda görünür; ATS PDF’te özetin altında yer alır.',
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ],
     );
   }
 }
 
-class _CareerTab extends StatelessWidget {
-  const _CareerTab({required this.cv});
+class _HubHero extends StatelessWidget {
+  const _HubHero({required this.cv});
   final CvProvider cv;
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: cv,
-      builder: (context, _) {
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceMuted,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Hızlı yol: Üret sekmesindeki serbest nota yapıştır.',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'AI yapılandırır ve seçilen dile çevirir. Aşağıdaki kartlar isteğe bağlı detay içindir.',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            _SectionHeader(
-              title: 'Eğitim',
-              onAdd: () {
-                cv.data.education.add(CvEducation(id: const Uuid().v4()));
-                cv.touch();
-              },
-            ),
-            ...cv.data.education.map(
-              (e) => _ExpandCard(
-                title: e.school.isEmpty ? 'Okul' : e.school,
-                subtitle: [
-                  e.degree,
-                  e.field,
-                ].where((s) => s.trim().isNotEmpty).join(' · '),
-                onDelete: () {
-                  cv.data.education.remove(e);
-                  cv.touch();
-                },
-                children: [
-                  _field('Okul', e.school, (v) => e.school = v, cv),
-                  _field('Derece', e.degree, (v) => e.degree = v, cv),
-                  _field('Alan', e.field, (v) => e.field = v, cv),
-                  _field('Başlangıç', e.startDate, (v) => e.startDate = v, cv),
-                  _field('Bitiş', e.endDate, (v) => e.endDate = v, cv),
-                  _field('GPA', e.gpa, (v) => e.gpa = v, cv),
-                  _field('Açıklama', e.description, (v) => e.description = v, cv,
-                      maxLines: 3),
-                ],
-              ),
-            ),
-            _SectionHeader(
-              title: 'İş Deneyimi',
-              onAdd: () {
-                cv.data.experiences.add(CvExperience(id: const Uuid().v4()));
-                cv.touch();
-              },
-            ),
-            ...cv.data.experiences.map(
-              (e) => _ExpandCard(
-                title: e.company.isEmpty ? 'Şirket' : e.company,
-                subtitle: e.position,
-                onDelete: () {
-                  cv.data.experiences.remove(e);
-                  cv.touch();
-                },
-                children: [
-                  _field('Şirket', e.company, (v) => e.company = v, cv),
-                  _field('Pozisyon', e.position, (v) => e.position = v, cv),
-                  _field('Başlangıç', e.startDate, (v) => e.startDate = v, cv),
-                  _field('Bitiş', e.endDate, (v) => e.endDate = v, cv),
-                  _field('Açıklama', e.description, (v) => e.description = v, cv,
-                      maxLines: 4),
-                ],
-              ),
-            ),
-            _SectionHeader(
-              title: 'Projeler',
-              onAdd: () {
-                cv.data.projects.add(CvProject(id: const Uuid().v4()));
-                cv.touch();
-              },
-            ),
-            ...cv.data.projects.map(
-              (e) => _ExpandCard(
-                title: e.name.isEmpty ? 'Proje' : e.name,
-                subtitle: e.technologies,
-                onDelete: () {
-                  cv.data.projects.remove(e);
-                  cv.touch();
-                },
-                children: [
-                  _field('Ad', e.name, (v) => e.name = v, cv),
-                  _field(
-                      'Teknolojiler', e.technologies, (v) => e.technologies = v, cv),
-                  _field('Link', e.link, (v) => e.link = v, cv),
-                  _field('Açıklama', e.description, (v) => e.description = v, cv,
-                      maxLines: 3),
-                ],
-              ),
-            ),
-            _SectionHeader(
-              title: 'Beceriler',
-              onAdd: () {
-                cv.data.skills.add(CvSkill(id: const Uuid().v4()));
-                cv.touch();
-              },
-            ),
-            ...cv.data.skills.map(
-              (e) => _ExpandCard(
-                title: e.name.isEmpty ? 'Beceri' : e.name,
-                subtitle: e.level,
-                initiallyExpanded: false,
-                onDelete: () {
-                  cv.data.skills.remove(e);
-                  cv.touch();
-                },
-                children: [
-                  _field('Beceri', e.name, (v) => e.name = v, cv),
-                  _field('Seviye', e.level, (v) => e.level = v, cv),
-                ],
-              ),
-            ),
-            _SectionHeader(
-              title: 'Diller',
-              onAdd: () {
-                cv.data.languages.add(CvLanguage(id: const Uuid().v4()));
-                cv.touch();
-              },
-            ),
-            ...cv.data.languages.map(
-              (e) => _ExpandCard(
-                title: e.language.isEmpty ? 'Dil' : e.language,
-                subtitle: e.level,
-                initiallyExpanded: false,
-                onDelete: () {
-                  cv.data.languages.remove(e);
-                  cv.touch();
-                },
-                children: [
-                  _field('Dil', e.language, (v) => e.language = v, cv),
-                  _field('Seviye (CEFR)', e.level, (v) => e.level = v, cv),
-                ],
-              ),
-            ),
-            const SizedBox(height: 40),
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.navy.withValues(alpha: 0.92),
+            AppColors.navy,
           ],
-        );
-      },
-    );
-  }
-}
-
-class _GenerateTab extends StatelessWidget {
-  const _GenerateTab({required this.cv});
-  final CvProvider cv;
-
-  @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    return ListenableBuilder(
-      listenable: cv,
-      builder: (context, _) {
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            const Text(
-              'Serbest not yaz veya yapıştır → dil seç → canlı AI yapılandırır, '
-              'seçilen dilin imla kurallarıyla tam çeviri yapar → PDF indir.',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: cv.data.rawNotes,
-              maxLines: 8,
-              decoration: const InputDecoration(
-                labelText: 'Hızlı not / yapıştır',
-                alignLabelWithHint: true,
-                hintText:
-                    'Örn: Gaziantep Üni Bilgisayar Müh 3. sınıf. Flutter stajı AYS Tech’te… '
-                    'Projeler: … Beceriler: … İngilizce B2…',
-                prefixIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 120),
-                  child: Icon(Icons.notes_outlined),
-                ),
-              ),
-              onChanged: cv.setRawNotes,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Kaynak dil önemli değil — çıktı her zaman seçilen ATS dilinde olur '
-              '(sadece başlıklar değil, tüm metinler).',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<CvLanguageOption>(
-              // ignore: deprecated_member_use
-              value: cv.selectedLanguage,
-              decoration: InputDecoration(
-                labelText: 'ATS çıktı dili (resmi çeviri)',
-                prefixIcon: const Icon(Icons.translate),
-                helperText: (() {
-                  final plus = context.watch<PlusProvider>();
-                  final user = auth.user;
-                  final allLangs = user != null &&
-                      user.isPlusActive &&
-                      plus.config.features.cvAllLanguages;
-                  return allLangs
-                      ? 'Plus: tüm ATS dilleri açık'
-                      : 'Ücretsiz: Türkçe / English — diğerleri Plus';
-                })(),
-              ),
-              items: (() {
-                final plus = context.read<PlusProvider>();
-                final user = auth.user;
-                final allLangs = user != null &&
-                    user.isPlusActive &&
-                    plus.config.features.cvAllLanguages;
-                final list = allLangs
-                    ? kCvWorldLanguages
-                    : kCvWorldLanguages
-                        .where((l) => l.code == 'tr' || l.code == 'en')
-                        .toList();
-                // Seçili dil listede yoksa (eski Plus seçimi) yine göster
-                if (!list.any((l) => l.code == cv.selectedLanguage.code)) {
-                  return [
-                    ...list,
-                    cv.selectedLanguage,
-                  ]
-                      .map(
-                        (l) => DropdownMenuItem(
-                          value: l,
-                          child: Text('${l.name} (${l.code})'),
-                        ),
-                      )
-                      .toList();
-                }
-                return list
-                    .map(
-                      (l) => DropdownMenuItem(
-                        value: l,
-                        child: Text('${l.name} (${l.code})'),
-                      ),
-                    )
-                    .toList();
-              })(),
-              onChanged: (v) async {
-                if (v == null) return;
-                final plus = context.read<PlusProvider>();
-                final user = auth.user;
-                final allLangs = user != null &&
-                    user.isPlusActive &&
-                    plus.config.features.cvAllLanguages;
-                if (!allLangs && v.code != 'tr' && v.code != 'en') {
-                  await requirePlus(context, featureLabel: 'Tüm CV dilleri');
-                  return;
-                }
-                cv.setLanguage(v);
-              },
-            ),
-            const SizedBox(height: 12),
-            Builder(
-              builder: (context) {
-                final plus = context.watch<PlusProvider>();
-                final user = auth.user;
-                final themeOk = user != null &&
-                    user.isPlusActive &&
-                    plus.config.features.cvTheme;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          'CV tema rengi',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                        if (!themeOk) ...[
-                          const SizedBox(width: 8),
-                          TextButton(
-                            onPressed: () => requirePlus(
-                              context,
-                              featureLabel: 'CV tema rengi',
-                            ),
-                            child: const Text('Plus'),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      themeOk
-                          ? 'Seçilen renk ATS PDF’e ve AI export kaydına işlenir.'
-                          : 'Varsayılan teal · Plus ile kurumsal kartela açılır.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: kCvThemePalette.map((swatch) {
-                        final c = swatch.argb;
-                        final selected = cv.accentArgb == c;
-                        return Tooltip(
-                          message: swatch.label,
-                          child: InkWell(
-                            onTap: () async {
-                              if (!themeOk) {
-                                await requirePlus(
-                                  context,
-                                  featureLabel: 'CV tema rengi',
-                                );
-                                return;
-                              }
-                              await cv.setAccentArgb(c);
-                            },
-                            borderRadius: BorderRadius.circular(20),
-                            child: Opacity(
-                              opacity: themeOk ? 1 : 0.45,
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: Color(c),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: selected
-                                        ? AppColors.navy
-                                        : Colors.black26,
-                                    width: selected ? 2.5 : 1,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: cv.busy
-                  ? null
-                  : () async {
-                      final ok = await cv.generateAts(auth: auth);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            ok
-                                ? (cv.status ?? 'Tamam')
-                                : (cv.error ?? 'Hata'),
-                          ),
-                        ),
-                      );
-                    },
-              icon: cv.busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.auto_awesome),
-              label: Text(
-                cv.busy
-                    ? 'Canlı AI çalışıyor…'
-                    : 'Canlı AI · ATS CV Oluştur & İndir',
-              ),
-            ),
-            if (cv.status != null) ...[
-              const SizedBox(height: 8),
-              Text(cv.status!, style: const TextStyle(color: AppColors.cyan)),
-            ],
-            if (cv.error != null) ...[
-              const SizedBox(height: 4),
-              Text(cv.error!, style: const TextStyle(color: AppColors.crimson)),
-            ],
-            const SizedBox(height: 24),
-            Text(
-              'Önceki CV\'lerim',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            if (cv.exports.isEmpty)
-              const Text('Henüz dışa aktarım yok.')
-            else
-              ...cv.exports.map(
-                (e) => Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.picture_as_pdf_outlined),
-                    title: Text(e.languageName),
-                    subtitle: Text(e.createdAt),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.download_rounded),
-                      onPressed: () => cv.redownload(e),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title, required this.onAdd});
-  final String title;
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.navy.withValues(alpha: 0.2),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
-          const Spacer(),
-          TextButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add),
-            label: const Text('Ekle'),
+        ],
+      ),
+      child: Column(
+        children: [
+          _HubPhoto(cv: cv),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.lime.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle, color: AppColors.lime, size: 16),
+                SizedBox(width: 6),
+                Text(
+                  'CV\'niz hazır',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            cv.data.personalInfo.headline.trim().isEmpty
+                ? 'Bölümlerden birini seçerek güncelleyin'
+                : cv.data.personalInfo.headline,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 13,
+            ),
           ),
         ],
       ),
@@ -754,111 +495,182 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _ExpandCard extends StatelessWidget {
-  const _ExpandCard({
-    required this.title,
-    required this.children,
-    required this.onDelete,
-    this.subtitle = '',
-    this.initiallyExpanded = true,
+class _HubSectionTile extends StatelessWidget {
+  const _HubSectionTile({
+    required this.section,
+    required this.cv,
+    required this.onTap,
   });
 
-  final String title;
-  final String subtitle;
-  final List<Widget> children;
-  final VoidCallback onDelete;
-  final bool initiallyExpanded;
+  final CvSection section;
+  final CvProvider cv;
+  final VoidCallback onTap;
+
+  String get _badge {
+    return switch (section) {
+      CvSection.photo => cv.cvPhotoUrl.isNotEmpty ? '✓' : '!',
+      CvSection.profile => cv.data.personalInfo.about.trim().length >= 30 ? '✓' : '·',
+      CvSection.links => [
+            cv.data.personalInfo.linkedin,
+            cv.data.personalInfo.github,
+            cv.data.personalInfo.website,
+          ].any((e) => e.trim().isNotEmpty)
+          ? '✓'
+          : '·',
+      CvSection.education => cv.data.education.isNotEmpty ? '${cv.data.education.length}' : '·',
+      CvSection.experience =>
+        cv.data.experiences.isNotEmpty ? '${cv.data.experiences.length}' : '·',
+      CvSection.projects => cv.data.projects.isNotEmpty ? '${cv.data.projects.length}' : '·',
+      CvSection.skills => cv.data.skills.isNotEmpty ? '${cv.data.skills.length}' : '·',
+      CvSection.languages =>
+        cv.data.languages.isNotEmpty ? '${cv.data.languages.length}' : '·',
+      CvSection.motivation =>
+        cv.data.personalInfo.motivationLetter.trim().isNotEmpty ? '✓' : '·',
+      CvSection.export => '',
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: initiallyExpanded,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-          subtitle: subtitle.trim().isEmpty
-              ? null
-              : Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.navy.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(section.icon, color: AppColors.navy, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        section.title,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        section.subtitle,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline, color: AppColors.crimson),
-              ),
-              const Icon(Icons.expand_more),
-            ],
+                if (_badge.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceMuted,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _badge,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+              ],
+            ),
           ),
-          children: children,
         ),
       ),
     );
   }
 }
 
-Widget _field(
-  String label,
-  String value,
-  ValueChanged<String> onChanged,
-  CvProvider cv, {
-  int maxLines = 1,
-  String? brandSvg,
-  String? linkKind,
-}) {
-  final href = linkKind == null
-      ? null
-      : BrandLinkUtils.href(kind: linkKind, raw: value);
+/// Tek bölüm düzenleme — kaydet ve geri dön (PDF üretmez).
+class _CvSectionEditScreen extends StatefulWidget {
+  const _CvSectionEditScreen({required this.section});
+  final CvSection section;
 
-  return Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: TextFormField(
-      initialValue: value,
-      maxLines: maxLines,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: brandSvg == null
-            ? null
-            : Padding(
-                padding: const EdgeInsets.all(10),
-                child: BrandSvgIcon(brandSvg, size: 22),
-              ),
-        prefixIconConstraints: brandSvg == null
-            ? null
-            : const BoxConstraints(minWidth: 44, minHeight: 44),
-        suffixIcon: href == null || value.trim().isEmpty
-            ? null
-            : IconButton(
-                tooltip: 'Aç',
-                onPressed: () async {
-                  final uri = Uri.tryParse(href);
-                  if (uri != null) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                },
-                icon: const Icon(Icons.open_in_new, size: 18),
-              ),
+  @override
+  State<_CvSectionEditScreen> createState() => _CvSectionEditScreenState();
+}
+
+class _CvSectionEditScreenState extends State<_CvSectionEditScreen> {
+  bool _saving = false;
+
+  Future<void> _save() async {
+    final auth = context.read<AuthProvider>();
+    final cv = context.read<CvProvider>();
+    final user = auth.user;
+    if (user == null) return;
+
+    if (widget.section == CvSection.photo && cv.cvPhotoUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('CV fotoğrafı yükleyin.')),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    final ok = await cv.saveQuiet(user.id);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kaydedildi')),
+      );
+      Navigator.pop(context);
+    } else if (cv.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(cv.error!)),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cv = context.watch<CvProvider>();
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: Text(widget.section.title),
       ),
-      onChanged: (v) {
-        onChanged(v);
-        cv.touch();
-      },
-    ),
-  );
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+        children: [
+          CvSectionBody(section: widget.section, cv: cv),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _saving ? null : _save,
+        icon: _saving
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.check),
+        label: Text(_saving ? 'Kaydediliyor…' : 'Kaydet'),
+      ),
+    );
+  }
 }

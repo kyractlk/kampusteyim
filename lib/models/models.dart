@@ -1260,9 +1260,26 @@ class CampusEvent {
 
   bool matchesCampusUniversity(String userUniversity) {
     if (!isCampusScoped) return false;
-    final mine = userUniversity.trim().toLowerCase();
+    String fold(String? raw) {
+      var s = (raw ?? '').trim();
+      if (s.isEmpty) return '';
+      s = s
+          .replaceAll('İ', 'i')
+          .replaceAll('I', 'ı')
+          .replaceAll('Ş', 'ş')
+          .replaceAll('Ğ', 'ğ')
+          .replaceAll('Ü', 'ü')
+          .replaceAll('Ö', 'ö')
+          .replaceAll('Ç', 'ç')
+          .toLowerCase()
+          .replaceAll('i\u0307', 'i')
+          .replaceAll(RegExp(r'\s+'), ' ');
+      return s;
+    }
+
+    final mine = fold(userUniversity);
     if (mine.isEmpty) return false;
-    final eventUni = university.trim().toLowerCase();
+    final eventUni = fold(university);
     if (eventUni.isNotEmpty) return eventUni == mine;
     // Eski kayıtlar: community'nin üniversitesi client tarafında çözülür.
     return true;

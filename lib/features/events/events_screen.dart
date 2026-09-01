@@ -8,9 +8,10 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/app_nav.dart';
 import '../../core/utils/app_share.dart';
 import '../../core/utils/auth_gate.dart';
+import '../../core/utils/campus_affinity.dart';
 import '../../core/widgets/media_viewer.dart';
 import '../../core/widgets/safe_network_image.dart';
-import '../../data/mock/mock_data.dart';
+import '../../data/campus_catalog.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
@@ -25,12 +26,31 @@ class EventsScreen extends StatefulWidget {
 class _EventsScreenState extends State<EventsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
-  String _offCampusCity = MockData.cities.first;
+  String _offCampusCity = '';
+  List<String> _cities = const [];
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
+    CampusCatalog.load().then((c) {
+      if (!mounted) return;
+      final me = context.read<AuthProvider>().user;
+      final myCity = me?.city.trim() ?? '';
+      setState(() {
+        _cities = c.cities;
+        if (_offCampusCity.isEmpty) {
+          if (myCity.isNotEmpty &&
+              c.cities.any((x) => CampusAffinity.sameLabel(x, myCity))) {
+            _offCampusCity = c.cities.firstWhere(
+              (x) => CampusAffinity.sameLabel(x, myCity),
+            );
+          } else if (c.cities.isNotEmpty) {
+            _offCampusCity = c.cities.first;
+          }
+        }
+      });
+    });
   }
 
   @override
@@ -45,27 +65,43 @@ class _EventsScreenState extends State<EventsScreen>
   ) {
     final me = auth.user;
     final uni = me?.university.trim() ?? '';
-    return all.where((e) {
+    final city = me?.city.trim() ?? '';
+    final list = all.where((e) {
       if (!e.isApproved || !e.isCampusScoped) return false;
       if (uni.isEmpty) return true;
       if (e.university.trim().isNotEmpty) {
-        return e.university.trim().toLowerCase() == uni.toLowerCase();
+        return CampusAffinity.sameLabel(e.university, uni);
       }
       // Eski kayıt: topluluk hesabının üniversitesine bak.
       final cid = e.communityId;
       if (cid == null) return true;
       final org = auth.findUser(cid);
       if (org == null) return true;
-      return org.university.trim().toLowerCase() == uni.toLowerCase();
+      return CampusAffinity.sameLabel(org.university, uni);
     }).toList();
+
+    // Aynı şehirdeki kampüs etkinlikleri üstte, sonra tarih
+    list.sort((a, b) {
+      if (city.isNotEmpty) {
+        final aCity = CampusAffinity.sameLabel(a.city, city) ? 1 : 0;
+        final bCity = CampusAffinity.sameLabel(b.city, city) ? 1 : 0;
+        if (aCity != bCity) return bCity.compareTo(aCity);
+      }
+      return a.startsAt.compareTo(b.startsAt);
+    });
+    return list;
   }
 
   List<CampusEvent> _offCampusEvents(List<CampusEvent> all) {
+    final filter = _offCampusCity.trim();
     return all.where((e) {
       if (!e.isApproved || e.isCampusScoped) return false;
-      final city = e.city.trim().isEmpty ? 'Gaziantep' : e.city.trim();
-      return city.toLowerCase() == _offCampusCity.toLowerCase();
-    }).toList();
+      if (filter.isEmpty) return true;
+      final city = e.city.trim();
+      if (city.isEmpty) return false;
+      return CampusAffinity.sameLabel(city, filter);
+    }).toList()
+      ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
   }
 
   @override
@@ -74,6 +110,11 @@ class _EventsScreenState extends State<EventsScreen>
     final auth = context.watch<AuthProvider>();
     final campus = _campusEvents(all, auth);
     final off = _offCampusEvents(all);
+    final cityItems = _cities.isNotEmpty
+        ? _cities
+        : (auth.user?.city.trim().isNotEmpty == true
+            ? [auth.user!.city.trim()]
+            : <String>[]);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -103,27 +144,37 @@ class _EventsScreenState extends State<EventsScreen>
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: DropdownButtonFormField<String>(
-                  initialValue: _offCampusCity,
-                  decoration: const InputDecoration(
-                    labelText: 'Hangi şehrin etkinliklerini görmek istersin?',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    for (final c in MockData.cities)
-                      DropdownMenuItem(value: c, child: Text(c)),
-                  ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => _offCampusCity = v);
-                  },
-                ),
+                child: cityItems.isEmpty
+                    ? const Text(
+                        'Şehir listesi yükleniyor…',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      )
+                    : DropdownButtonFormField<String>(
+                        // ignore: deprecated_member_use
+                        value: cityItems.contains(_offCampusCity)
+                            ? _offCampusCity
+                            : cityItems.first,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText:
+                              'Hangi şehrin etkinliklerini görmek istersin?',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          for (final c in cityItems)
+                            DropdownMenuItem(value: c, child: Text(c)),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() => _offCampusCity = v);
+                        },
+                      ),
               ),
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: Text(
                   'Kampüs dışı etkinlikler, admin onaylı organizatör firmaların '
-                  'etkinlikleridir.',
+                  'etkinlikleridir. Kendi şehrin varsayılan seçilir.',
                   style: TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,

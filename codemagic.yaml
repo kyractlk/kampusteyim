@@ -132,10 +132,6 @@ workflows:
         notify:
           success: true
           failure: true
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
-        submit_to_app_store: false
 
   # Telefona manuel kurulum (TestFlight olmadan) — Ad Hoc
   # Cihaz: Kayra iPhone 15 Plus · UDID ios/devices/adhoc_udids.txt
@@ -234,6 +230,68 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+    publishing:
+      email:
+        recipients:
+          - alikayracatalkaya321@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  # Android → imzalı APK + AAB (Play Console)
+  # Codemagic → Environment variables → Group: android_code_signing
+  #   CM_KEYSTORE (Secure, base64 .jks)
+  #   CM_KEYSTORE_PASSWORD
+  #   CM_KEY_ALIAS
+  #   CM_KEY_PASSWORD
+  android-release:
+    name: KampusteyimAPP Android → APK + AAB
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      groups:
+        - android_code_signing
+      vars:
+        PACKAGE_NAME: com.aystech.kampusteyimapp
+      flutter: stable
+      java: 17
+    scripts:
+      - name: Decode keystore
+        script: |
+          set -e
+          if [ -z "$CM_KEYSTORE" ]; then
+            echo "ERROR: CM_KEYSTORE eksik (android_code_signing grubu)."
+            exit 1
+          fi
+          echo "$CM_KEYSTORE" | base64 --decode > "$CM_BUILD_DIR/upload-keystore.jks"
+          cat > "$CM_BUILD_DIR/android/key.properties" <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=../upload-keystore.jks
+          EOF
+          echo "Keystore hazır"
+      - name: Flutter pub get
+        script: |
+          flutter clean
+          flutter pub get
+          flutter --version
+      - name: Build number
+        script: |
+          BN="${BUILD_NUMBER:-65}"
+          if [ "$BN" -le 64 ]; then BN=65; fi
+          sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+      - name: Build signed APK + AAB
+        script: |
+          set -e
+          flutter build apk --release --no-tree-shake-icons
+          flutter build appbundle --release --no-tree-shake-icons
+          ls -lh build/app/outputs/flutter-apk/
+          ls -lh build/app/outputs/bundle/release/
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+      - build/app/outputs/bundle/release/*.aab
     publishing:
       email:
         recipients:

@@ -8,6 +8,7 @@ import '../../core/widgets/safe_network_image.dart';
 import '../auth/data/auth_provider.dart';
 import '../commerce/commerce_service.dart';
 import '../payments/admin_payments_panel.dart';
+import '../payments/payments_service.dart';
 import 'admin_market_campaigns_panel.dart';
 import 'admin_market_orders_panel.dart';
 import 'admin_market_products_panel.dart';
@@ -31,8 +32,8 @@ class _AdminMarketTabState extends State<AdminMarketTab> {
   final _commission = TextEditingController(text: '10');
   final _minWithdraw = TextEditingController(text: '500');
 
-  /// orders | products | campaigns | pay_settings | payments | withdrawals | ads | company | smtp
-  String _section = 'orders';
+  /// status | orders | products | campaigns | pay_settings | payments | withdrawals | ads | company | smtp
+  String _section = 'status';
 
   @override
   void dispose() {
@@ -67,7 +68,8 @@ class _AdminMarketTabState extends State<AdminMarketTab> {
     final admin = context.watch<AdminProvider>();
     final canAds = admin.can(me, AdminPermission.manageAds);
     final canPayments = admin.can(me, AdminPermission.reviewPayments);
-    final canMarket = admin.can(me, AdminPermission.managePlus);
+    final canMarket = admin.can(me, AdminPermission.manageMarket) ||
+        admin.can(me, AdminPermission.managePlus);
     final canCompany =
         canAds ||
         admin.can(me, AdminPermission.createCompany) ||
@@ -75,6 +77,7 @@ class _AdminMarketTabState extends State<AdminMarketTab> {
     final canSmtp = me?.isSuperAdmin == true;
 
     final sections = <(String, String, IconData)>[
+      if (canMarket) ('status', 'Market durumu', Icons.toggle_on_outlined),
       if (canMarket) ('orders', 'Siparişler', Icons.receipt_long_outlined),
       if (canMarket) ('products', 'Ürünler', Icons.inventory_2_outlined),
       if (canMarket) ('campaigns', 'Kampanyalar', Icons.local_offer_outlined),
@@ -117,7 +120,7 @@ class _AdminMarketTabState extends State<AdminMarketTab> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Sipariş, ürün, kampanya ve ödeme',
+                  'Durum, sipariş, ürün, kampanya ve ödeme',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: AppColors.textSecondary,
@@ -161,6 +164,10 @@ class _AdminMarketTabState extends State<AdminMarketTab> {
     );
 
     final body = switch (effectiveSection) {
+      'status' => const SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 32),
+          child: _MarketStatusPanel(),
+        ),
       'orders' => const SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(16, 12, 16, 32),
           child: AdminMarketOrdersPanel(),
@@ -1042,6 +1049,142 @@ class _AdAdminCardState extends State<_AdAdminCard> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Market · uygulama içi görünürlük aç/kapa
+class _MarketStatusPanel extends StatefulWidget {
+  const _MarketStatusPanel();
+
+  @override
+  State<_MarketStatusPanel> createState() => _MarketStatusPanelState();
+}
+
+class _MarketStatusPanelState extends State<_MarketStatusPanel> {
+  bool _loading = true;
+  bool _saving = false;
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final cfg = await PaymentsService.getAdmin();
+      _visible = cfg.raw['marketInAppVisible'] == true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Durum okunamadı: $e')),
+        );
+      }
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _setVisible(bool value) async {
+    setState(() {
+      _visible = value;
+      _saving = true;
+    });
+    try {
+      await PaymentsService.updateAdmin({'marketInAppVisible': value});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? 'Market uygulama içinde açık'
+                  : 'Market uygulama içinde kapalı',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _visible = !value);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Kaydedilemedi: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    _visible
+                        ? Icons.storefront
+                        : Icons.storefront_outlined,
+                    color: _visible ? AppColors.lime : AppColors.textSecondary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _visible ? 'Market aktif' : 'Market kapalı',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  if (_saving)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Kapalıyken Ayarlar → Market gizlenir; ürün / sipariş paneli '
+                'admin’de kalır. Açınca öğrenciler uygulamadan marketi görür.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  height: 1.4,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Uygulama içi Market'),
+                subtitle: Text(
+                  _visible ? 'Öğrenciler görebilir' : 'Öğrencilerden gizli',
+                ),
+                value: _visible,
+                onChanged: _saving ? null : _setVisible,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

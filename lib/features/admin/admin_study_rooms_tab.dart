@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../auth/data/auth_provider.dart';
 import '../study/study_models.dart';
+import 'admin_permissions.dart';
+import 'admin_provider.dart';
 
 /// Admin · çalışma odası oturum + chat + dinamik filtre.
 class AdminStudyRoomsTab extends StatefulWidget {
@@ -101,6 +105,10 @@ class _AdminStudyRoomsTabState extends State<AdminStudyRoomsTab> {
   @override
   Widget build(BuildContext context) {
     final list = _filtered;
+    final me = context.watch<AuthProvider>().user;
+    final admin = context.watch<AdminProvider>();
+    final canDeleteMsg = admin.can(me, AdminPermission.moderateChats) ||
+        admin.can(me, AdminPermission.moderateFeed);
     return Column(
       children: [
         Padding(
@@ -278,26 +286,101 @@ class _AdminStudyRoomsTabState extends State<AdminStudyRoomsTab> {
                                 ..._msgs.map(
                                   (m) => Padding(
                                     padding: const EdgeInsets.only(bottom: 8),
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text.rich(
-                                        TextSpan(
-                                          children: [
-                                            TextSpan(
-                                              text: m.isAi
-                                                  ? 'AYS Guard: '
-                                                  : '${m.senderName}: ',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w800,
-                                                color: m.isAi
-                                                    ? AppColors.cyan
-                                                    : AppColors.textPrimary,
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Text.rich(
+                                              TextSpan(
+                                                children: [
+                                                  TextSpan(
+                                                    text: m.isAi
+                                                        ? 'AYS Guard: '
+                                                        : '${m.senderName}: ',
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      color: m.isAi
+                                                          ? AppColors.cyan
+                                                          : AppColors
+                                                              .textPrimary,
+                                                    ),
+                                                  ),
+                                                  TextSpan(text: m.text),
+                                                ],
                                               ),
                                             ),
-                                            TextSpan(text: m.text),
-                                          ],
+                                          ),
                                         ),
-                                      ),
+                                        if (canDeleteMsg &&
+                                            m.type != 'system' &&
+                                            !m.text.startsWith('Bu mesaj silindi'))
+                                          IconButton(
+                                            tooltip: 'Mesajı sil',
+                                            iconSize: 18,
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            onPressed: () async {
+                                              final ok = await showDialog<bool>(
+                                                context: context,
+                                                builder: (ctx) => AlertDialog(
+                                                  title: const Text(
+                                                    'Mesajı sil',
+                                                  ),
+                                                  content: Text(
+                                                    '${m.senderName}: ${m.text}',
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                              ctx, false),
+                                                      child: const Text(
+                                                        'Vazgeç',
+                                                      ),
+                                                    ),
+                                                    FilledButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                              ctx, true),
+                                                      child: const Text('Sil'),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                              if (ok != true || !context.mounted) {
+                                                return;
+                                              }
+                                              try {
+                                                await StudyRoomService
+                                                    .softDeleteMessage(
+                                                  roomId: r.id,
+                                                  messageId: m.id,
+                                                  byUserId: me?.id ?? 'admin',
+                                                );
+                                                await _openChat(r.id);
+                                              } catch (e) {
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        'Silinemedi: $e',
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                            icon: const Icon(
+                                              Icons.delete_outline,
+                                              color: AppColors.crimson,
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
                                 ),

@@ -844,4 +844,27 @@ class StudyRoomService {
         .map((d) => StudyChatMessage.fromMap(d.id, d.data()))
         .toList();
   }
+
+  /// Admin / moderatör: sohbet mesajını soft-delete.
+  static Future<void> softDeleteMessage({
+    required String roomId,
+    required String messageId,
+    required String byUserId,
+  }) async {
+    await _db
+        .collection('study_rooms')
+        .doc(roomId)
+        .collection('messages')
+        .doc(messageId)
+        .set(
+          {
+            'text': 'Bu mesaj silindi',
+            'type': 'system',
+            'deletedAt': DateTime.now().toIso8601String(),
+            'deletedBy': byUserId,
+            'meta': {'moderated': true},
+          },
+          SetOptions(merge: true),
+        );
+  }
 }

@@ -12,7 +12,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../core/utils/app_share.dart';
 import '../../core/utils/auth_gate.dart';
-import '../../core/widgets/app_circle_logo.dart';
+import '../../core/widgets/brand_widgets.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
@@ -800,26 +800,7 @@ class _UserProfileViewState extends State<UserProfileView> {
           ),
           if (isSelf) ...[
             const SizedBox(height: 20),
-            Opacity(
-              opacity: 0.45,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Altyapı',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                  ),
-                  const SizedBox(width: 8),
-                  const AppCircleLogo(
-                    logo: AppLogo.ays,
-                    size: 28,
-                    showBorder: false,
-                  ),
-                ],
-              ),
-            ),
+            const AysProductBadge(logoSize: 30, opacity: 0.5),
           ],
         ],
       ),

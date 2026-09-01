@@ -275,6 +275,8 @@ class AdminProvider extends ChangeNotifier {
     required String kind, // company | community
     String? logoUrl,
     String? password,
+    String? city,
+    String? university,
   }) async {
     busy = true;
     status = 'Hesap oluşturuluyor…';
@@ -292,11 +294,22 @@ class AdminProvider extends ChangeNotifier {
         'displayName': displayName.trim(),
         'kind': kind,
         'logoUrl': ?logoUrl,
+        if (city != null && city.trim().isNotEmpty) 'city': city.trim(),
+        if (university != null && university.trim().isNotEmpty)
+          'university': university.trim(),
       });
       final map = Map<String, dynamic>.from(res.data as Map);
       final uid = '${map['uid'] ?? ''}';
       final stableId = '${map['stableId'] ?? uid}';
       final isCompany = kind == 'company';
+      final cityVal = (city ?? '').trim().isNotEmpty
+          ? city!.trim()
+          : 'Gaziantep';
+      final uniVal = isCompany
+          ? '—'
+          : ((university ?? '').trim().isNotEmpty
+              ? university!.trim()
+              : 'Gaziantep Üniversitesi');
       final user = AppUser(
         id: stableId.isNotEmpty ? stableId : uid,
         email: email.trim(),
@@ -306,8 +319,8 @@ class AdminProvider extends ChangeNotifier {
         firstName: displayName.trim(),
         lastName: isCompany ? '' : 'Topluluğu',
         phone: '',
-        city: 'Gaziantep',
-        university: isCompany ? '—' : 'Gaziantep Üniversitesi',
+        city: cityVal,
+        university: uniVal,
         bio: isCompany
             ? 'Firma hesabı · admin tarafından açıldı'
             : '${displayName.trim()} resmi topluluk hesabı',
@@ -1062,6 +1075,48 @@ class AdminProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('endMaintenance: $e');
       status = 'Bakım bitirme başarısız';
+      busy = false;
+      notifyListeners();
+      rethrow;
+    }
+    busy = false;
+    notifyListeners();
+  }
+
+  Future<void> setTestMode({
+    required bool active,
+    String? message,
+  }) async {
+    busy = true;
+    status = active
+        ? 'Test modu açılıyor…'
+        : 'Test modu kapatılıyor · veriler temizleniyor (birkaç dakika sürebilir)…';
+    notifyListeners();
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable(
+        'setTestMode',
+        options: HttpsCallableOptions(
+          timeout: const Duration(minutes: 9),
+        ),
+      );
+      final result = await callable.call({
+        'active': active,
+        if (message != null && message.trim().isNotEmpty) 'message': message.trim(),
+      });
+      final data = Map<String, dynamic>.from(result.data as Map? ?? {});
+      if (data['purged'] == true) {
+        final stats = Map<String, dynamic>.from(data['stats'] as Map? ?? {});
+        final users = Map<String, dynamic>.from(stats['users'] as Map? ?? {});
+        final removed = (users['removed'] as num?)?.toInt() ?? 0;
+        status = 'Test modu kapalı · $removed kullanıcı silindi';
+      } else {
+        status = data['message']?.toString() ??
+            (active ? 'Test modu açık' : 'Test modu kapalı');
+      }
+    } catch (e) {
+      debugPrint('setTestMode: $e');
+      status = 'Test modu işlemi başarısız';
       busy = false;
       notifyListeners();
       rethrow;
