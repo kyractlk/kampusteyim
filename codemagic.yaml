@@ -2,6 +2,8 @@
 # Team: 8496F2PR53 · Bundle: com.aystech.mtMobil
 # SPM kapalı → CocoaPods (permission_handler Podfile flags)
 # İmza: ios_code_signing grubunda CERTIFICATE_PRIVATE_KEY (Ad Hoc + App Store)
+# PEM tek satır değilse tam içerik (-----BEGIN PRIVATE KEY----- …) olmalı.
+# 409 cert limiti: script eski Distribution cert'leri iptal edip PEM ile yeniden oluşturur.
 #
 # KRİTİK: App Store’a yalnızca --release IPA.
 # Debug IPA home screen’den açılmaz (Guideline 2.1) ve
