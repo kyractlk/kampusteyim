@@ -320,6 +320,8 @@ class _CvEducationEditorState extends State<CvEducationEditor> {
   CampusCatalog? _catalog;
   List<String> _universities = const [];
   List<String> _departments = const [];
+  /// true = üniversite listesinden seç; false = serbest yazım (lise, meslek vb.)
+  bool _universityMode = true;
 
   @override
   void initState() {
@@ -331,10 +333,15 @@ class _CvEducationEditorState extends State<CvEducationEditor> {
     final c = await CampusCatalog.load();
     final unis = c.byName.keys.toList()..sort((a, b) => a.compareTo(b));
     if (!mounted) return;
+    final school = widget.education.school.trim();
+    final inCatalog = school.isNotEmpty && unis.contains(school);
     setState(() {
       _catalog = c;
       _universities = unis;
-      _departments = c.departmentsFor(universityName: widget.education.school);
+      _universityMode = school.isEmpty || inCatalog;
+      _departments = inCatalog
+          ? c.departmentsFor(universityName: school)
+          : const [];
     });
   }
 
@@ -346,6 +353,27 @@ class _CvEducationEditorState extends State<CvEducationEditor> {
         !deps.contains(widget.education.field.trim())) {
       widget.education.field = deps.first;
     }
+    widget.cv.touch();
+  }
+
+  void _setUniversityMode(bool university) {
+    if (_universityMode == university) return;
+    setState(() {
+      _universityMode = university;
+      if (!university) {
+        _departments = const [];
+      } else {
+        final school = widget.education.school.trim();
+        if (school.isNotEmpty && _universities.contains(school)) {
+          _departments =
+              _catalog?.departmentsFor(universityName: school) ?? const [];
+        } else {
+          widget.education.school = '';
+          widget.education.field = '';
+          _departments = const [];
+        }
+      }
+    });
     widget.cv.touch();
   }
 
@@ -362,14 +390,44 @@ class _CvEducationEditorState extends State<CvEducationEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        CvDropdownField(
-          label: 'Üniversite / Okul',
-          value: e.school,
-          items: _universities,
-          allowCustom: true,
-          customHint: 'Okul adı',
-          onChanged: _onUniversity,
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                value: true,
+                label: Text('Üniversite'),
+                icon: Icon(Icons.school_outlined, size: 18),
+              ),
+              ButtonSegment(
+                value: false,
+                label: Text('Diğer okul'),
+                icon: Icon(Icons.edit_outlined, size: 18),
+              ),
+            ],
+            selected: {_universityMode},
+            onSelectionChanged: (s) => _setUniversityMode(s.first),
+          ),
         ),
+        if (_universityMode)
+          CvDropdownField(
+            label: 'Üniversite',
+            value: e.school,
+            items: _universities,
+            allowCustom: true,
+            customHint: 'Üniversite adı',
+            onChanged: _onUniversity,
+          )
+        else
+          CvBoundField(
+            label: 'Okul adı',
+            value: e.school,
+            hint: 'Lise, meslek okulu, kurum adı…',
+            onChanged: (v) {
+              e.school = v;
+              widget.cv.touch();
+            },
+          ),
         CvDropdownField(
           label: 'Derece',
           value: e.degree,
@@ -381,7 +439,7 @@ class _CvEducationEditorState extends State<CvEducationEditor> {
             widget.cv.touch();
           },
         ),
-        if (_departments.isNotEmpty)
+        if (_universityMode && _departments.isNotEmpty)
           CvDropdownField(
             label: 'Bölüm',
             value: e.field,
