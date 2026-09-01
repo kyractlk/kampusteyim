@@ -119,6 +119,10 @@ workflows:
         notify:
           success: true
           failure: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false
 
   # Telefona manuel kurulum (TestFlight olmadan) — Ad Hoc
   # Cihaz: Kayra iPhone 15 Plus · UDID ios/devices/adhoc_udids.txt
