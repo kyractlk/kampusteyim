@@ -211,7 +211,20 @@ class _AdminMaintenanceTabState extends State<AdminMaintenanceTab> {
           'Abone: ${st.subscriberCount} · Oturum: ${st.sessionId ?? '—'}',
           style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
+        const Divider(height: 32),
+        AdminTestModePanel(admin: admin),
+        const SizedBox(height: 28),
+        const Divider(height: 32),
+        const Text(
+          'Planlı bakım',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: AppColors.navy,
+          ),
+        ),
+        const SizedBox(height: 12),
         TextField(
           controller: _title,
           decoration: const InputDecoration(
@@ -315,9 +328,6 @@ class _AdminMaintenanceTabState extends State<AdminMaintenanceTab> {
             ),
           ),
         ),
-        const SizedBox(height: 28),
-        const Divider(height: 32),
-        AdminTestModePanel(admin: admin),
         const SizedBox(height: 28),
         const _AppVersionGatePanel(),
       ],
