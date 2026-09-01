@@ -49,12 +49,12 @@ jobs:
             exit 1
           fi
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > upload-keystore.jks
-          cat > android/key.properties <<EOF
-          storePassword=$ANDROID_KEYSTORE_PASSWORD
-          keyPassword=$ANDROID_KEY_PASSWORD
-          keyAlias=$ANDROID_KEY_ALIAS
-          storeFile=../upload-keystore.jks
-          EOF
+          printf '%s\n' \
+            "storePassword=$ANDROID_KEYSTORE_PASSWORD" \
+            "keyPassword=$ANDROID_KEY_PASSWORD" \
+            "keyAlias=$ANDROID_KEY_ALIAS" \
+            "storeFile=../upload-keystore.jks" \
+            > android/key.properties
 
       - name: Pub get
         run: flutter pub get
