@@ -215,7 +215,13 @@ class CvProvider extends ChangeNotifier {
       if (dedicatedPhotoUrl != null && dedicatedPhotoUrl!.trim().isNotEmpty) {
         data.personalInfo.photoUrl = dedicatedPhotoUrl!;
       }
+      _sanitizePersonalInfo();
     } catch (_) {}
+  }
+
+  void _sanitizePersonalInfo() {
+    final p = data.personalInfo;
+    p.headline = sanitizeCvHeadline(p.headline, p.name);
   }
 
   Future<void> loadExports(String userId) async {
@@ -420,13 +426,19 @@ class CvProvider extends ChangeNotifier {
   /// AI çıktısı photoUrl düşürürse profil / taslak fotoğrafını koru.
   void _preservePhoto(Map<String, dynamic> polished) {
     final src = cvPhotoUrl;
-    if (src.isEmpty) return;
     final pi = (polished['personal_info'] as Map?)?.cast<String, dynamic>() ??
         <String, dynamic>{};
-    if ('${pi['photoUrl'] ?? ''}'.trim().isEmpty) {
+    if (src.isNotEmpty && '${pi['photoUrl'] ?? ''}'.trim().isEmpty) {
       pi['photoUrl'] = src;
-      polished['personal_info'] = pi;
     }
+    final name = '${pi['name'] ?? data.personalInfo.name}';
+    final hl = sanitizeCvHeadline(
+      '${pi['headline'] ?? pi['title'] ?? ''}',
+      name,
+    );
+    pi['headline'] = hl;
+    pi.remove('title');
+    polished['personal_info'] = pi;
   }
 
   void touch() => notifyListeners();

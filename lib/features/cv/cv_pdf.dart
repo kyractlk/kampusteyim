@@ -528,7 +528,10 @@ class CvPdfBuilder {
     final languages = (polished['languages'] as List?) ?? [];
 
     final name = '${pi['name'] ?? ''}';
-    final headline = '${pi['headline'] ?? pi['title'] ?? ''}'.trim();
+    final headline = sanitizeCvHeadline(
+      '${pi['headline'] ?? pi['title'] ?? ''}',
+      name,
+    );
     final about = '${pi['about'] ?? ''}'.trim();
     final motivation =
         '${pi['motivation_letter'] ?? pi['motivationLetter'] ?? ''}'.trim();

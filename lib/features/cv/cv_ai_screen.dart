@@ -480,9 +480,9 @@ class _HubHero extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            cv.data.personalInfo.headline.trim().isEmpty
+            cv.data.personalInfo.effectiveHeadline.isEmpty
                 ? 'Bölümlerden birini seçerek güncelleyin'
-                : cv.data.personalInfo.headline,
+                : cv.data.personalInfo.effectiveHeadline,
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.85),

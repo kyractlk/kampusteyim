@@ -1,3 +1,12 @@
+/// Ünvan ad ile aynıysa boş — PDF’de isim iki kez yazılmasın.
+String sanitizeCvHeadline(String headline, String name) {
+  final h = headline.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  final n = name.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  if (h.isEmpty || n.isEmpty) return headline.trim();
+  if (h == n) return '';
+  return headline.trim();
+}
+
 class CvPersonalInfo {
   CvPersonalInfo({
     this.name = '',
@@ -33,6 +42,8 @@ class CvPersonalInfo {
   String photoUrl;
   String headline;
 
+  String get effectiveHeadline => sanitizeCvHeadline(headline, name);
+
   Map<String, dynamic> toJson() => {
         'name': name,
         'email': email,
@@ -52,8 +63,9 @@ class CvPersonalInfo {
 
   factory CvPersonalInfo.fromJson(Map<String, dynamic>? json) {
     json ??= {};
+    final name = '${json['name'] ?? ''}';
     return CvPersonalInfo(
-      name: '${json['name'] ?? ''}',
+      name: name,
       email: '${json['email'] ?? ''}',
       phone: '${json['phone'] ?? ''}',
       address: '${json['address'] ?? ''}',
@@ -67,7 +79,10 @@ class CvPersonalInfo {
       classYear: '${json['class'] ?? ''}',
       studentNo: '${json['studentNo'] ?? ''}',
       photoUrl: '${json['photoUrl'] ?? json['photo_url'] ?? ''}',
-      headline: '${json['headline'] ?? json['title'] ?? ''}',
+      headline: sanitizeCvHeadline(
+        '${json['headline'] ?? json['title'] ?? ''}',
+        name,
+      ),
     );
   }
 }
