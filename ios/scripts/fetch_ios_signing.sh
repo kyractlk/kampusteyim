@@ -57,8 +57,8 @@ prepare_pem_file() {
   return 1
 }
 
-revoke_all_distribution() {
-  echo "IOS_DISTRIBUTION sertifikaları iptal ediliyor…"
+delete_all_distribution() {
+  echo "Mevcut IOS_DISTRIBUTION sertifikaları siliniyor…"
   set +e
   app-store-connect certificates list --type IOS_DISTRIBUTION --json > /tmp/dist_certs.json
   LIST_RC=$?
@@ -76,9 +76,13 @@ except Exception:
 items = data if isinstance(data, list) else data.get("data", data.get("certificates", []))
 for c in items:
     cid = c.get("id") or (c.get("attributes") or {}).get("id")
-    if cid:
-        print(f"Revoke {cid}")
-        subprocess.run(["app-store-connect", "certificates", "revoke", "--certificate-id", str(cid)], check=False)
+    if not cid:
+        continue
+    print(f"Delete cert {cid}")
+    subprocess.run(
+        ["app-store-connect", "certificates", "delete", str(cid), "--ignore-not-found"],
+        check=False,
+    )
 PY
 }
 
@@ -105,14 +109,18 @@ keychain initialize
 
 echo "iOS signing · bundle=$BUNDLE_ID · profile=$PROFILE_TYPE · pem=$USE_PEM"
 
+# 409 önlemek: eski Distribution cert'leri sil, sonra yenisini oluştur
+delete_all_distribution
+sleep 2
+
 set +e
 create_signing
 RC=$?
 set -e
 
 if [ "$RC" -ne 0 ]; then
-  echo "İlk --create başarısız (rc=$RC). Eski Distribution cert'ler iptal ediliyor…"
-  revoke_all_distribution
+  echo "İlk --create başarısız (rc=$RC). Cert'ler tekrar silinip deneniyor…"
+  delete_all_distribution
   sleep 3
   set +e
   create_signing
@@ -125,7 +133,7 @@ if [ "$RC" -ne 0 ]; then
   echo "Kontrol:"
   echo "  • App Store Connect → Identifiers → $BUNDLE_ID kayıtlı mı?"
   echo "  • Codemagic integration AYSCODEMAGIC → Admin rolü"
-  echo "  • developer.apple.com → Certificates → eski Distribution revoke"
+  echo "  • developer.apple.com → Certificates → eski Distribution delete"
   exit 1
 fi
 
