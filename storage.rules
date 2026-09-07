@@ -94,5 +94,13 @@ service firebase.storage {
         && underSize()
         && request.resource.contentType.matches('image/.*');
     }
+
+    // Üniversite / marka logoları — herkes okur.
+    match /branding/{allPaths=**} {
+      allow read: if true;
+      allow write: if signedIn()
+        && underSize()
+        && request.resource.contentType.matches('image/.*');
+    }
   }
 }

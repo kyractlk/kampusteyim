@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fa;
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/auth/secure_session.dart';
+import '../../../core/constants/app_info.dart';
 import '../../../models/models.dart';
+import '../../promo/promo_attribution.dart';
 import '../../notifications/notification_prefs.dart';
 
 /// Firebase Auth + Firestore profil (canlı dizin).
@@ -15,6 +18,7 @@ class AuthProvider extends ChangeNotifier {
     _authSub = fa.FirebaseAuth.instance.authStateChanges().listen(_onAuthChanged);
     unawaited(restorePersistedSession());
     unawaited(syncDirectoryFromFirestore());
+    unawaited(PromoAttribution.ensureLoaded());
   }
 
   StreamSubscription<fa.User?>? _authSub;
@@ -604,6 +608,39 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _autoFollowOfficialAccount(String myUid) async {
+    try {
+      var officialId = '';
+      final cfg = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('official_account')
+          .get();
+      officialId = '${cfg.data()?['uid'] ?? ''}'.trim();
+      if (officialId.isEmpty) {
+        final handle = await FirebaseFirestore.instance
+            .collection('handles')
+            .doc(AppInfo.officialUsername)
+            .get();
+        officialId =
+            '${handle.data()?['authUid'] ?? handle.data()?['uid'] ?? handle.data()?['userId'] ?? ''}'
+                .trim();
+      }
+      if (officialId.isEmpty || officialId == myUid) return;
+      await FirebaseFirestore.instance.collection('users').doc(myUid).set({
+        'following': FieldValue.arrayUnion([officialId]),
+        'updatedAt': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+      if (_user == null) return;
+      final following = List<String>.from(_user!.following);
+      if (!following.contains(officialId)) following.add(officialId);
+      _user = _user!.copyWith(following: following);
+      _upsert(_user!);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[auth] autoFollowOfficial: $e');
+    }
+  }
+
   Future<bool> register({
     required String email,
     required String studentNo,
@@ -887,6 +924,7 @@ class AuthProvider extends ChangeNotifier {
           debugPrint('[auth] notifyRegistrationPending: $e');
         }
       }
+      unawaited(_autoFollowOfficialAccount(cred.user!.uid));
       try {
         final welcome = FirebaseFunctions.instanceFor(region: 'europe-west1')
             .httpsCallable('sendWelcomeEmail');
@@ -1494,6 +1532,7 @@ class AuthProvider extends ChangeNotifier {
       incomingFollowRequests: _stringList(m['incomingFollowRequests']),
       outgoingFollowRequests: _stringList(m['outgoingFollowRequests']),
       deliveryAddresses: _deliveryAddressesFrom(m['deliveryAddresses']),
+      linkedAccountIds: _stringList(m['linkedAccountIds']),
       notificationPrefs: prefsRaw is Map
           ? NotificationPrefs.fromJson(Map<String, dynamic>.from(prefsRaw))
           : NotificationPrefs.defaults,
@@ -1845,9 +1884,12 @@ class AuthProvider extends ChangeNotifier {
     _upsert(_user!);
     _upsert(target.copyWith(incomingFollowRequests: incoming));
     notifyListeners();
+    await PromoAttribution.ensureLoaded();
+    final fromPromo = PromoAttribution.matches(target.username, userId: target.id);
     final ok = await _mutateFollowRemote(
       action: 'request',
       targetId: canonical,
+      fromPromo: fromPromo,
     );
     if (!ok) {
       // Rollback optimistic
@@ -1995,31 +2037,151 @@ class AuthProvider extends ChangeNotifier {
     _upsert(_user!);
     _upsert(target.copyWith(followers: targetFollowers));
     notifyListeners();
+    await PromoAttribution.ensureLoaded();
+    final fromPromo = PromoAttribution.matches(
+      target.username,
+      userId: target.id,
+    );
     final ok = await _mutateFollowRemote(
       action: 'follow',
       targetId: canonicalTarget,
+      fromPromo: fromPromo,
     );
     if (!ok) {
       await refreshCurrentUser();
       await ensureUserLoaded(canonicalTarget, forceRemote: true);
+    } else if (fromPromo) {
+      unawaited(_trackPromoFollow(target.username ?? canonicalTarget));
+    }
+  }
+
+  Future<void> _trackPromoFollow(String username) async {
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('trackPromoFollow');
+      await callable.call({'username': username});
+    } catch (e) {
+      debugPrint('[auth] trackPromoFollow: $e');
     }
   }
 
   Future<bool> _mutateFollowRemote({
     required String action,
     required String targetId,
+    bool fromPromo = false,
   }) async {
     _followGraphBusy++;
     try {
       final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
           .httpsCallable('mutateFollow');
-      await callable.call({'action': action, 'targetId': targetId});
+      await callable.call({
+        'action': action,
+        'targetId': targetId,
+        if (fromPromo) 'fromPromo': true,
+      });
       return true;
     } catch (e) {
       debugPrint('[auth] mutateFollow($action): $e');
       return false;
     } finally {
       _followGraphBusy = (_followGraphBusy - 1).clamp(0, 999);
+    }
+  }
+
+  /// Çıkış yapmadan bağlı hesaba geç (custom token).
+  Future<bool> switchLinkedAccount(String targetId) async {
+    final id = targetId.trim();
+    if (id.isEmpty) return false;
+    _busy = true;
+    _error = null;
+    notifyListeners();
+    _intentionalAuth = true;
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('switchLinkedAccount');
+      final res = await callable.call({'targetId': id});
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      final token = '${map['token'] ?? ''}'.trim();
+      if (token.isEmpty) {
+        _error = 'Hesap geçişi alınamadı.';
+        return false;
+      }
+      final cred = await fa.FirebaseAuth.instance.signInWithCustomToken(token);
+      final fb = cred.user;
+      if (fb == null) {
+        _error = 'Hesap geçişi başarısız.';
+        return false;
+      }
+      await _finishFirebaseUser(fb, fb.email ?? '');
+      return _user != null;
+    } catch (e) {
+      debugPrint('[auth] switchLinkedAccount: $e');
+      _error = 'Hesap geçişi başarısız.';
+      _busy = false;
+      notifyListeners();
+      return false;
+    } finally {
+      _intentionalAuth = false;
+    }
+  }
+
+  /// İkinci hesabın e-posta/şifresiyle bu oturuma bağla.
+  Future<bool> linkOwnedAccount({
+    required String email,
+    required String password,
+  }) async {
+    final mail = email.trim().toLowerCase();
+    final pass = password;
+    if (mail.isEmpty || pass.isEmpty) {
+      _error = 'E-posta ve şifre gerekli.';
+      notifyListeners();
+      return false;
+    }
+    _busy = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final options = fa.FirebaseAuth.instance.app.options;
+      FirebaseApp secondary;
+      try {
+        secondary = Firebase.app('accountLink');
+      } catch (_) {
+        secondary = await Firebase.initializeApp(
+          name: 'accountLink',
+          options: options,
+        );
+      }
+      final otherAuth = fa.FirebaseAuth.instanceFor(app: secondary);
+      try {
+        final cred = await otherAuth.signInWithEmailAndPassword(
+          email: mail,
+          password: pass,
+        );
+        final token = await cred.user?.getIdToken();
+        if (token == null || token.isEmpty) {
+          _error = 'İkinci hesap doğrulanamadı.';
+          return false;
+        }
+        final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('linkOwnedAccount');
+        await callable.call({'idToken': token});
+        await refreshCurrentUser();
+        return true;
+      } finally {
+        try {
+          await otherAuth.signOut();
+        } catch (_) {}
+      }
+    } on fa.FirebaseAuthException catch (e) {
+      _error = _friendlyAuthError(e);
+      return false;
+    } catch (e) {
+      debugPrint('[auth] linkOwnedAccount: $e');
+      _error = 'Hesap bağlanamadı.';
+      return false;
+    } finally {
+      _busy = false;
+      notifyListeners();
     }
   }
 

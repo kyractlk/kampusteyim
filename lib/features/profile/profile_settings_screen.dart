@@ -9,6 +9,8 @@ import '../auth/data/auth_provider.dart';
 import '../jobs/jobs_provider.dart';
 import '../payments/payments_service.dart';
 import '../plus/plus_widgets.dart';
+import '../whats_new/whats_new.dart';
+import 'linked_accounts_block.dart';
 import 'profile_screen.dart' show openThemePicker;
 import 'package:firebase_auth/firebase_auth.dart' as fa;
 
@@ -156,6 +158,12 @@ class ProfileSettingsScreen extends StatelessWidget {
             },
           ),
           _tile(
+            svg: MtIcons.community,
+            title: 'Tanıtım kartı',
+            subtitle: 'QR, indirme ve okutulma istatistikleri',
+            onTap: () => context.push('/tanitimkarti'),
+          ),
+          _tile(
             svg: MtIcons.follow,
             title: 'Gelen istekler',
             subtitle: incoming > 0
@@ -206,29 +214,38 @@ class ProfileSettingsScreen extends StatelessWidget {
             subtitle: 'Öneri / hata · admin paneline düşer',
             onTap: () => context.push('/profile/feedback'),
           ),
-          if (user.panelAccess && (user.panelOrgId ?? '').isNotEmpty)
+          if (user.isCommunity ||
+              (user.panelAccess &&
+                  user.panelOrgType == 'community' &&
+                  (user.panelOrgId ?? '').isNotEmpty))
             _tile(
               svg: MtIcons.community,
-              title: '${user.panelOrgName ?? 'Organizasyon'} paneli',
-              subtitle: 'Kadro erişimin var',
-              onTap: () {
-                if (user.panelOrgType == 'community') {
-                  context.push('/community');
-                } else {
-                  context.push('/firma/dashboard');
-                }
-              },
+              title: user.isCommunity
+                  ? 'Topluluk paneli'
+                  : '${user.panelOrgName ?? 'Organizasyon'} paneli',
+              subtitle: 'Duyuru, etkinlik, kadro',
+              onTap: () => context.push('/community'),
             ),
-          if (user.isCompany)
+          if (user.isCompany ||
+              (user.panelAccess &&
+                  user.panelOrgType == 'company' &&
+                  (user.panelOrgId ?? '').isNotEmpty))
             _tile(
               svg: MtIcons.job,
               title: 'Firma paneli',
-              subtitle: 'İlan, başvuru, teklif',
+              subtitle: 'İlan, başvuru, teklif, bilet',
               onTap: () async {
                 await context.read<JobsProvider>().bindCompanyFromUser(user);
                 if (context.mounted) context.push('/firma/dashboard');
               },
             ),
+          LinkedAccountsBlock(user: user),
+          _tile(
+            svg: MtIcons.info,
+            title: 'Yenilikler',
+            subtitle: 'Bu sürümde neler geldi',
+            onTap: () => WhatsNew.show(context),
+          ),
           _tile(
             svg: MtIcons.info,
             title: 'Uygulama bilgisi',

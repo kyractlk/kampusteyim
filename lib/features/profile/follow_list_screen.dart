@@ -72,19 +72,6 @@ class _FollowListScreenState extends State<FollowListScreen>
       if (u != null) {
         out.add(u);
       } else {
-        out.add(
-          AppUser(
-            id: id,
-            email: '',
-            studentNo: '',
-            firstName: 'Kullanıcı',
-            lastName: '',
-            phone: '',
-            city: '',
-            university: '',
-            username: id.length > 12 ? id.substring(0, 12) : id,
-          ),
-        );
         unawaited(auth.ensureUserLoaded(id, forceRemote: true));
       }
     }

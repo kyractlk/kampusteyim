@@ -79,3 +79,7 @@ _tmp_*
 # Üniversite ham veri (build script çıktısı universities-tr.json commit edilir)
 landing/data/raw_*.json
 
+# GAÜN topluluk hesap şifreleri — asla commit etme
+scripts/gaun_community_accounts.csv
+scripts/gaun_community_accounts.json
+

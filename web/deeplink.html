@@ -7,6 +7,75 @@
   <meta name="theme-color" content="#0B1F3A" />
   <title>KampüsteyimAPP · Açılıyor…</title>
   <link rel="icon" href="./kampusteyim_icon.png" type="image/png" />
+  <script>
+(function () {
+  var PACKAGE = 'com.aystech.kampusteyimapp';
+  var HOST = 'app.kampusteyim.app';
+  var IOS_STORE = 'https://apps.apple.com/tr/app/id6793663176';
+  var PLAY = 'https://play.google.com/store/apps/details?id=' + PACKAGE;
+  var DOWNLOAD = 'https://kampusteyim.app/#indir';
+
+  function parsePath() {
+    var raw = location.pathname || '/';
+    var q = location.search || '';
+    var path = '';
+    if (/^\/t\/[^/]+/.test(raw)) {
+      var uname = decodeURIComponent(raw.split('/')[2] || '').replace(/^@/, '');
+      path = '/user/' + uname + (q && q !== '?' ? q + '&src=promo' : '?src=promo');
+      if (path.indexOf('src=promo') < 0) path += (path.indexOf('?') >= 0 ? '&' : '?') + 'src=promo';
+      return path;
+    }
+    path = new URLSearchParams(location.search).get('path') || '/';
+    if (path.charAt(0) !== '/') path = '/' + path;
+    if (/^\/t\/[^/?#]+/.test(path)) {
+      var tUser = decodeURIComponent(path.split('/')[2] || '').replace(/^@/, '');
+      path = '/user/' + tUser + (path.indexOf('?') >= 0 ? path.slice(path.indexOf('?')) : '?src=promo');
+      if (path.indexOf('src=promo') < 0) path += (path.indexOf('?') >= 0 ? '&' : '?') + 'src=promo';
+    }
+    if (!/^\/(post|user|event|announcement|stories|reels|tickets|home|profile|search|about)(\/|$)/.test(path)
+        && path !== '/reels' && path !== '/tickets' && path !== '/home' && path !== '/profile' && path !== '/search' && path !== '/about') {
+      path = '/home';
+    }
+    return path;
+  }
+
+  var path = parsePath();
+  var ua = navigator.userAgent || '';
+  var isIOS = /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && 'ontouchend' in document);
+  var isAndroid = /android/i.test(ua);
+  if (path.indexOf('via=web') < 0) {
+    path += (path.indexOf('?') >= 0 ? '&' : '?') + 'via=web';
+  }
+  window.__ktPath = path;
+  window.__ktIOS = isIOS;
+  window.__ktAndroid = isAndroid;
+  window.__ktStore = isIOS ? IOS_STORE : (isAndroid ? PLAY : DOWNLOAD);
+
+  var TRACK_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/trackPromoScan';
+  var um = path.match(/^\/user\/([^/?#]+)/);
+  var promo = /[?&]src=promo/.test(path) || /^\/t\//.test(location.pathname);
+  if (promo && um) {
+    var plat = isIOS ? 'ios' : (isAndroid ? 'android' : 'other');
+    var src = TRACK_URL + '?redirect=0&source=promo_card&username=' + encodeURIComponent(decodeURIComponent(um[1])) + '&platform=' + plat;
+    try { new Image().src = src; } catch (e) {}
+  }
+
+  if (!isIOS && !isAndroid) return;
+
+  // Uygulamayı aç — tarama sayacı yukarıda tetiklendi.
+  location.href = 'kampusteyim://open' + path;
+  if (isAndroid) {
+    setTimeout(function () {
+      if (document.hidden) return;
+      location.href =
+        'intent://' + HOST + path +
+        '#Intent;scheme=https;package=' + PACKAGE +
+        ';S.browser_fallback_url=' + encodeURIComponent(window.__ktStore) +
+        ';end';
+    }, 80);
+  }
+})();
+  </script>
   <style>
     :root {
       --navy: #0B1F3A;
@@ -54,39 +123,34 @@
   <div class="card">
     <img class="logo" src="./kampusteyim_icon.png" width="72" height="72" alt="KampüsteyimAPP" />
     <h1>Kampüsteyim<span>APP</span></h1>
-    <p id="status">Uygulamada açmayı deniyoruz…</p>
+    <p id="status">Uygulama açılıyor…</p>
     <a class="btn" id="store" href="https://kampusteyim.app/#indir">Uygulamayı indir</a>
     <a class="btn secondary" id="web" href="/">Web’de devam et</a>
-    <p class="hint">Uygulama yüklüyse otomatik açılır. Yoksa App Store / Play Store’a yönlendirilirsin.</p>
+    <p class="hint">Uygulama yüklüyse hemen açılır. Yoksa App Store / Play Store’a yönlendirilirsin.</p>
   </div>
   <script>
 (function () {
   var PROMO_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/getPromoPublic';
-  var IOS_STORE = 'https://apps.apple.com/tr/app/id6793663176';
-  var DOWNLOAD = 'https://kampusteyim.app/#indir';
-  var PACKAGE = 'com.aystech.kampusteyimapp';
-  var HOST = 'app.kampusteyim.app';
-
-  var params = new URLSearchParams(location.search);
-  var path = params.get('path') || '/';
-  if (path.charAt(0) !== '/') path = '/' + path;
-  // Güvenlik: yalnızca uygulama içi path’ler
-  if (!/^\/(post|user|event|announcement|stories|reels|tickets|home|profile|search|about)(\/|$)/.test(path)
-      && path !== '/reels' && path !== '/tickets' && path !== '/home' && path !== '/profile' && path !== '/search' && path !== '/about') {
-    path = '/home';
-  }
-
-  var ua = navigator.userAgent || '';
-  var isIOS = /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && 'ontouchend' in document);
-  var isAndroid = /android/i.test(ua);
+  var path = window.__ktPath || '/home';
+  var isIOS = !!window.__ktIOS;
+  var isAndroid = !!window.__ktAndroid;
+  var storeUrl = window.__ktStore || 'https://kampusteyim.app/#indir';
+  var gone = false;
 
   var storeBtn = document.getElementById('store');
   var webBtn = document.getElementById('web');
   var statusEl = document.getElementById('status');
+  storeBtn.href = storeUrl;
+  storeBtn.textContent = isIOS ? 'App Store’dan indir' : (isAndroid ? 'Google Play’den indir' : 'İndirme sayfasına git');
   webBtn.href = path + (location.hash || '');
-
   webBtn.addEventListener('click', function () {
     try { sessionStorage.setItem('kt_web_continue', '1'); } catch (e) {}
+  });
+
+  window.addEventListener('pagehide', function () { gone = true; });
+  window.addEventListener('blur', function () { gone = true; });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) gone = true;
   });
 
   function isAppStore(u) {
@@ -97,80 +161,28 @@
     return /^https?:\/\/play\.google\.com\//i.test(s) || /^market:\/\//i.test(s);
   }
 
-  var storeUrl = isIOS ? IOS_STORE : DOWNLOAD;
-  storeBtn.href = storeUrl;
-  storeBtn.textContent = isIOS ? 'App Store’dan indir' : (isAndroid ? 'Google Play’den indir' : 'İndirme sayfasına git');
-
-  function applyStore(cfg) {
-    if (!cfg) return;
-    if (isIOS) {
-      var ios = cfg.iosUrl || cfg.appStoreUrl;
-      if (isAppStore(ios)) storeUrl = ios;
-    } else if (isAndroid) {
-      var play = cfg.androidUrl || cfg.playStoreUrl;
-      if (isPlay(play)) storeUrl = play;
-      else storeUrl = cfg.downloadSectionUrl || DOWNLOAD;
-    } else {
-      storeUrl = cfg.downloadSectionUrl || DOWNLOAD;
-    }
-    storeBtn.href = storeUrl;
-  }
-
-  function tryOpenApp() {
-    var httpsUrl = 'https://' + HOST + path;
-    if (isAndroid) {
-      var intent =
-        'intent://' + HOST + path +
-        '#Intent;scheme=https;package=' + PACKAGE +
-        ';S.browser_fallback_url=' + encodeURIComponent(storeUrl) +
-        ';end';
-      statusEl.textContent = 'Uygulama açılıyor…';
-      location.href = intent;
-      return;
-    }
-    if (isIOS) {
-      // Custom scheme fallback (Universal Links kurulunca OS doğrudan app’e alır)
-      var custom = 'kampusteyim://open' + path;
-      statusEl.textContent = 'Uygulama açılıyor…';
-      var gone = false;
-      var t0 = Date.now();
-      window.addEventListener('pagehide', function () { gone = true; });
-      window.addEventListener('blur', function () { gone = true; });
-      location.href = custom;
-      setTimeout(function () {
-        if (gone || document.hidden) return;
-        // Universal Link dene
-        location.href = httpsUrl;
-      }, 350);
-      setTimeout(function () {
-        if (gone || document.hidden || Date.now() - t0 < 1200) return;
-        statusEl.textContent = 'Uygulama bulunamadı · indirmeye yönlendiriliyor…';
-        location.replace(storeUrl);
-      }, 1600);
-      return;
-    }
-    // Masaüstü: web’de aç
-    location.replace(path);
-  }
-
   fetch(PROMO_URL, { method: 'GET' })
     .then(function (r) { return r.json(); })
-    .then(function (data) {
-      applyStore(data && data.ok ? data : null);
-      tryOpenApp();
+    .then(function (cfg) {
+      if (!cfg || !cfg.ok) return;
+      if (isIOS && isAppStore(cfg.iosUrl || cfg.appStoreUrl)) storeUrl = cfg.iosUrl || cfg.appStoreUrl;
+      else if (isAndroid && isPlay(cfg.androidUrl || cfg.playStoreUrl)) storeUrl = cfg.androidUrl || cfg.playStoreUrl;
+      else if (!isIOS && !isAndroid) storeUrl = cfg.downloadSectionUrl || storeUrl;
+      storeBtn.href = storeUrl;
     })
-    .catch(function () {
-      tryOpenApp();
-    });
+    .catch(function () {});
 
-  // Android: intent fail olursa store
-  if (isAndroid) {
-    setTimeout(function () {
-      if (document.hidden) return;
-      statusEl.textContent = 'Uygulama bulunamadı · indirmeye yönlendiriliyor…';
-      location.replace(storeUrl);
-    }, 2200);
+  if (!isIOS && !isAndroid) {
+    location.replace(path);
+    return;
   }
+
+  // Uygulama açılmazsa mağazaya düş — Flutter’a geri dönme.
+  setTimeout(function () {
+    if (gone || document.hidden) return;
+    statusEl.textContent = 'Uygulama bulunamadı · indirmeye yönlendiriliyor…';
+    location.replace(storeUrl);
+  }, isAndroid ? 1100 : 900);
 })();
   </script>
 </body>

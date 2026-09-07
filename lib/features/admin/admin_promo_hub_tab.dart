@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -48,6 +49,13 @@ class _AdminPromoHubTabState extends State<AdminPromoHubTab> {
                       'Mağaza & QR',
                       _sub == 'kampusteyim',
                       () => setState(() => _sub = 'kampusteyim'),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ActionChip(
+                        label: const Text('Tanıtım kartları'),
+                        onPressed: () => context.push('/tanitimkarti'),
+                      ),
                     ),
                     _subChip(
                       'Landing CMS',

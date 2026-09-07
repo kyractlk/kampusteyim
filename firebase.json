@@ -39,6 +39,13 @@
       ],
       "rewrites": [
         {
+          "source": "/t/**",
+          "function": {
+            "functionId": "trackPromoScan",
+            "region": "europe-west1"
+          }
+        },
+        {
           "source": "/market",
           "destination": "/market.html"
         },

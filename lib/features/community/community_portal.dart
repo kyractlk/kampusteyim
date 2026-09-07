@@ -103,6 +103,11 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: 'Tanıtım kartı',
+            onPressed: () => context.push('/tanitimkarti'),
+            icon: const Icon(Icons.qr_code_2_rounded),
+          ),
+          IconButton(
             onPressed: () => context.go('/home'),
             icon: const Icon(Icons.home_outlined),
           ),

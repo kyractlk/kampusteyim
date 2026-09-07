@@ -59,13 +59,20 @@
       try {
         if (sessionStorage.getItem('kt_web_continue') === '1') return;
       } catch (e) {}
-      var path = location.pathname || '/';
-      if (!/^\/(post|user|event|announcement|stories|reels|tickets)(\/|$)/.test(path)) return;
+      var raw = location.pathname || '/';
+      if (!/^\/(post|user|event|announcement|stories|reels|tickets|t)(\/|$)/.test(raw)) return;
       var ua = navigator.userAgent || '';
       var mobile = /iphone|ipad|ipod|android/i.test(ua) ||
         (/macintosh/i.test(ua) && 'ontouchend' in document);
       if (!mobile) return;
-      var q = path + (location.search || '') + (location.hash || '');
+      var dest = raw;
+      var extra = location.search || '';
+      if (/^\/t\/[^/]+/.test(raw)) {
+        var uname = decodeURIComponent(raw.split('/')[2] || '').replace(/^@/, '');
+        dest = '/user/' + uname;
+        extra = extra && extra !== '?' ? extra + '&src=promo' : '?src=promo';
+      }
+      var q = dest + extra + (location.hash || '');
       location.replace('/deeplink.html?path=' + encodeURIComponent(q));
     })();
   </script>

@@ -58,9 +58,17 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data
-                    android:scheme="https"
-                    android:host="app.kampusteyim.app"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/post"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/user"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/event"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/announcement"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/stories"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/reels"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/tickets"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/home"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/profile"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/search"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/about"/>
             </intent-filter>
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
@@ -74,9 +82,6 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data
-                    android:scheme="https"
-                    android:host="app.kampusteyim.app"/>
                 <data
                     android:scheme="https"
                     android:host="kampusteyim.app"/>

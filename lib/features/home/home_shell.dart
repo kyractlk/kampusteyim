@@ -16,6 +16,7 @@ import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
 import '../reels/reels_provider.dart';
+import '../whats_new/whats_new.dart';
 import 'shell_chrome.dart';
 
 /// Reels alt menü — içerik yüksekliği (home indicator / sistem inset hariç).
@@ -97,7 +98,8 @@ class HomeShell extends StatelessWidget {
     if (!wide) {
       final reelsMode = index == 1;
       final glass = context.watch<ThemeProvider>().isLiquidGlass;
-      return PopScope(
+      return WhatsNewHost(
+        child: PopScope(
         canPop: false,
         onPopInvokedWithResult: _onPop,
         child: ValueListenableBuilder<bool>(
@@ -126,6 +128,7 @@ class HomeShell extends StatelessWidget {
             );
           },
         ),
+        ),
       );
     }
 
@@ -134,7 +137,8 @@ class HomeShell extends StatelessWidget {
     final railW =
         labels ? AppBreakpoints.railExpanded : AppBreakpoints.railWidth;
 
-    return PopScope(
+    return WhatsNewHost(
+      child: PopScope(
       canPop: false,
       onPopInvokedWithResult: _onPop,
       child: Scaffold(
@@ -196,6 +200,7 @@ class HomeShell extends StatelessWidget {
           ),
         ),
         ),
+      ),
       ),
     );
   }
@@ -583,6 +588,15 @@ class _DesktopRail extends StatelessWidget {
               showLabel: showLabels,
               onTap: () => context.push('/firma/dashboard'),
             ),
+          if (user != null && user.isCommunity)
+            _RailItem(
+              selected: false,
+              icon: Icons.groups_outlined,
+              selectedIcon: Icons.groups_rounded,
+              label: 'Topluluk',
+              showLabel: showLabels,
+              onTap: () => context.push('/community'),
+            ),
           const SizedBox(height: 16),
           if (showLabels)
             FilledButton.icon(
@@ -782,6 +796,24 @@ class _DesktopSidebar extends StatelessWidget {
                 title: const Text('İşveren paneli'),
                 subtitle: const Text('İlan · CV · teklif'),
                 onTap: () => context.push('/firma/dashboard'),
+              ),
+            ),
+          ],
+          if (user != null && user.isCommunity) ...[
+            const SizedBox(height: 14),
+            _SidePanel(
+              title: 'Topluluk',
+              accent: AppColors.gold,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const MtIcon(
+                  MtIcons.community,
+                  size: 22,
+                  color: AppColors.navy,
+                ),
+                title: const Text('Topluluk paneli'),
+                subtitle: const Text('Duyuru · etkinlik · kadro'),
+                onTap: () => context.push('/community'),
               ),
             ),
           ],

@@ -1160,6 +1160,55 @@ function followIdentityTokens(doc) {
   return [...tokens];
 }
 
+const OFFICIAL_USERNAME = 'kampusteyim';
+
+async function resolveOfficialAccountId() {
+  const cfg = await db.collection('app_config').doc('official_account').get();
+  const fromCfg = String(cfg.data()?.uid || '').trim();
+  if (fromCfg) return fromCfg;
+  const handle = await db.collection('handles').doc(OFFICIAL_USERNAME).get();
+  const fromHandle = String(
+    handle.data()?.authUid || handle.data()?.uid || handle.data()?.userId || '',
+  ).trim();
+  if (fromHandle) return fromHandle;
+  const q = await db
+    .collection('users')
+    .where('username', '==', OFFICIAL_USERNAME)
+    .limit(1)
+    .get();
+  return q.empty ? '' : q.docs[0].id;
+}
+
+/** Yeni hesap resmi @kampusteyim hesabını otomatik takip eder. */
+async function followOfficialAccount(userDoc) {
+  if (!userDoc || !userDoc.exists) return false;
+  const officialId = await resolveOfficialAccountId();
+  if (!officialId || userDoc.id === officialId) return false;
+  const data = userDoc.data() || {};
+  if (data.deleted === true || data.accountDeleted === true) return false;
+  const officialRef = db.collection('users').doc(officialId);
+  const officialSnap = await officialRef.get();
+  if (!officialSnap.exists) return false;
+  const now = new Date().toISOString();
+  const meTokens = followIdentityTokens(userDoc);
+  const officialTokens = followIdentityTokens(officialSnap);
+  await userDoc.ref.set(
+    {
+      following: FieldValue.arrayUnion(...officialTokens),
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+  await officialRef.set(
+    {
+      followers: FieldValue.arrayUnion(...meTokens),
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+  return true;
+}
+
 /**
  * Takip / istek mutasyonu — Admin SDK ile iki taraflı yazım (rules bypass).
  * action: follow | unfollow | request | cancel_request | accept | reject
@@ -1208,6 +1257,7 @@ exports.mutateFollow = onCall({ region: 'europe-west1' }, async (request) => {
   const targetTokens = followIdentityTokens(targetDoc);
   const now = new Date().toISOString();
   const isPrivate = targetData.isPrivateAccount === true;
+  const fromPromo = request.data?.fromPromo === true;
 
   if (action === 'follow') {
     if (isPrivate) {
@@ -1226,6 +1276,20 @@ exports.mutateFollow = onCall({ region: 'europe-west1' }, async (request) => {
         },
         { merge: true },
       );
+      if (fromPromo) {
+        await db
+          .collection('promo_follow_pending')
+          .doc(`${targetDoc.id}_${uid}`)
+          .set(
+            {
+              accountId: targetDoc.id,
+              followerUid: uid,
+              username: String(targetData.username || ''),
+              createdAt: now,
+            },
+            { merge: true },
+          );
+      }
       return {
         ok: true,
         action: 'request',
@@ -1250,6 +1314,13 @@ exports.mutateFollow = onCall({ region: 'europe-west1' }, async (request) => {
       },
       { merge: true },
     );
+    if (fromPromo) {
+      await recordPromoCardFollow({
+        targetDoc,
+        followerUid: uid,
+        username: targetData.username,
+      }).catch((e) => console.warn('[mutateFollow] promo', e?.message || e));
+    }
     return {
       ok: true,
       action: 'follow',
@@ -1300,6 +1371,20 @@ exports.mutateFollow = onCall({ region: 'europe-west1' }, async (request) => {
       },
       { merge: true },
     );
+    if (fromPromo) {
+      await db
+        .collection('promo_follow_pending')
+        .doc(`${targetDoc.id}_${uid}`)
+        .set(
+          {
+            accountId: targetDoc.id,
+            followerUid: uid,
+            username: String(targetData.username || ''),
+            createdAt: now,
+          },
+          { merge: true },
+        );
+    }
     return {
       ok: true,
       action: 'request',
@@ -1351,6 +1436,18 @@ exports.mutateFollow = onCall({ region: 'europe-west1' }, async (request) => {
       },
       { merge: true },
     );
+    const pendingRef = db
+      .collection('promo_follow_pending')
+      .doc(`${meDoc.id}_${targetDoc.id}`);
+    const pending = await pendingRef.get();
+    if (pending.exists) {
+      await recordPromoCardFollow({
+        targetDoc: meDoc,
+        followerUid: targetDoc.id,
+        username: meData.username,
+      }).catch((e) => console.warn('[mutateFollow] promo accept', e?.message || e));
+      await pendingRef.delete().catch(() => {});
+    }
     return {
       ok: true,
       action: 'accept',
@@ -1385,6 +1482,21 @@ exports.mutateFollow = onCall({ region: 'europe-west1' }, async (request) => {
 
   throw new HttpsError('invalid-argument', 'Geçersiz action');
 });
+
+/** Öğrenci / topluluk / firma hesabı oluşunca resmi hesabı takip et. */
+exports.onUserCreatedFollowOfficial = onDocumentCreated(
+  { document: 'users/{userId}', region: 'europe-west1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return null;
+    try {
+      await followOfficialAccount(snap);
+    } catch (e) {
+      console.warn('[onUserCreatedFollowOfficial]', e?.message || e);
+    }
+    return null;
+  },
+);
 
 /**
  * Şikayet alındı onayı — AYS logolu HTML
@@ -5984,6 +6096,172 @@ exports.consumeRegistrationEmailTicket = onCall(
   },
 );
 
+const FOLLOW_GRAPH_FIELDS = [
+  'followers',
+  'following',
+  'incomingFollowRequests',
+  'outgoingFollowRequests',
+  'blockedUserIds',
+];
+
+function isDeletedUserData(d) {
+  if (!d) return true;
+  return (
+    d.deleted === true ||
+    d.accountDeleted === true ||
+    String(d.usernameStatus || '') === 'deleted' ||
+    String(d.email || '').includes('@invalid.local') ||
+    String(d.firstName || '') === 'Silinmiş'
+  );
+}
+
+async function sweepUserIdsFromFollowGraphs(ids) {
+  const idSet = new Set([...ids].filter(Boolean).map(String));
+  if (idSet.size === 0) return 0;
+  let touched = 0;
+  let last = null;
+  for (;;) {
+    let q = db.collection('users').orderBy(FieldPath.documentId()).limit(200);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get();
+    if (snap.empty) break;
+    const batch = db.batch();
+    let batchN = 0;
+    for (const doc of snap.docs) {
+      const d = doc.data() || {};
+      const patch = {};
+      let changed = false;
+      for (const field of FOLLOW_GRAPH_FIELDS) {
+        const arr = Array.isArray(d[field]) ? d[field].map(String) : [];
+        const next = arr.filter((x) => !idSet.has(x));
+        if (next.length !== arr.length) {
+          patch[field] = next;
+          changed = true;
+        }
+      }
+      if (changed) {
+        patch.updatedAt = new Date().toISOString();
+        batch.set(doc.ref, patch, { merge: true });
+        batchN += 1;
+        touched += 1;
+      }
+    }
+    if (batchN) await batch.commit();
+    last = snap.docs[snap.docs.length - 1];
+    if (snap.size < 200) break;
+  }
+  return touched;
+}
+
+async function pruneOrphanFollowEdgesAndTombstones() {
+  const live = new Set();
+  const deadIds = [];
+  let last = null;
+  for (;;) {
+    let q = db.collection('users').orderBy(FieldPath.documentId()).limit(250);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get();
+    if (snap.empty) break;
+    for (const doc of snap.docs) {
+      const d = doc.data() || {};
+      const stable = String(d.stableId || '').trim();
+      if (isDeletedUserData(d)) {
+        deadIds.push(doc.id);
+        if (stable) deadIds.push(stable);
+      } else {
+        live.add(doc.id);
+        if (stable) live.add(stable);
+      }
+    }
+    last = snap.docs[snap.docs.length - 1];
+    if (snap.size < 250) break;
+  }
+
+  let patched = 0;
+  last = null;
+  for (;;) {
+    let q = db.collection('users').orderBy(FieldPath.documentId()).limit(150);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get();
+    if (snap.empty) break;
+    const batch = db.batch();
+    let n = 0;
+    for (const doc of snap.docs) {
+      const d = doc.data() || {};
+      if (isDeletedUserData(d)) continue;
+      const patch = {};
+      let changed = false;
+      for (const field of FOLLOW_GRAPH_FIELDS) {
+        const arr = Array.isArray(d[field]) ? d[field].map(String) : [];
+        const next = arr.filter((x) => live.has(x));
+        if (next.length !== arr.length) {
+          patch[field] = next;
+          changed = true;
+        }
+      }
+      if (changed) {
+        patch.updatedAt = new Date().toISOString();
+        batch.set(doc.ref, patch, { merge: true });
+        n += 1;
+        patched += 1;
+      }
+    }
+    if (n) await batch.commit();
+    last = snap.docs[snap.docs.length - 1];
+    if (snap.size < 150) break;
+  }
+
+  let deletedDocs = 0;
+  for (const id of [...new Set(deadIds)]) {
+    try {
+      await db.collection('users').doc(id).delete();
+      deletedDocs += 1;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  return { patched, deletedDocs, live: live.size };
+}
+
+async function linkAccountsMutual(ids) {
+  const uniq = [...new Set(ids.filter(Boolean).map(String))];
+  const now = new Date().toISOString();
+  for (const id of uniq) {
+    const others = uniq.filter((x) => x !== id);
+    await db.collection('users').doc(id).set(
+      { linkedAccountIds: others, updatedAt: now },
+      { merge: true },
+    );
+  }
+}
+
+async function bootstrapOfficialPowersAndLinks() {
+  const KAYRA = 'CY7B5QmMJFWQDhl8zFQqeAZIlyC2';
+  const AYS = 'giRjl8keZvZRUfQMFWGLel04IIm2';
+  const OFFICIAL = 'IYUCw4gXk4bjquDGxUSjtQrcjBi1';
+  const now = new Date().toISOString();
+  const officialRef = db.collection('users').doc(OFFICIAL);
+  const officialSnap = await officialRef.get();
+  const o = officialSnap.exists ? officialSnap.data() || {} : {};
+  await officialRef.set(
+    {
+      role: 'company',
+      isCommunity: true,
+      isEventOrganizer: true,
+      hasGoldBadge: true,
+      panelAccess: true,
+      panelOrgId: OFFICIAL,
+      panelOrgType: 'community',
+      panelOrgName: 'KampüsteyimAPP',
+      communityLogoUrl: o.communityLogoUrl || o.photoUrl || null,
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+  await linkAccountsMutual([KAYRA, AYS, OFFICIAL]);
+  return { official: OFFICIAL, linked: [KAYRA, AYS, OFFICIAL] };
+}
+
 async function purgeUserAccount({
   uid,
   email,
@@ -6101,48 +6379,24 @@ async function purgeUserAccount({
     console.warn('[purgeUser] storage', e?.message || e);
   }
 
-  const tombstone = {
-    deleted: true,
-    accountDeleted: true,
-    deletedAt: new Date().toISOString(),
-    deletedBy: actorId,
-    email: `deleted_${authUid || userRef.id}@invalid.local`,
-    firstName: 'Silinmiş',
-    lastName: 'Hesap',
-    fullName: 'Silinmiş hesap',
-    phone: '',
-    photoUrl: null,
-    communityLogoUrl: null,
-    username: null,
-    usernameStatus: 'deleted',
-    accountStatus: 'rejected',
-    following: [],
-    followers: [],
-    fcmTokens: [],
-    notificationPrefs: {},
-    staffRoleId: null,
-    isSuperAdmin: false,
-    panelAccess: false,
-    studentIdDocUrl: null,
-    studentIdFrontUrl: null,
-    studentIdBackUrl: null,
-    studentCredential: null,
-    edevletTicketId: null,
-    edevletTcknHash: null,
-    studentNo: '',
-    university: '',
-    faculty: '',
-    department: '',
-    bio: '',
-  };
+  const graphIds = [
+    ...contentIds,
+    authUid,
+    userRef.id,
+    String(data.stableId || '').trim(),
+  ].filter(Boolean);
+  await sweepUserIdsFromFollowGraphs(graphIds);
 
-  await userRef.set(tombstone, { merge: true });
+  try {
+    await userRef.delete();
+  } catch (e) {
+    console.warn('[purgeUser] delete doc', userRef.id, e?.message || e);
+  }
 
-  // stableId ile ikinci kopya doküman varsa onu da işaretle
   const stable = String(data.stableId || '').trim();
   if (stable && stable !== userRef.id) {
     try {
-      await db.collection('users').doc(stable).set(tombstone, { merge: true });
+      await db.collection('users').doc(stable).delete();
     } catch (_) {
       /* ignore */
     }
@@ -6196,6 +6450,113 @@ async function purgeUserAccount({
 
   return { ok: true, authUid, docId: userRef.id };
 }
+
+exports.switchLinkedAccount = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    }
+    const raw = String(request.data?.targetId || '').trim();
+    if (!raw) throw new HttpsError('invalid-argument', 'targetId zorunlu');
+
+    const meUid = request.auth.uid;
+    const meDoc = await findUserDocByAnyId(meUid);
+    if (!meDoc) throw new HttpsError('not-found', 'Profil yok');
+    const links = (meDoc.data()?.linkedAccountIds || []).map(String);
+    const targetDoc = await findUserDocByAnyId(raw);
+    if (!targetDoc) throw new HttpsError('not-found', 'Hedef hesap yok');
+    const targetUid = targetDoc.id;
+    if (targetUid === meUid) {
+      throw new HttpsError('failed-precondition', 'Zaten bu hesaptasın');
+    }
+    if (!links.includes(targetUid) && !links.includes(raw)) {
+      throw new HttpsError('permission-denied', 'Bu hesaba bağlı değilsin');
+    }
+    if (isDeletedUserData(targetDoc.data() || {})) {
+      throw new HttpsError('not-found', 'Hedef hesap silinmiş');
+    }
+    const { getAuth } = require('firebase-admin/auth');
+    const token = await getAuth().createCustomToken(targetUid);
+    return { ok: true, token, uid: targetUid };
+  },
+);
+
+exports.linkOwnedAccount = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    }
+    const idToken = String(request.data?.idToken || '').trim();
+    if (!idToken) throw new HttpsError('invalid-argument', 'idToken zorunlu');
+    const { getAuth } = require('firebase-admin/auth');
+    let decoded;
+    try {
+      decoded = await getAuth().verifyIdToken(idToken);
+    } catch (_) {
+      throw new HttpsError('invalid-argument', 'Diğer hesap doğrulanamadı');
+    }
+    const otherUid = String(decoded.uid || '').trim();
+    const meUid = request.auth.uid;
+    if (!otherUid || otherUid === meUid) {
+      throw new HttpsError('failed-precondition', 'Geçersiz ikinci hesap');
+    }
+    const meDoc = await db.collection('users').doc(meUid).get();
+    const otherDoc = await db.collection('users').doc(otherUid).get();
+    if (!meDoc.exists || !otherDoc.exists) {
+      throw new HttpsError('not-found', 'Profil yok');
+    }
+    if (
+      isDeletedUserData(meDoc.data() || {}) ||
+      isDeletedUserData(otherDoc.data() || {})
+    ) {
+      throw new HttpsError('failed-precondition', 'Silinmiş hesap bağlanamaz');
+    }
+    const meLinks = new Set(
+      (meDoc.data()?.linkedAccountIds || []).map(String).filter(Boolean),
+    );
+    const otherLinks = new Set(
+      (otherDoc.data()?.linkedAccountIds || []).map(String).filter(Boolean),
+    );
+    meLinks.add(otherUid);
+    otherLinks.add(meUid);
+    const now = new Date().toISOString();
+    await meDoc.ref.set(
+      { linkedAccountIds: [...meLinks], updatedAt: now },
+      { merge: true },
+    );
+    await otherDoc.ref.set(
+      { linkedAccountIds: [...otherLinks], updatedAt: now },
+      { merge: true },
+    );
+    return { ok: true, linked: otherUid };
+  },
+);
+
+exports.runAccountHygiene = onRequest(
+  {
+    region: 'europe-west1',
+    timeoutSeconds: 540,
+    memory: '1GiB',
+    cors: true,
+  },
+  async (req, res) => {
+    const key = String(req.query.key || req.get('x-hygiene-key') || '');
+    if (key !== 'khy-e8f41c2a9b7d06a3-sweep') {
+      res.status(403).json({ error: 'forbidden' });
+      return;
+    }
+    try {
+      const sweep = await pruneOrphanFollowEdgesAndTombstones();
+      const bootstrap = await bootstrapOfficialPowersAndLinks();
+      res.json({ ok: true, sweep, bootstrap });
+    } catch (e) {
+      console.error('[hygiene]', e);
+      res.status(500).json({ error: String(e?.message || e) });
+    }
+  },
+);
 
 exports.requestAccountDeletion = onCall(
   { region: 'europe-west1' },
@@ -6407,6 +6768,13 @@ exports.adminCreateManagedAccount = onCall(
     const city =
       sanitizePlainText(request.data?.city || '', 80) || 'Gaziantep';
     const universityIn = sanitizePlainText(request.data?.university || '', 160);
+    const bioIn = sanitizePlainText(request.data?.bio || '', 2000);
+    const usernameIn = String(request.data?.username || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._]/g, '');
+    const emailVerified = request.data?.emailVerified !== false;
+    const sendWelcomeMail = request.data?.sendWelcomeMail === true;
 
     if (!isValidEmail(email)) {
       throw new HttpsError('invalid-argument', 'Geçerli e-posta gerekli');
@@ -6419,6 +6787,9 @@ exports.adminCreateManagedAccount = onCall(
     }
     if (kind !== 'company' && kind !== 'community') {
       throw new HttpsError('invalid-argument', 'kind company|community olmalı');
+    }
+    if (usernameIn && (usernameIn.length < 3 || usernameIn.length > 24)) {
+      throw new HttpsError('invalid-argument', 'Kullanıcı adı 3–24 karakter olmalı');
     }
 
     // Aynı e-posta ile öğrenci / firma / topluluk — ikinci hesap yok
@@ -6437,7 +6808,7 @@ exports.adminCreateManagedAccount = onCall(
         email,
         password,
         displayName,
-        emailVerified: false,
+        emailVerified,
       });
     } catch (e) {
       if (e?.code === 'auth/email-already-exists') {
@@ -6453,19 +6824,30 @@ exports.adminCreateManagedAccount = onCall(
     const isCompany = kind === 'company';
     const usernameBase = displayName
       .toLowerCase()
-      .replace(/[^a-z0-9]+/gi, '_')
-      .replace(/^_+|_+$/g, '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/gi, '')
       .slice(0, 18);
-    const username = `${usernameBase || kind}_${uid.slice(0, 6)}`.toLowerCase();
+    let username = (usernameIn || `${usernameBase || kind}`).toLowerCase();
+    if (username.length < 3) username = `${kind}${uid.slice(0, 6)}`;
+    const handleSnap = await db.collection('handles').doc(username).get();
+    if (handleSnap.exists) {
+      username = `${username.slice(0, 16)}${uid.slice(0, 4)}`.toLowerCase();
+    }
     const university = isCompany
       ? '—'
       : universityIn || 'Gaziantep Üniversitesi';
+    const firstName = isCompany
+      ? displayName
+      : displayName.replace(/\s+Topluluğu$/i, '').trim();
+    const lastName = isCompany ? '' : 'Topluluğu';
+    const fullName = isCompany ? displayName : `${firstName} Topluluğu`;
 
     const profile = {
       email,
-      firstName: displayName,
-      lastName: isCompany ? '' : 'Topluluğu',
-      fullName: isCompany ? displayName : `${displayName} Topluluğu`,
+      firstName,
+      lastName,
+      fullName,
       role: isCompany ? 'company' : 'community',
       isCommunity: !isCompany,
       hasGoldBadge: !isCompany,
@@ -6477,9 +6859,10 @@ exports.adminCreateManagedAccount = onCall(
       usernameStatus: 'ok',
       city,
       university,
-      bio: isCompany
-        ? 'Firma hesabı · admin tarafından açıldı'
-        : `${displayName} resmi topluluk hesabı`,
+      bio: bioIn ||
+        (isCompany
+          ? 'Firma hesabı · admin tarafından açıldı'
+          : `${firstName} resmi topluluk hesabı`),
       communityLogoUrl: isCompany ? null : logoUrl || 'assets/logos/mt_circle.png',
       createdAt: new Date().toISOString(),
       createdByAdmin: request.auth.uid,
@@ -6495,29 +6878,37 @@ exports.adminCreateManagedAccount = onCall(
         createdAt: new Date().toISOString(),
       });
     } catch (_) {}
-
     try {
-      await sendMail({
-        to: email,
-        subject: isCompany
-          ? 'KampüsteyimAPP · Firma hesabın hazır'
-          : 'KampüsteyimAPP · Topluluk hesabın hazır',
-        html: brandedEmail({
-          title: isCompany ? 'Firma hesabın hazır' : 'Topluluk hesabın hazır',
-          greeting: `Merhaba ${escapeHtml(displayName)},`,
-          bodyHtml: `<p>KampüsteyimAPP ${
-            isCompany ? 'firma' : 'topluluk'
-          } hesabın açıldı.</p>
-            <p><b>E-posta:</b> ${escapeHtml(email)}<br/>
-            <b>Geçici şifre:</b> ${escapeHtml(password)}</p>
-            <p>İlk girişten sonra şifreni değiştirmeni öneririz.</p>`,
-          ctaLabel: 'KampüsteyimAPP’e git',
-          ctaUrl: BRAND_HOME,
-          footerNote: 'Bu hesap admin tarafından oluşturuldu.',
-        }),
-      });
+      const created = await db.collection('users').doc(uid).get();
+      await followOfficialAccount(created);
     } catch (e) {
-      console.warn('[adminCreateManagedAccount] mail', e?.message || e);
+      console.warn('[adminCreateManagedAccount] official follow', e?.message || e);
+    }
+
+    if (sendWelcomeMail) {
+      try {
+        await sendMail({
+          to: email,
+          subject: isCompany
+            ? 'KampüsteyimAPP · Firma hesabın hazır'
+            : 'KampüsteyimAPP · Topluluk hesabın hazır',
+          html: brandedEmail({
+            title: isCompany ? 'Firma hesabın hazır' : 'Topluluk hesabın hazır',
+            greeting: `Merhaba ${escapeHtml(displayName)},`,
+            bodyHtml: `<p>KampüsteyimAPP ${
+              isCompany ? 'firma' : 'topluluk'
+            } hesabın açıldı.</p>
+              <p><b>E-posta:</b> ${escapeHtml(email)}<br/>
+              <b>Geçici şifre:</b> ${escapeHtml(password)}</p>
+              <p>İlk girişten sonra şifreni değiştirmeni öneririz.</p>`,
+            ctaLabel: 'KampüsteyimAPP’e git',
+            ctaUrl: BRAND_HOME,
+            footerNote: 'Bu hesap admin tarafından oluşturuldu.',
+          }),
+        });
+      } catch (e) {
+        console.warn('[adminCreateManagedAccount] mail', e?.message || e);
+      }
     }
 
     return { ok: true, uid, stableId: uid, username, kind };
@@ -6994,6 +7385,90 @@ async function readPromoConfig() {
   };
 }
 
+async function findUserByUsername(username) {
+  const uname = String(username || '')
+    .trim()
+    .replace(/^@/, '')
+    .toLowerCase();
+  if (!uname) return null;
+  const handle = await db.collection('handles').doc(uname).get();
+  const uid = String(
+    handle.data()?.authUid || handle.data()?.uid || handle.data()?.userId || '',
+  ).trim();
+  if (uid) {
+    const doc = await db.collection('users').doc(uid).get();
+    if (doc.exists) return doc;
+  }
+  const q = await db.collection('users').where('username', '==', uname).limit(1).get();
+  return q.empty ? null : q.docs[0];
+}
+
+async function recordPromoCardFollow({ targetDoc, followerUid, username }) {
+  if (!targetDoc || !targetDoc.id || !followerUid) return { counted: false };
+  if (followerUid === targetDoc.id) return { counted: false };
+  const d = targetDoc.data() || {};
+  const uname = sanitizePromoUsername(username || d.username || '');
+  const nowIso = new Date().toISOString();
+  const name =
+    String(d.fullName || '').trim() ||
+    `${String(d.firstName || '').trim()} ${String(d.lastName || '').trim()}`.trim();
+  const attrRef = db
+    .collection('promo_follow_attributions')
+    .doc(`${targetDoc.id}_${followerUid}`);
+  const counted = await db.runTransaction(async (tx) => {
+    const prev = await tx.get(attrRef);
+    if (prev.exists) return false;
+    tx.set(attrRef, {
+      accountId: targetDoc.id,
+      username: uname,
+      followerUid,
+      createdAt: nowIso,
+    });
+    tx.set(
+      db.collection('promo_card_stats').doc(targetDoc.id),
+      {
+        accountId: targetDoc.id,
+        username: uname || String(d.username || ''),
+        name,
+        role: String(d.role || ''),
+        isCommunity: d.isCommunity === true,
+        follows: FieldValue.increment(1),
+        updatedAt: nowIso,
+      },
+      { merge: true },
+    );
+    return true;
+  });
+  return { counted };
+}
+
+async function bumpPromoCardScan({ username, platform, nowIso }) {
+  const uname = String(username || '')
+    .trim()
+    .replace(/^@/, '')
+    .toLowerCase();
+  if (!uname) return;
+  const userDoc = await findUserByUsername(uname);
+  if (!userDoc) return;
+  const d = userDoc.data() || {};
+  const name =
+    String(d.fullName || '').trim() ||
+    `${String(d.firstName || '').trim()} ${String(d.lastName || '').trim()}`.trim();
+  await db.collection('promo_card_stats').doc(userDoc.id).set(
+    {
+      accountId: userDoc.id,
+      username: String(d.username || uname),
+      name,
+      role: String(d.role || ''),
+      isCommunity: d.isCommunity === true,
+      scans: FieldValue.increment(1),
+      [platform]: FieldValue.increment(1),
+      updatedAt: nowIso,
+    },
+    { merge: true },
+  );
+}
+
 /** Public: landing indir butonları + QR hedefi */
 exports.getPromoPublic = onRequest(
   { region: 'europe-west1', cors: true },
@@ -7029,7 +7504,124 @@ exports.getPromoPublic = onRequest(
   },
 );
 
-/** QR /get sayfası: tarama logla + platform yönlendir */
+function sanitizePromoUsername(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/^@/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '')
+    .slice(0, 40);
+}
+
+function promoRequestPath(req) {
+  return [
+    req.path,
+    req.originalUrl,
+    req.url,
+    req.get?.('x-forwarded-uri'),
+    req.get?.('x-original-url'),
+    req.get?.('x-rewrite-url'),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function promoUsernameFromRequest(req, body) {
+  const fromBody = sanitizePromoUsername(body.username || body.u || '');
+  if (fromBody) return fromBody;
+  const m = String(promoRequestPath(req)).match(/\/t\/([^/?#\s]+)/);
+  if (!m) return '';
+  try {
+    return sanitizePromoUsername(decodeURIComponent(m[1]));
+  } catch (_) {
+    return sanitizePromoUsername(m[1]);
+  }
+}
+
+function wantsPromoCardLanding(req, body) {
+  if (/\/t\/[^/?#\s]+/.test(promoRequestPath(req))) return true;
+  const flag = String(body.landing || body.open || '');
+  return flag === '1' || flag === 'app';
+}
+
+function promoOpenLandingHtml(username) {
+  const u = sanitizePromoUsername(username);
+  const path = u ? `/user/${u}?src=promo&via=web` : '/home';
+  const safePath = path.replace(/[^a-zA-Z0-9/?=&._-]/g, '');
+  return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="robots" content="noindex"/>
+<meta name="theme-color" content="#0B1F3A"/>
+<title>KampüsteyimAPP · Açılıyor…</title>
+<link rel="icon" href="/kampusteyim_icon.png" type="image/png"/>
+<script>
+(function(){
+  var PACKAGE='com.aystech.kampusteyimapp';
+  var HOST='app.kampusteyim.app';
+  var path=${JSON.stringify(safePath)};
+  var ua=navigator.userAgent||'';
+  var isIOS=/iphone|ipad|ipod/i.test(ua)||(/macintosh/i.test(ua)&&'ontouchend'in document);
+  var isAndroid=/android/i.test(ua);
+  window.__ktPath=path;
+  window.__ktIOS=isIOS;
+  window.__ktAndroid=isAndroid;
+  window.__ktStore=isIOS?'https://apps.apple.com/tr/app/id6793663176':(isAndroid?('https://play.google.com/store/apps/details?id='+PACKAGE):'https://kampusteyim.app/#indir');
+  if(!isIOS&&!isAndroid)return;
+  location.href='kampusteyim://open'+path;
+  if(isAndroid){
+    setTimeout(function(){
+      if(document.hidden)return;
+      location.href='intent://'+HOST+path+'#Intent;scheme=https;package='+PACKAGE+';S.browser_fallback_url='+encodeURIComponent(window.__ktStore)+';end';
+    },80);
+  }
+})();
+</script>
+<style>
+body{margin:0;min-height:100svh;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;background:linear-gradient(155deg,#061426 0%,#0B1F3A 55%,#123456 100%);padding:1.5rem;text-align:center}
+.card{max-width:22rem;width:100%}
+.logo{width:72px;height:72px;border-radius:18px;margin:0 auto 1.1rem}
+h1{font-size:1.45rem;font-weight:800;margin:0 0 .4rem}
+h1 span{color:#00D4C8}
+p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
+.btn{display:block;width:100%;border:0;border-radius:14px;padding:.95rem 1rem;margin:.55rem 0 0;font-weight:700;text-decoration:none;color:#061426;background:#00D4C8}
+.btn.secondary{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.28)}
+</style>
+</head>
+<body>
+<div class="card">
+<img class="logo" src="/kampusteyim_icon.png" width="72" height="72" alt="KampüsteyimAPP"/>
+<h1>Kampüsteyim<span>APP</span></h1>
+<p id="status">Uygulama açılıyor…</p>
+<a class="btn" id="store" href="https://kampusteyim.app/#indir">Uygulamayı indir</a>
+<a class="btn secondary" id="web" href="${safePath}">Web’de devam et</a>
+</div>
+<script>
+(function(){
+  var store=document.getElementById('store');
+  var web=document.getElementById('web');
+  var path=window.__ktPath||'/home';
+  var gone=false;
+  store.href=window.__ktStore||store.href;
+  store.textContent=window.__ktIOS?'App Store’dan indir':(window.__ktAndroid?'Google Play’den indir':'İndirme sayfasına git');
+  web.href=path;
+  window.addEventListener('pagehide',function(){gone=true;});
+  document.addEventListener('visibilitychange',function(){if(document.hidden)gone=true;});
+  if(!window.__ktIOS&&!window.__ktAndroid){location.replace(path);return;}
+  setTimeout(function(){
+    if(gone||document.hidden)return;
+    document.getElementById('status').textContent='Uygulama bulunamadı · indirmeye yönlendiriliyor…';
+    location.replace(window.__ktStore);
+  },window.__ktAndroid?1100:900);
+})();
+</script>
+</body>
+</html>`;
+}
+
+/** QR /t/username ve /get: tarama logla + uygulamayı aç / mağazaya yönlendir */
 exports.trackPromoScan = onRequest(
   { region: 'europe-west1', cors: true },
   async (req, res) => {
@@ -7042,12 +7634,19 @@ exports.trackPromoScan = onRequest(
       return;
     }
     try {
-      const body =
-        req.method === 'GET'
-          ? req.query || {}
-          : typeof req.body === 'string'
-            ? JSON.parse(req.body || '{}')
-            : req.body || {};
+      let parsed = {};
+      if (req.method === 'GET') {
+        parsed = req.query || {};
+      } else if (typeof req.body === 'string') {
+        try {
+          parsed = JSON.parse(req.body || '{}');
+        } catch (_) {
+          parsed = {};
+        }
+      } else {
+        parsed = req.body || {};
+      }
+      const body = { ...(req.query || {}), ...parsed };
       let platform = String(body.platform || '').toLowerCase();
       const ua = String(req.get('user-agent') || body.ua || '');
       if (!platform) {
@@ -7059,10 +7658,17 @@ exports.trackPromoScan = onRequest(
 
       const cfg = await readPromoConfig();
       const nowIso = new Date().toISOString();
+      const username = promoUsernameFromRequest(req, body);
+      const landing = wantsPromoCardLanding(req, body);
+      const source = String(body.source || (landing || username ? 'promo_card' : 'qr')).slice(
+        0,
+        40,
+      );
       await db.collection('promo_scans').add({
         platform,
         ua: ua.slice(0, 240),
-        source: String(body.source || 'qr').slice(0, 40),
+        source,
+        username,
         createdAt: nowIso,
       });
       const inc = {
@@ -7071,9 +7677,21 @@ exports.trackPromoScan = onRequest(
         updatedAt: nowIso,
       };
       await db.doc(PROMO_STATS).set(inc, { merge: true });
+      if (source === 'promo_card' || username) {
+        await bumpPromoCardScan({ username, platform, nowIso }).catch((e) => {
+          console.warn('[trackPromoScan] card', e?.message || e);
+        });
+      }
 
       const store = resolveStoreUrls(cfg);
       const redirectUrl = resolveRedirectUrl(platform, cfg);
+
+      if (req.method === 'GET' && landing) {
+        res.set('Cache-Control', 'no-store');
+        res.set('Content-Type', 'text/html; charset=utf-8');
+        res.status(200).send(promoOpenLandingHtml(username));
+        return;
+      }
 
       if (req.method === 'GET' && String(body.redirect || '1') !== '0') {
         res.set('Cache-Control', 'no-store');
@@ -7122,6 +7740,110 @@ exports.updatePromoConfig = onCall(
       { merge: true },
     );
     return { ok: true, playStoreUrl, appStoreUrl, qrTargetUrl: qrTargetUrl || DEFAULT_QR_LANDING };
+  },
+);
+
+/** QR kartından gelen takip (24s penceresi istemcide; burada tekil sayılır). */
+exports.trackPromoFollow = onCall(
+  { region: 'europe-west1', timeoutSeconds: 20 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    const username = String(request.data?.username || request.data?.userId || '')
+      .trim()
+      .replace(/^@/, '')
+      .toLowerCase();
+    if (!username) throw new HttpsError('invalid-argument', 'username zorunlu');
+    let target = await findUserByUsername(username);
+    if (!target) target = await findUserDocByAnyId(username);
+    if (!target || !target.exists) throw new HttpsError('not-found', 'Hesap yok');
+    return recordPromoCardFollow({
+      targetDoc: target,
+      followerUid: request.auth.uid,
+      username: target.data()?.username || username,
+    });
+  },
+);
+
+/** Admin tüm kart istatistikleri; org yalnız kendi kaydı. */
+exports.getPromoCardStats = onCall(
+  { region: 'europe-west1', timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    const meDoc = await findUserDocByAnyId(request.auth.uid);
+    if (!meDoc || !meDoc.exists) {
+      throw new HttpsError('permission-denied', 'Profil yok');
+    }
+    const me = meDoc.data() || {};
+    let isAdmin = false;
+    try {
+      await assertPlatformAdmin(request.auth.uid);
+      isAdmin = true;
+    } catch (_) {
+      isAdmin = false;
+    }
+    const items = [];
+    const toItem = (doc, userData) => {
+      const d = doc.data() || {};
+      const u = userData || {};
+      const isCommunity = d.isCommunity === true || u.isCommunity === true;
+      const role = String(d.role || u.role || '');
+      return {
+        accountId: doc.id,
+        username: String(d.username || u.username || ''),
+        name: String(
+          d.name ||
+            u.fullName ||
+            `${String(u.firstName || '').trim()} ${String(u.lastName || '').trim()}`.trim() ||
+            '',
+        ),
+        scans: Number(d.scans || 0),
+        ios: Number(d.ios || 0),
+        android: Number(d.android || 0),
+        follows: Number(d.follows || 0),
+        role,
+        isCommunity,
+        isCompany: role === 'company' || u.isCompany === true,
+      };
+    };
+    if (isAdmin) {
+      const snap = await db.collection('promo_card_stats').limit(500).get();
+      const userDocs = await Promise.all(
+        snap.docs.map((doc) => db.collection('users').doc(doc.id).get()),
+      );
+      snap.docs.forEach((doc, i) => {
+        items.push(toItem(doc, userDocs[i]?.exists ? userDocs[i].data() : {}));
+      });
+    } else {
+      let orgId = meDoc.id;
+      if (
+        me.role !== 'company' &&
+        me.isCommunity !== true &&
+        String(me.panelOrgId || '').trim()
+      ) {
+        orgId = String(me.panelOrgId).trim();
+      }
+      if (me.role !== 'company' && me.isCommunity !== true && !me.panelAccess) {
+        throw new HttpsError('permission-denied', 'Yetki yok');
+      }
+      const doc = await db.collection('promo_card_stats').doc(orgId).get();
+      if (doc.exists) {
+        items.push(toItem(doc));
+      } else {
+        const name =
+          String(me.fullName || '').trim() ||
+          `${String(me.firstName || '').trim()} ${String(me.lastName || '').trim()}`.trim();
+        items.push({
+          accountId: orgId,
+          username: String(me.username || ''),
+          name,
+          scans: 0,
+          ios: 0,
+          android: 0,
+          follows: 0,
+        });
+      }
+    }
+    return { ok: true, items };
   },
 );
 
@@ -9038,3 +9760,5 @@ if (_payments.plusExpiryReminders) {
 }
 exports.adminReviewEvent = _payments.adminReviewEvent;
 exports.adminDeleteEvent = _payments.adminDeleteEvent;
+
+exports.processProfilePhoto = require('./profile_photo').processProfilePhoto;

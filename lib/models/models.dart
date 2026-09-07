@@ -176,6 +176,7 @@ class AppUser {
     this.incomingFollowRequests = const [],
     this.outgoingFollowRequests = const [],
     this.deliveryAddresses = const [],
+    this.linkedAccountIds = const [],
   });
 
   final String id;
@@ -302,6 +303,9 @@ class AppUser {
 
   /// Market kargo adresleri.
   final List<DeliveryAddress> deliveryAddresses;
+
+  /// Çıkış yapmadan geçilebilen bağlı hesaplar (topluluk / firma / resmi).
+  final List<String> linkedAccountIds;
 
   /// Panel erişimi: süper admin, UserRole.admin veya atanmış staff rolü.
   bool get canAccessAdmin =>
@@ -496,6 +500,7 @@ class AppUser {
     List<String>? incomingFollowRequests,
     List<String>? outgoingFollowRequests,
     List<DeliveryAddress>? deliveryAddresses,
+    List<String>? linkedAccountIds,
     bool clearPhoto = false,
     bool clearAffiliation = false,
     bool clearRestrictionUntil = false,
@@ -593,6 +598,7 @@ class AppUser {
       outgoingFollowRequests:
           outgoingFollowRequests ?? this.outgoingFollowRequests,
       deliveryAddresses: deliveryAddresses ?? this.deliveryAddresses,
+      linkedAccountIds: linkedAccountIds ?? this.linkedAccountIds,
     );
   }
 

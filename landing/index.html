@@ -679,6 +679,7 @@
       <p>© KampüsteyimAPP · AYS Tech · Kayra Çatalkaya</p>
       <nav>
         <a href="./elcilik.html">Kampüs Elçiliği</a>
+        <a href="https://app.kampusteyim.app/tanitimkarti">Tanıtım kartı</a>
         <a href="https://app.kampusteyim.app/privacy.html">Gizlilik</a>
         <a href="https://app.kampusteyim.app/terms.html">Şartlar</a>
         <a href="https://app.kampusteyim.app/child-safety.html">Çocuk güvenliği</a>
@@ -687,7 +688,7 @@
     </div>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script src="./vendor/qrcode.min.js"></script>
   <script>
 (function () {
   const PROMO_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/getPromoPublic';
@@ -721,13 +722,40 @@
   const canvas = document.getElementById('qr-canvas');
   function setQr(url) {
     const target = (url && String(url).trim()) || QR_FALLBACK;
-    if (window.QRCode) {
+    const frame = document.querySelector('.qr-frame');
+    const drawImg = (src) => {
+      if (!frame) return;
+      let img = frame.querySelector('img.qr-img');
+      if (!img) {
+        img = document.createElement('img');
+        img.className = 'qr-img';
+        img.alt = 'İndirme QR kodu';
+        img.width = 160;
+        img.height = 160;
+        if (canvas && canvas.parentNode) canvas.replaceWith(img);
+        else frame.appendChild(img);
+      }
+      img.src = src;
+    };
+    if (window.QRCode && typeof QRCode.toCanvas === 'function' && canvas && canvas.getContext) {
       QRCode.toCanvas(canvas, target, {
         width: 160,
         margin: 1,
         color: { dark: '#0B1F3A', light: '#ffffff' },
-      }, function () {});
+      }, function (err) {
+        if (err) {
+          drawImg(
+            'https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=8&data=' +
+              encodeURIComponent(target),
+          );
+        }
+      });
+      return;
     }
+    drawImg(
+      'https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=8&data=' +
+        encodeURIComponent(target),
+    );
   }
   setQr(QR_FALLBACK);
 

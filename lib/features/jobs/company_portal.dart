@@ -316,6 +316,11 @@ class CompanyDashboardScreen extends StatelessWidget {
                 ],
               ),
               actions: [
+                IconButton(
+                  tooltip: 'Tanıtım kartı',
+                  onPressed: () => context.push('/tanitimkarti'),
+                  icon: const Icon(Icons.qr_code_2_rounded),
+                ),
                 if (jobs.status != null)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),

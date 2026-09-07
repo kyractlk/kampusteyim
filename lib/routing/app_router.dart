@@ -35,6 +35,7 @@ import '../features/market/delivery_addresses_screen.dart';
 import '../features/notifications/notification_settings_screen.dart';
 import '../features/notifications/notifications_screen.dart';
 import '../features/privacy/privacy_settings_screen.dart';
+import '../features/promo/promo_card_studio_screen.dart';
 import '../features/profile/follow_list_screen.dart';
 import '../features/profile/follow_requests_screen.dart';
 import '../features/profile/profile_screen.dart';
@@ -99,7 +100,10 @@ GoRouter createRouter(AuthProvider auth) {
           !user.isCompany &&
           !user.isCommunity &&
           (user.isAccountPending || user.isAccountRejected);
-      if (pendingGate && loc != '/pending-approval' && loc != '/login') {
+      if (pendingGate &&
+          loc != '/pending-approval' &&
+          loc != '/login' &&
+          loc != '/tanitimkarti') {
         return '/pending-approval';
       }
       if (loggedIn &&
@@ -107,9 +111,13 @@ GoRouter createRouter(AuthProvider auth) {
           (loc == '/login' ||
               loc == '/register' ||
               loc == '/pending-approval')) {
+        final next = state.uri.queryParameters['next'] ?? '';
+        if (next == '/tanitimkarti') return next;
         return AuthProvider.homeRouteFor(user);
       }
       if (loggedIn && (loc == '/login' || loc == '/register')) {
+        final next = state.uri.queryParameters['next'] ?? '';
+        if (next == '/tanitimkarti') return next;
         return AuthProvider.homeRouteFor(user);
       }
       return null;
@@ -220,6 +228,20 @@ GoRouter createRouter(AuthProvider auth) {
         builder: (context, state) => const AdminPortalScreen(),
       ),
       GoRoute(
+        path: '/tanitimkarti',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (context, state) => const PromoCardStudioScreen(),
+      ),
+      GoRoute(
+        path: '/t/:username',
+        parentNavigatorKey: appRootNavigatorKey,
+        redirect: (context, state) {
+          final username = state.pathParameters['username'] ?? '';
+          if (username.isEmpty) return '/home';
+          return '/user/$username?src=promo';
+        },
+      ),
+      GoRoute(
         path: '/community',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (context, state) => const CommunityPortalScreen(),
@@ -243,7 +265,11 @@ GoRouter createRouter(AuthProvider auth) {
         pageBuilder: (context, state) => CustomTransitionPage(
           key: state.pageKey,
           name: '/user/${state.pathParameters['id']}',
-          child: UserProfileView(userId: state.pathParameters['id']!),
+          child: UserProfileView(
+            userId: state.pathParameters['id']!,
+            fromPromo: state.uri.queryParameters['src'] == 'promo',
+            promoViaWeb: state.uri.queryParameters['via'] == 'web',
+          ),
           transitionsBuilder: (context, animation, secondary, child) {
             return FadeTransition(opacity: animation, child: child);
           },

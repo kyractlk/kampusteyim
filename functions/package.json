@@ -16,7 +16,11 @@
     "livekit-server-sdk": "^2.18.0",
     "nodemailer": "^6.9.16",
     "openai": "^4.77.0",
-    "pdf-parse": "^1.1.4"
+    "pdf-parse": "^1.1.4",
+    "sharp": "^0.34.5"
   },
-  "private": true
+  "private": true,
+  "allowScripts": {
+    "sharp@0.34.5": true
+  }
 }

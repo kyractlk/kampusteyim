@@ -18,6 +18,7 @@ import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
+import '../promo/promo_attribution.dart';
 import '../home/home_shell.dart'
     show kGlassNavBarHeight, shellBottomNavInset;
 import '../jobs/jobs_provider.dart';
@@ -104,10 +105,15 @@ class UserProfileView extends StatefulWidget {
     super.key,
     required this.userId,
     this.isSelf = false,
+    this.fromPromo = false,
+    this.promoViaWeb = false,
   });
 
   final String userId;
   final bool isSelf;
+  final bool fromPromo;
+  /// Web QR sayfası zaten sayacı yazdı; uygulamada tekrar sayma.
+  final bool promoViaWeb;
 
   @override
   State<UserProfileView> createState() => _UserProfileViewState();
@@ -121,9 +127,25 @@ class _UserProfileViewState extends State<UserProfileView> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final auth = context.read<AuthProvider>();
+      if (widget.fromPromo) {
+        final existing = auth.findUser(widget.userId);
+        PromoAttribution.mark(
+          existing?.username ?? widget.userId,
+          userId: existing?.id ?? widget.userId,
+          countScan: !widget.promoViaWeb,
+        );
+      }
       if (auth.findUser(widget.userId) != null) return;
       setState(() => _loadingRemote = true);
       await auth.ensureUserLoaded(widget.userId);
+      if (widget.fromPromo) {
+        final loaded = auth.findUser(widget.userId);
+        PromoAttribution.mark(
+          loaded?.username ?? widget.userId,
+          userId: loaded?.id ?? widget.userId,
+          countScan: !widget.promoViaWeb,
+        );
+      }
       if (mounted) setState(() => _loadingRemote = false);
     });
   }
@@ -252,6 +274,17 @@ class _UserProfileViewState extends State<UserProfileView> {
               },
             ),
           if (isSelf) ...[
+            if (user.linkedAccountIds.isNotEmpty)
+              IconButton(
+                tooltip: 'Hesap değiştir',
+                onPressed: () => context.push('/profile/settings'),
+                icon: const Icon(Icons.swap_horiz_rounded),
+              ),
+            IconButton(
+              tooltip: 'Tanıtım kartı',
+              onPressed: () => context.push('/tanitimkarti'),
+              icon: const Icon(Icons.qr_code_2_rounded),
+            ),
             IconButton(
               tooltip: 'Ayarlar',
               onPressed: () => context.push('/profile/settings'),
