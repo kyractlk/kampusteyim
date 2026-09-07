@@ -343,7 +343,8 @@ class _AppVersionGatePanel extends StatefulWidget {
 }
 
 class _AppVersionGatePanelState extends State<_AppVersionGatePanel> {
-  final _min = TextEditingController();
+  final _minIos = TextEditingController();
+  final _minAndroid = TextEditingController();
   final _title = TextEditingController(text: 'Güncelleme gerekli');
   final _message = TextEditingController(
     text:
@@ -367,7 +368,8 @@ class _AppVersionGatePanelState extends State<_AppVersionGatePanel> {
 
   @override
   void dispose() {
-    _min.dispose();
+    _minIos.dispose();
+    _minAndroid.dispose();
     _title.dispose();
     _message.dispose();
     _iosOverride.dispose();
@@ -386,7 +388,8 @@ class _AppVersionGatePanelState extends State<_AppVersionGatePanel> {
           .doc('app_version')
           .get();
       final d = snap.data() ?? {};
-      _min.text = '${d['minVersion'] ?? ''}';
+      _minIos.text = '${d['minIosVersion'] ?? ''}';
+      _minAndroid.text = '${d['minAndroidVersion'] ?? ''}';
       _title.text = '${d['title'] ?? _title.text}';
       _message.text = '${d['message'] ?? _message.text}';
       _iosOverride.text = '${d['latestIosOverride'] ?? ''}';
@@ -425,7 +428,8 @@ class _AppVersionGatePanelState extends State<_AppVersionGatePanel> {
       final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
           .httpsCallable('updateAppVersionConfig');
       final res = await callable.call({
-        'minVersion': _min.text.trim(),
+        'minIosVersion': _minIos.text.trim(),
+        'minAndroidVersion': _minAndroid.text.trim(),
         'title': _title.text.trim(),
         'message': _message.text.trim(),
         'latestIosOverride': _iosOverride.text.trim(),
@@ -466,9 +470,9 @@ class _AppVersionGatePanelState extends State<_AppVersionGatePanel> {
         ),
         const SizedBox(height: 6),
         const Text(
-          'App Store / Play sürümleri otomatik okunur. Minimum sürümün altındaki '
-          'kullanıcılar uygulamayı kullanamaz ve mağazaya yönlendirilir. '
-          'Mağazada daha yeni sürüm varsa soft uyarı çıkar.',
+          'iOS ve Android ayrı raydır. iOS 1.71 ile Android 1.1.0 asla '
+          'karşılaştırılmaz. Soft uyarı: o platformun mağaza sürümü yüklü '
+          'sürümden yeniyse. Zorunlu kilit: yalnız o platformun minimumu doluysa.',
           style: TextStyle(
             fontSize: 12.5,
             color: AppColors.textSecondary,
@@ -486,11 +490,20 @@ class _AppVersionGatePanelState extends State<_AppVersionGatePanel> {
         ),
         const SizedBox(height: 12),
         TextField(
-          controller: _min,
+          controller: _minIos,
           decoration: const InputDecoration(
-            labelText: 'Zorunlu minimum sürüm',
-            hintText: 'örn. 1.0.32',
-            helperText: 'Bu sürümün altı → tam ekran “güncelle” kilidi',
+            labelText: 'iOS zorunlu minimum',
+            hintText: 'örn. 1.71 — boş = kilitleme yok',
+            helperText: 'Yalnız iOS. Android’e dokunmaz.',
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _minAndroid,
+          decoration: const InputDecoration(
+            labelText: 'Android zorunlu minimum',
+            hintText: 'örn. 1.1.0 — boş = kilitleme yok',
+            helperText: 'Yalnız Android. iOS’a dokunmaz.',
           ),
         ),
         const SizedBox(height: 10),
@@ -523,7 +536,9 @@ class _AppVersionGatePanelState extends State<_AppVersionGatePanel> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Minimum altını zorla'),
-          subtitle: const Text('minVersion altındaki kullanıcılar kilitlenir'),
+          subtitle: const Text(
+            'O platformun minimumunun altı tam ekran kilitlenir',
+          ),
           value: _forceBelowMin,
           onChanged: (v) => setState(() => _forceBelowMin = v),
         ),

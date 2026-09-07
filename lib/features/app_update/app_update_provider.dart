@@ -9,24 +9,28 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'app_update_models.dart';
 
-/// Açılışta mağaza sürümünü kontrol eder; soft / force güncelleme üretir.
+/// Açılışta bu platformun mağaza sürümünü kontrol eder.
+/// iOS 1.71 ile Android 1.1.0 asla birbirine kıyaslanmaz.
 class AppUpdateProvider extends ChangeNotifier {
   AppUpdateProvider() {
-    // Sürüm güncelleme kapısı kapalı — kullanıcıyı engellemez / banner göstermez.
+    unawaited(check());
   }
 
   static const _gateUrl =
       'https://europe-west1-ayskampuss.cloudfunctions.net/getAppUpdateGate';
-  static const _dismissKey = 'mt_update_dismissed_store_version';
+  static const _dismissKey = 'mt_update_dismissed_platform_store';
 
   AppUpdateGate gate = AppUpdateGate.empty;
   bool loading = false;
   bool softDismissed = false;
   String? localVersion;
+  String? localBuild;
   String? status;
+  String _platform = 'other';
 
-  bool get blocksApp => false;
-  bool get showSoftBanner => false;
+  bool get blocksApp => gate.forceUpdate;
+  bool get showSoftBanner =>
+      gate.softUpdate && !gate.forceUpdate && !softDismissed;
 
   Future<void> check({bool refresh = false}) async {
     if (kIsWeb) return;
@@ -36,17 +40,17 @@ class AppUpdateProvider extends ChangeNotifier {
     try {
       final info = await PackageInfo.fromPlatform();
       localVersion = info.version;
-      final platform = appUpdatePlatformLabel();
+      localBuild = info.buildNumber;
+      _platform = appUpdatePlatformLabel();
       final uri = Uri.parse(_gateUrl).replace(
         queryParameters: {
-          'platform': platform,
+          'platform': _platform,
           'currentVersion': info.version,
+          'currentBuild': info.buildNumber,
           if (refresh) 'refresh': '1',
         },
       );
-      final res = await http
-          .get(uri)
-          .timeout(const Duration(seconds: 12));
+      final res = await http.get(uri).timeout(const Duration(seconds: 12));
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final map = jsonDecode(res.body);
         if (map is Map && map['ok'] == true) {
@@ -70,8 +74,7 @@ class AppUpdateProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final dismissed = prefs.getString(_dismissKey) ?? '';
-      softDismissed =
-          dismissed.isNotEmpty && dismissed == gate.storeVersion;
+      softDismissed = dismissed == '$_platform:${gate.storeVersion}';
     } catch (_) {
       softDismissed = false;
     }
@@ -83,7 +86,7 @@ class AppUpdateProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_dismissKey, gate.storeVersion);
+      await prefs.setString(_dismissKey, '$_platform:${gate.storeVersion}');
     } catch (_) {}
   }
 

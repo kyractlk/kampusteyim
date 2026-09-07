@@ -24,6 +24,7 @@ import 'core/widgets/keyboard_dismiss.dart';
 import 'features/admin/admin_provider.dart';
 import 'features/ads/ads_provider.dart';
 import 'features/app_update/app_update_provider.dart';
+import 'features/app_update/app_update_screen.dart';
 import 'features/auth/data/auth_provider.dart';
 import 'features/feed/feed_provider.dart';
 import 'features/jobs/jobs_provider.dart';
@@ -247,6 +248,10 @@ class _MtMobilAppState extends State<MtMobilApp> {
                   path == '/sifre-sifirla' ||
                   path.startsWith('/r/');
 
+              final upd = context.watch<AppUpdateProvider>();
+              if (upd.blocksApp && !bypass) {
+                return const AppUpdateForceScreen();
+              }
               if (maint.blocksApp && !bypass && !staffPath) {
                 return const MaintenanceScreen();
               }
@@ -254,6 +259,14 @@ class _MtMobilAppState extends State<MtMobilApp> {
               Widget content = KeyboardDismissOnTap(
                 child: child ?? const SizedBox.shrink(),
               );
+              if (upd.showSoftBanner && !staffPath) {
+                content = Column(
+                  children: [
+                    Expanded(child: content),
+                    const AppUpdateSoftBanner(),
+                  ],
+                );
+              }
               if (testMode.isActive && !staffPath) {
                 content = Column(
                   children: [

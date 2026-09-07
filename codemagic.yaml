@@ -49,7 +49,7 @@ workflows:
           # App Store’da son yüklenen cfBundleVersion’dan yüksek olmalı
           BN="${BUILD_NUMBER:-33}"
           if [ "$BN" -le 32 ]; then BN=33; fi
-          sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
+          sed -i '' -E "s/^version: .*/version: 1.71+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Flutter IPA RELEASE only
         script: |
@@ -92,6 +92,8 @@ workflows:
             exit 1
           fi
           flutter build ipa --release \
+            --build-name=1.71 \
+            --build-number="${BUILD_NUMBER:-67}" \
             --no-tree-shake-icons \
             --export-options-plist=/Users/builder/export_options.plist
           IPA=$(ls -1 build/ios/ipa/*.ipa | head -1)
@@ -175,12 +177,14 @@ workflows:
         script: |
           BN="${BUILD_NUMBER:-14}"
           if [ "$BN" -le 13 ]; then BN=14; fi
-          sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
+          sed -i '' -E "s/^version: .*/version: 1.71+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Flutter Ad Hoc RELEASE IPA
         script: |
           set -e
           flutter build ipa --release \
+            --build-name=1.71 \
+            --build-number="${BUILD_NUMBER:-67}" \
             --no-tree-shake-icons \
             --export-options-plist=/Users/builder/export_options.plist
           IPA=$(ls -1 build/ios/ipa/*.ipa | head -1)
@@ -255,9 +259,9 @@ workflows:
           flutter --version
       - name: Build number
         script: |
-          BN="${BUILD_NUMBER:-65}"
-          if [ "$BN" -le 64 ]; then BN=65; fi
-          sed -i '' -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+.*/version: \1+$BN/" pubspec.yaml
+          BN="${BUILD_NUMBER:-68}"
+          if [ "$BN" -le 67 ]; then BN=68; fi
+          sed -i '' -E "s/^version: .*/version: 1.1.0+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Build signed APK + AAB
         script: |

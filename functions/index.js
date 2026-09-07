@@ -9366,6 +9366,8 @@ async function readAppVersionConfig() {
     forceBelowMin: d.forceBelowMin !== false,
     softUpdateEnabled: d.softUpdateEnabled !== false,
     minVersion: normalizeVersion(d.minVersion || ''),
+    minIosVersion: normalizeVersion(d.minIosVersion || ''),
+    minAndroidVersion: normalizeVersion(d.minAndroidVersion || ''),
     latestIosOverride: normalizeVersion(d.latestIosOverride || ''),
     latestAndroidOverride: normalizeVersion(d.latestAndroidOverride || ''),
     title: String(d.title || defaultTitle).trim() || defaultTitle,
@@ -9458,12 +9460,20 @@ exports.getAppUpdateGate = onRequest(
           ? store.iosVersion
           : platform === 'android'
             ? store.androidVersion
-            : store.iosVersion || store.androidVersion;
+            : '';
+
+      // iOS 1.71 ile Android 1.1.0 asla çapraz kıyaslanmaz.
+      let platformMin = '';
+      if (platform === 'ios') {
+        platformMin = cfg.minIosVersion || '';
+      } else if (platform === 'android') {
+        platformMin = cfg.minAndroidVersion || '';
+      }
 
       const belowMin =
-        Boolean(cfg.minVersion) &&
+        Boolean(platformMin) &&
         Boolean(current) &&
-        compareVersions(current, cfg.minVersion) < 0;
+        compareVersions(current, platformMin) < 0;
       const belowStore =
         Boolean(storeVersion) &&
         Boolean(current) &&
@@ -9487,7 +9497,9 @@ exports.getAppUpdateGate = onRequest(
         ok: true,
         platform: platform || 'unknown',
         currentVersion: current,
-        minVersion: cfg.minVersion,
+        minVersion: platformMin,
+        minIosVersion: cfg.minIosVersion,
+        minAndroidVersion: cfg.minAndroidVersion,
         storeVersion: storeVersion || '',
         iosStoreVersion: store.iosVersion || '',
         androidStoreVersion: store.androidVersion || '',
@@ -9524,6 +9536,12 @@ exports.updateAppVersionConfig = onCall(
       updatedBy: request.auth.uid,
     };
     if (data.minVersion != null) patch.minVersion = normalizeVersion(data.minVersion);
+    if (data.minIosVersion != null) {
+      patch.minIosVersion = normalizeVersion(data.minIosVersion);
+    }
+    if (data.minAndroidVersion != null) {
+      patch.minAndroidVersion = normalizeVersion(data.minAndroidVersion);
+    }
     if (data.latestIosOverride != null) {
       patch.latestIosOverride = normalizeVersion(data.latestIosOverride);
     }
