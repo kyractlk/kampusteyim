@@ -16,7 +16,6 @@ import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
 import '../reels/reels_provider.dart';
-import '../whats_new/whats_new.dart';
 import 'shell_chrome.dart';
 
 /// Reels alt menü — içerik yüksekliği (home indicator / sistem inset hariç).
@@ -98,8 +97,7 @@ class HomeShell extends StatelessWidget {
     if (!wide) {
       final reelsMode = index == 1;
       final glass = context.watch<ThemeProvider>().isLiquidGlass;
-      return WhatsNewHost(
-        child: PopScope(
+      return PopScope(
         canPop: false,
         onPopInvokedWithResult: _onPop,
         child: ValueListenableBuilder<bool>(
@@ -128,7 +126,6 @@ class HomeShell extends StatelessWidget {
             );
           },
         ),
-        ),
       );
     }
 
@@ -137,8 +134,7 @@ class HomeShell extends StatelessWidget {
     final railW =
         labels ? AppBreakpoints.railExpanded : AppBreakpoints.railWidth;
 
-    return WhatsNewHost(
-      child: PopScope(
+    return PopScope(
       canPop: false,
       onPopInvokedWithResult: _onPop,
       child: Scaffold(
@@ -200,7 +196,6 @@ class HomeShell extends StatelessWidget {
           ),
         ),
         ),
-      ),
       ),
     );
   }

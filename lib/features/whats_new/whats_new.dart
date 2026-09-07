@@ -62,14 +62,7 @@ class WhatsNewItem {
 class WhatsNew {
   static const _prefKey = 'whats_new_seen_version';
 
-  static Future<bool> shouldShow() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_prefKey) != WhatsNewCatalog.releaseVersion;
-    } catch (_) {
-      return false;
-    }
-  }
+  static Future<bool> shouldShow() async => false;
 
   static Future<void> markSeen() async {
     try {

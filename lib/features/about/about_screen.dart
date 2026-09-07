@@ -35,19 +35,6 @@ class AboutScreen extends StatelessWidget {
           _row('İmza', AppInfo.author),
           _row('Destek', AppInfo.supportEmail),
           _row('Sürüm', AppInfo.versionLabel),
-          const SizedBox(height: 16),
-          const Text(
-            'Bu sürüm',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '• Hesaplar arası geçiş (çıkış yok)\n'
-            '• Tanıtım kartı ve QR istatistikleri\n'
-            '• Resmi hesap: duyuru + firma + bilet\n'
-            '• Profil fotoğrafı bozulmadan sığar\n'
-            '• Silinen hesap kalıntısız gider',
-          ),
           const PartnersAboutSection(),
           const SizedBox(height: 28),
           const AysProductBadge(logoSize: 32, opacity: 0.55),

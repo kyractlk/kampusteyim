@@ -9376,9 +9376,21 @@ async function readAppVersionConfig() {
     androidPackage: String(d.androidPackage || ANDROID_PACKAGE).trim() || ANDROID_PACKAGE,
     cachedIosVersion: normalizeVersion(d.cachedIosVersion || ''),
     cachedAndroidVersion: normalizeVersion(d.cachedAndroidVersion || ''),
+    seenIosVersion: normalizeVersion(d.seenIosVersion || ''),
+    seenAndroidVersion: normalizeVersion(d.seenAndroidVersion || ''),
     cachedAt: d.cachedAt || null,
     updatedAt: d.updatedAt || null,
   };
+}
+
+function pickLatest(...versions) {
+  let best = '';
+  for (const raw of versions) {
+    const n = normalizeVersion(raw);
+    if (!n) continue;
+    if (!best || compareVersions(n, best) > 0) best = n;
+  }
+  return best;
 }
 
 async function refreshStoreVersions(cfg, { force = false } = {}) {
@@ -9391,7 +9403,7 @@ async function refreshStoreVersions(cfg, { force = false } = {}) {
   let androidAvailable = Boolean(androidVersion);
 
   const tasks = [];
-  if (!cfg.latestIosOverride) {
+  if (!useCache || !iosVersion) {
     tasks.push(
       fetchIosStoreVersion(cfg.iosAppId)
         .then((r) => {
@@ -9401,7 +9413,7 @@ async function refreshStoreVersions(cfg, { force = false } = {}) {
         .catch((e) => console.warn('[appVersion] ios lookup', e && e.message ? e.message : e)),
     );
   }
-  if (!cfg.latestAndroidOverride) {
+  if (!useCache || !androidVersion) {
     tasks.push(
       fetchAndroidStoreVersion(cfg.androidPackage)
         .then((r) => {
@@ -9416,6 +9428,19 @@ async function refreshStoreVersions(cfg, { force = false } = {}) {
     );
   }
   await Promise.all(tasks);
+
+  iosVersion = pickLatest(
+    iosVersion,
+    cfg.cachedIosVersion,
+    cfg.seenIosVersion,
+    cfg.latestIosOverride,
+  );
+  androidVersion = pickLatest(
+    androidVersion,
+    cfg.cachedAndroidVersion,
+    cfg.seenAndroidVersion,
+    cfg.latestAndroidOverride,
+  );
 
   const nowIso = new Date().toISOString();
   await db
@@ -9451,6 +9476,19 @@ exports.getAppUpdateGate = onRequest(
       const platform = String(q.platform || '').toLowerCase();
       const current = normalizeVersion(q.currentVersion || q.version || '');
       const cfg = await readAppVersionConfig();
+      if (current && (platform === 'ios' || platform === 'android')) {
+        const seenField =
+          platform === 'ios' ? 'seenIosVersion' : 'seenAndroidVersion';
+        const prevSeen =
+          platform === 'ios' ? cfg.seenIosVersion : cfg.seenAndroidVersion;
+        if (!prevSeen || compareVersions(current, prevSeen) > 0) {
+          cfg[seenField] = current;
+          await db
+            .doc(APP_VERSION_DOC)
+            .set({ [seenField]: current, seenAt: new Date().toISOString() }, { merge: true })
+            .catch(() => {});
+        }
+      }
       const store = await refreshStoreVersions(cfg, { force: String(q.refresh) === '1' });
       const promo = await readPromoConfig();
       const storeUrls = resolveStoreUrls(promo);
@@ -9524,6 +9562,14 @@ exports.getAppUpdateGate = onRequest(
 );
 
 /** Admin: min version / force update / message */
+exports.refreshAppStoreVersions = onSchedule(
+  { region: 'europe-west1', schedule: 'every 6 hours', timeoutSeconds: 60 },
+  async () => {
+    const cfg = await readAppVersionConfig();
+    await refreshStoreVersions(cfg, { force: true });
+  },
+);
+
 exports.updateAppVersionConfig = onCall(
   { region: 'europe-west1', timeoutSeconds: 45 },
   async (request) => {

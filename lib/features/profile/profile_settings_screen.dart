@@ -9,7 +9,6 @@ import '../auth/data/auth_provider.dart';
 import '../jobs/jobs_provider.dart';
 import '../payments/payments_service.dart';
 import '../plus/plus_widgets.dart';
-import '../whats_new/whats_new.dart';
 import 'linked_accounts_block.dart';
 import 'profile_screen.dart' show openThemePicker;
 import 'package:firebase_auth/firebase_auth.dart' as fa;
@@ -240,12 +239,6 @@ class ProfileSettingsScreen extends StatelessWidget {
               },
             ),
           LinkedAccountsBlock(user: user),
-          _tile(
-            svg: MtIcons.info,
-            title: 'Yenilikler',
-            subtitle: 'Bu sürümde neler geldi',
-            onTap: () => WhatsNew.show(context),
-          ),
           _tile(
             svg: MtIcons.info,
             title: 'Uygulama bilgisi',

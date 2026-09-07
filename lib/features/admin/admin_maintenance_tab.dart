@@ -470,9 +470,8 @@ class _AppVersionGatePanelState extends State<_AppVersionGatePanel> {
         ),
         const SizedBox(height: 6),
         const Text(
-          'iOS ve Android ayrı raydır. iOS 1.71 ile Android 1.1.0 asla '
-          'karşılaştırılmaz. Soft uyarı: o platformun mağaza sürümü yüklü '
-          'sürümden yeniyse. Zorunlu kilit: yalnız o platformun minimumu doluysa.',
+          'Otomatik: App Store / Play + kullanıcıların açtığı yeni paket. '
+          'iOS ve Android ayrı tutulur. Sen sürüm yazmak zorunda değilsin.',
           style: TextStyle(
             fontSize: 12.5,
             color: AppColors.textSecondary,
@@ -484,70 +483,68 @@ class _AppVersionGatePanelState extends State<_AppVersionGatePanel> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            _chip('App Store', _iosStore),
-            _chip('Play Store', _androidStore),
+            _chip('App Store / iOS', _iosStore),
+            _chip('Play / Android', _androidStore),
           ],
         ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _minIos,
-          decoration: const InputDecoration(
-            labelText: 'iOS zorunlu minimum',
-            hintText: 'örn. 1.71 — boş = kilitleme yok',
-            helperText: 'Yalnız iOS. Android’e dokunmaz.',
-          ),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _minAndroid,
-          decoration: const InputDecoration(
-            labelText: 'Android zorunlu minimum',
-            hintText: 'örn. 1.1.0 — boş = kilitleme yok',
-            helperText: 'Yalnız Android. iOS’a dokunmaz.',
-          ),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _title,
-          decoration: const InputDecoration(labelText: 'Başlık'),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _message,
-          maxLines: 3,
-          decoration: const InputDecoration(labelText: 'Mesaj'),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _iosOverride,
-          decoration: const InputDecoration(
-            labelText: 'iOS sürüm override (opsiyonel)',
-            hintText: 'Boş bırak → App Store’dan oku',
-          ),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _androidOverride,
-          decoration: const InputDecoration(
-            labelText: 'Android sürüm override (opsiyonel)',
-            hintText: 'Boş bırak → Play’den oku / cache',
-          ),
-        ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text('Minimum altını zorla'),
+          title: const Text('Güncelleme öner'),
           subtitle: const Text(
-            'O platformun minimumunun altı tam ekran kilitlenir',
+            'O platformda geride kalanlara kapatılabilir banner',
           ),
-          value: _forceBelowMin,
-          onChanged: (v) => setState(() => _forceBelowMin = v),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Soft güncelleme uyarısı'),
-          subtitle: const Text('Mağazada daha yeni sürüm varsa alt banner'),
           value: _softEnabled,
           onChanged: (v) => setState(() => _softEnabled = v),
+        ),
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          title: const Text('Acil kilit (isteğe bağlı)'),
+          subtitle: const Text('Boş bırak. Yalnız eski sürümü tamamen kesmek için.'),
+          children: [
+            TextField(
+              controller: _minIos,
+              decoration: const InputDecoration(
+                labelText: 'iOS zorunlu minimum',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _minAndroid,
+              decoration: const InputDecoration(
+                labelText: 'Android zorunlu minimum',
+              ),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Minimum altını kilitle'),
+              value: _forceBelowMin,
+              onChanged: (v) => setState(() => _forceBelowMin = v),
+            ),
+            TextField(
+              controller: _title,
+              decoration: const InputDecoration(labelText: 'Kilit başlığı'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _message,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Kilit mesajı'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _iosOverride,
+              decoration: const InputDecoration(
+                labelText: 'iOS taban (nadiren)',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _androidOverride,
+              decoration: const InputDecoration(
+                labelText: 'Android taban (nadiren)',
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         Row(
