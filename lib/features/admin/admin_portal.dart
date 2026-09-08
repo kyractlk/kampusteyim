@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -15,6 +16,7 @@ import '../maintenance/maintenance_provider.dart';
 import '../moderation/moderation_models.dart';
 import '../notifications/notification_provider.dart';
 import 'admin_content_tabs.dart';
+import 'admin_edit_user_dialog.dart';
 import 'admin_users_tab.dart';
 import 'admin_feedback_tab.dart';
 import 'admin_legal_tab.dart';
@@ -23,6 +25,7 @@ import 'admin_permissions.dart';
 import 'admin_partners_tab.dart';
 import 'admin_provider.dart';
 import 'admin_registrations_tab.dart';
+import 'admin_name_requests_tab.dart';
 import 'admin_study_rooms_tab.dart';
 import 'admin_promo_hub_tab.dart';
 import 'admin_ambassador_hub.dart';
@@ -130,6 +133,13 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           icon: const Icon(Icons.how_to_reg_outlined),
           required: const [AdminPermission.manageUsers],
           builder: () => const AdminRegistrationsTab(),
+        ),
+      if (admin.can(me, AdminPermission.manageUsers))
+        _AdminTab(
+          label: 'Talepler',
+          icon: const Icon(Icons.badge_outlined),
+          required: const [AdminPermission.manageUsers],
+          builder: () => const AdminNameRequestsTab(),
         ),
       if (admin.can(me, AdminPermission.manageCvAi) ||
           admin.can(me, AdminPermission.manageUsers))
@@ -468,6 +478,113 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
     );
   }
 
+  Future<void> _createAndShowResetLink(
+    BuildContext context,
+    AdminProvider admin,
+    AppUser u,
+  ) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text('Link oluşturuluyor…'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    try {
+      final res = await admin.createPasswordResetLink(
+        email: u.email,
+        uid: u.id,
+      );
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      await _showResetLinkDialog(context, u, res);
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Link oluşturulamadı: $e')),
+      );
+    }
+  }
+
+  Future<void> _showResetLinkDialog(
+    BuildContext context,
+    AppUser u,
+    Map<String, dynamic> res,
+  ) async {
+    final link = '${res['link'] ?? ''}'.trim();
+    final hours = res['hours'] ?? 24;
+    if (link.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Link üretilemedi')),
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Şifre sıfırlama linki'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '${u.fullName.trim().isEmpty ? u.email : u.fullName}\n${u.email}',
+                style: const TextStyle(height: 1.35),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Bu link $hours saat geçerli. Kullanıcı kendi şifresini belirler. '
+                'Maili çalışmayan topluluklara WhatsApp / SMS ile ilet.',
+                style: const TextStyle(fontSize: 13, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              SelectableText(
+                link,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: link));
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Link kopyalandı')),
+                );
+              }
+            },
+            child: const Text('Kopyala'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _handleUserAction(
     BuildContext context,
     AppUser u,
@@ -477,8 +594,15 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
     final admin = context.read<AdminProvider>();
     final notif = context.read<NotificationProvider>();
     switch (v) {
+      case 'edit':
+        await showAdminEditUserDialog(
+          context: context,
+          admin: admin,
+          auth: auth,
+          user: u,
+        );
       case 'reset':
-        await admin.sendPasswordReset(email: u.email);
+        await _createAndShowResetLink(context, admin, u);
       case 'gold':
         await admin.setCommunityBadge(auth: auth, userId: u.id, enabled: true);
       case 'ungold':

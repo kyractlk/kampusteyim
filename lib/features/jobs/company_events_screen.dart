@@ -189,7 +189,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                     Text(
                       editing
                           ? 'İade politikası ve bilet tipi sonradan da değişebilir. Satılmış biletlerin tipi değişmez.'
-                          : 'Kaydettikten sonra admin onayına düşer. Onaylanınca listelenir.',
+                          : 'Kaydettikten sonra KampüsteyimAPP yönetim ekibinin incelemesine iletilir. Onaylanınca listelenir.',
                       style: TextStyle(
                         fontSize: 12.5,
                         color: AppColors.textSecondary,
@@ -384,7 +384,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                     FilledButton(
                       onPressed: () => Navigator.pop(ctx, true),
                       child: Text(
-                        editing ? 'Kaydet' : 'Admin onayına gönder',
+                        editing ? 'Kaydet' : 'İncelemeye gönder',
                       ),
                     ),
                   ],
@@ -462,7 +462,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
         content: Text(
           editing
               ? 'Etkinlik güncellendi'
-              : 'Etkinlik admin onayına gönderildi · bilet Market’e işlendi',
+              : 'Etkinlik inceleme için iletildi · bilet Market’e işlendi',
         ),
       ),
     );

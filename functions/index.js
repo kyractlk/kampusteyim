@@ -175,7 +175,7 @@ function makeShortResetCode() {
 }
 
 /** Kendi KampüsteyimAPP sayfamıza giden kısa şifre sıfırlama linki. */
-async function createAppPasswordResetLink(email) {
+async function createAppPasswordResetLink(email, opts = {}) {
   const { getAuth } = require('firebase-admin/auth');
   const auth = getAuth();
   const normalized = String(email || '').trim().toLowerCase();
@@ -204,21 +204,28 @@ async function createAppPasswordResetLink(email) {
   if (revokeCount > 0) await batch.commit();
 
   let code = makeShortResetCode();
-  // Çakışma çok nadir; varsa bir kez yenile
   if ((await db.collection('password_resets').doc(code).get()).exists) {
     code = makeShortResetCode();
   }
 
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 saat
+  const ttlHours = Number(opts.ttlHours) > 0 ? Number(opts.ttlHours) : 1;
+  const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
   await db.collection('password_resets').doc(code).set({
     email: normalized,
     uid: userRecord.uid,
     used: false,
     createdAt: new Date().toISOString(),
     expiresAt: expiresAt.toISOString(),
+    createdBy: opts.createdBy || null,
+    source: opts.source || 'self',
   });
 
-  return `${BRAND_HOME}/r/${code}`;
+  return {
+    link: `${BRAND_HOME}/r/${code}`,
+    code,
+    expiresAt: expiresAt.toISOString(),
+    hours: ttlHours,
+  };
 }
 
 function passwordResetEmailHtml(link) {
@@ -310,6 +317,26 @@ function brandedEmail({
   </table>
 </body>
 </html>`;
+}
+
+/** Kullanıcı süreç mailleri — resmi üslup, yönetim ekibi imzası. */
+async function sendUserProcessMail({ to, title, greetingName, bodyHtml }) {
+  const email = String(to || '').trim();
+  if (!email.includes('@') || email.includes('@invalid.local')) return false;
+  await sendMail({
+    to: email,
+    subject: `KampüsteyimAPP · ${title}`,
+    html: brandedEmail({
+      title,
+      greeting: greetingName ? `Sayın ${greetingName},` : 'Merhaba,',
+      bodyHtml,
+      ctaLabel: 'KampüsteyimAPP’i aç',
+      ctaUrl: BRAND_HOME,
+      footerNote:
+        'Bu ileti KampüsteyimAPP yönetim ekibi tarafından gönderilmiştir.',
+    }),
+  });
+  return true;
 }
 
 /** Firma logosu + Gmail tarzı imza bloğu */
@@ -2389,7 +2416,8 @@ exports.sendPasswordReset = onCall({ region: 'europe-west1' }, async (request) =
     throw new HttpsError('invalid-argument', 'email zorunlu');
   }
 
-  const link = await createAppPasswordResetLink(email);
+  const result = await createAppPasswordResetLink(email);
+  const link = result?.link || null;
   const html = link
     ? passwordResetEmailHtml(link)
     : brandedEmail({
@@ -2413,6 +2441,74 @@ exports.sendPasswordReset = onCall({ region: 'europe-west1' }, async (request) =
 });
 
 /**
+ * Admin: şifre sıfırlama linki üretir, panele döner (mail kutusu olmayan topluluklar için).
+ * Link 24 saat geçerlidir. Kullanıcı /r/kod sayfasından yeni şifre yazar.
+ */
+exports.adminCreatePasswordResetLink = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    }
+    await assertAdminPermission(request.auth.uid, 'reset_password');
+    let email = String(request.data?.email || '')
+      .trim()
+      .toLowerCase();
+    const uid = String(request.data?.uid || '').trim();
+    if (!email.includes('@') && uid) {
+      const snap = await db.collection('users').doc(uid).get();
+      email = String(snap.data()?.email || '')
+        .trim()
+        .toLowerCase();
+      if (!email.includes('@')) {
+        try {
+          const { getAuth } = require('firebase-admin/auth');
+          const rec = await getAuth().getUser(uid);
+          email = String(rec.email || '')
+            .trim()
+            .toLowerCase();
+        } catch (_) {}
+      }
+    }
+    if (!email.includes('@')) {
+      throw new HttpsError('invalid-argument', 'Kullanıcının e-postası yok');
+    }
+    const result = await createAppPasswordResetLink(email, {
+      ttlHours: 24,
+      createdBy: request.auth.uid,
+      source: 'admin',
+    });
+    if (!result?.link) {
+      throw new HttpsError(
+        'not-found',
+        'Bu e-posta ile Auth hesabı yok. Önce hesabı oluştur.',
+      );
+    }
+    let mailed = false;
+    if (request.data?.alsoEmail === true) {
+      try {
+        await sendMail({
+          to: email,
+          subject: 'KampüsteyimAPP · Şifre sıfırlama',
+          html: passwordResetEmailHtml(result.link),
+        });
+        mailed = true;
+      } catch (e) {
+        console.warn('[adminCreatePasswordResetLink] mail', e?.message || e);
+      }
+    }
+    return {
+      ok: true,
+      link: result.link,
+      expiresAt: result.expiresAt,
+      email,
+      mailed,
+      hours: result.hours,
+    };
+  },
+);
+
+/**
  * Giriş ekranı: şifremi unuttum (auth zorunlu değil)
  * Maildeki link kendi /sifre-sifirla sayfamıza gider.
  */
@@ -2423,13 +2519,13 @@ exports.requestPasswordReset = onCall({ region: 'europe-west1' }, async (request
   }
 
   const normalized = String(email).trim().toLowerCase();
-  const link = await createAppPasswordResetLink(normalized);
+  const result = await createAppPasswordResetLink(normalized);
 
-  if (link) {
+  if (result?.link) {
     await sendMail({
       to: normalized,
       subject: 'KampüsteyimAPP · Şifre sıfırlama',
-      html: passwordResetEmailHtml(link),
+      html: passwordResetEmailHtml(result.link),
     });
   }
 
@@ -2597,13 +2693,24 @@ exports._storage = getStorage;
  * Kullanıcı adı AI moderasyon + uniqueness claim
  */
 /** Eski gönderi / reel / hikaye authorHandle alanlarını yeni kullanıcı adına taşı. */
-async function propagateAuthorHandle(uid, username) {
+function handleOwnerIds(data) {
+  return new Set(
+    [
+      String(data?.uid || '').trim(),
+      String(data?.authUid || '').trim(),
+      String(data?.userId || '').trim(),
+    ].filter(Boolean),
+  );
+}
+
+async function propagateAuthorHandle(uid, username, displayName) {
   const handle = String(username || '')
     .trim()
     .replace(/^@/, '')
     .toLowerCase();
-  if (!handle) return { updated: 0 };
-  const display = `@${handle}`;
+  const name = String(displayName || '').trim();
+  if (!handle && !name) return { updated: 0 };
+  const display = handle ? `@${handle}` : '';
   const userSnap = await db.collection('users').doc(uid).get();
   const data = userSnap.exists ? userSnap.data() || {} : {};
   const authorIds = new Set([uid]);
@@ -2625,7 +2732,10 @@ async function propagateAuthorHandle(uid, username) {
         if (snap.empty) break;
         const batch = db.batch();
         snap.docs.forEach((d) => {
-          batch.update(d.ref, { authorHandle: display });
+          const patch = {};
+          if (display) patch.authorHandle = display;
+          if (name) patch.authorName = name;
+          batch.update(d.ref, patch);
           updated += 1;
         });
         await batch.commit();
@@ -5889,7 +5999,7 @@ exports.verifyEdevletBelge = onCall(
     if (typeof b64 !== 'string' || b64.length < 100) {
       return {
         ok: false,
-        messages: ['Belge PDF içeriği alınamadı. PDF yükleyerek admin onayına gönder.'],
+        messages: ['Belge PDF içeriği alınamadı. Lütfen belge yükleyerek yönetim ekibimize iletiniz.'],
       };
     }
 
@@ -5910,7 +6020,7 @@ exports.verifyEdevletBelge = onCall(
       return {
         ok: false,
         messages: [
-          'Belge alındı ancak okunamadı. PDF yükleyerek admin onayına gönderebilirsin.',
+          'Belge alındı ancak okunamadı. Belge yükleyerek yönetim ekibimize iletebilirsiniz.',
         ],
       };
     }
@@ -6512,6 +6622,43 @@ async function purgeUserAccount({
   return { ok: true, authUid, docId: userRef.id };
 }
 
+function accountAliasIds(doc) {
+  if (!doc) return [];
+  const d = doc.data() || {};
+  return [
+    doc.id,
+    String(d.authUid || '').trim(),
+    String(d.stableId || '').trim(),
+  ].filter(Boolean);
+}
+
+function canSwitchToLinkedAccount(meDoc, targetDoc, rawTarget) {
+  const me = meDoc.data() || {};
+  const target = targetDoc.data() || {};
+  const meIds = new Set(accountAliasIds(meDoc));
+  const targetIds = new Set([...accountAliasIds(targetDoc), String(rawTarget || '').trim()].filter(Boolean));
+
+  const links = (me.linkedAccountIds || []).map(String);
+  if (links.some((id) => targetIds.has(id))) return true;
+
+  const back = (target.linkedAccountIds || []).map(String);
+  if (back.some((id) => meIds.has(id))) return true;
+
+  const panelOrg = String(me.panelOrgId || '').trim();
+  if (me.panelAccess === true && panelOrg && targetIds.has(panelOrg)) return true;
+
+  const staff = Array.isArray(target.orgStaff) ? target.orgStaff : [];
+  if (
+    staff.some((row) => {
+      const uid = String(row?.uid || row?.authUid || '').trim();
+      return uid && meIds.has(uid);
+    })
+  ) {
+    return true;
+  }
+  return false;
+}
+
 exports.switchLinkedAccount = onCall(
   { region: 'europe-west1' },
   async (request) => {
@@ -6524,22 +6671,39 @@ exports.switchLinkedAccount = onCall(
     const meUid = request.auth.uid;
     const meDoc = await findUserDocByAnyId(meUid);
     if (!meDoc) throw new HttpsError('not-found', 'Profil yok');
-    const links = (meDoc.data()?.linkedAccountIds || []).map(String);
     const targetDoc = await findUserDocByAnyId(raw);
     if (!targetDoc) throw new HttpsError('not-found', 'Hedef hesap yok');
-    const targetUid = targetDoc.id;
-    if (targetUid === meUid) {
+    const targetData = targetDoc.data() || {};
+    const authUid = String(targetData.authUid || targetDoc.id).trim();
+    if (accountAliasIds(meDoc).includes(authUid) || targetDoc.id === meDoc.id) {
       throw new HttpsError('failed-precondition', 'Zaten bu hesaptasın');
     }
-    if (!links.includes(targetUid) && !links.includes(raw)) {
+    if (!canSwitchToLinkedAccount(meDoc, targetDoc, raw)) {
       throw new HttpsError('permission-denied', 'Bu hesaba bağlı değilsin');
     }
-    if (isDeletedUserData(targetDoc.data() || {})) {
+    if (isDeletedUserData(targetData)) {
       throw new HttpsError('not-found', 'Hedef hesap silinmiş');
     }
     const { getAuth } = require('firebase-admin/auth');
-    const token = await getAuth().createCustomToken(targetUid);
-    return { ok: true, token, uid: targetUid };
+    try {
+      await getAuth().getUser(authUid);
+    } catch (_) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Hedef Auth hesabı yok. Admin’den hesabı kontrol et.',
+      );
+    }
+    let token;
+    try {
+      token = await getAuth().createCustomToken(authUid);
+    } catch (e) {
+      console.error('[switchLinkedAccount] customToken', e?.code || e?.message || e);
+      throw new HttpsError(
+        'internal',
+        'Hesap geçiş token’ı üretilemedi. IAM signBlob yetkisini kontrol et.',
+      );
+    }
+    return { ok: true, token, uid: authUid };
   },
 );
 
@@ -8262,6 +8426,418 @@ exports.adminSetUserRoleFlags = onCall(
 );
 
 /**
+ * Admin: kullanıcı kimlik / profil alanlarını düzeltir (ad, handle, e-posta, kampüs).
+ * Kullanıcı henüz kendi adını değiştiremiyor; destek buradan yapılır.
+ */
+exports.adminUpdateUserDetails = onCall(
+  { region: 'europe-west1', timeoutSeconds: 60 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    const actor = await assertAdminPermission(request.auth.uid, 'manage_users');
+
+    const userId = String(request.data?.userId || '').trim();
+    if (!userId) throw new HttpsError('invalid-argument', 'userId zorunlu');
+
+    const userDoc = await findUserDocByAnyId(userId);
+    if (!userDoc) throw new HttpsError('not-found', 'Kullanıcı yok');
+    const u = userDoc.data() || {};
+    if (u.deleted === true || u.accountDeleted === true) {
+      throw new HttpsError('failed-precondition', 'Silinmiş hesap düzenlenemez');
+    }
+    if (u.isSuperAdmin === true && actor.isSuperAdmin !== true) {
+      throw new HttpsError(
+        'permission-denied',
+        'Süper admin hesabını yalnızca süper admin düzenleyebilir',
+      );
+    }
+
+    const clip = (v, n) => sanitizePlainText(v, n);
+    const firstName = clip(request.data?.firstName ?? u.firstName ?? '', 60);
+    const lastName = clip(request.data?.lastName ?? u.lastName ?? '', 60);
+    const phone = clip(request.data?.phone ?? u.phone ?? '', 32);
+    const city = clip(request.data?.city ?? u.city ?? '', 60);
+    const university = clip(request.data?.university ?? u.university ?? '', 120);
+    const faculty = clip(request.data?.faculty ?? u.faculty ?? '', 120);
+    const department = clip(request.data?.department ?? u.department ?? '', 120);
+    const studentNo = clip(request.data?.studentNo ?? u.studentNo ?? '', 32);
+    const bio = clip(request.data?.bio ?? u.bio ?? '', 500);
+    let email = String(request.data?.email ?? u.email ?? '')
+      .trim()
+      .toLowerCase();
+    let username = String(request.data?.username ?? u.username ?? '')
+      .trim()
+      .replace(/^@/, '')
+      .toLowerCase();
+
+    if (!firstName) {
+      throw new HttpsError('invalid-argument', 'Ad / görünen ad zorunlu');
+    }
+    if (!isValidEmail(email)) {
+      throw new HttpsError('invalid-argument', 'Geçerli e-posta gerekli');
+    }
+    if (username && !/^[a-z0-9_]{3,24}$/.test(username)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Kullanıcı adı 3–24 karakter, yalnızca a-z 0-9 _',
+      );
+    }
+
+    const authUid = String(u.authUid || userDoc.id).trim();
+    const prevEmail = String(u.email || '').trim().toLowerCase();
+    const prevUsername = String(u.username || '')
+      .trim()
+      .replace(/^@/, '')
+      .toLowerCase();
+    const fullName = `${firstName} ${lastName}`.trim();
+    const now = new Date().toISOString();
+    const { getAuth } = require('firebase-admin/auth');
+    const auth = getAuth();
+
+    if (email !== prevEmail) {
+      const taken = await findAccountByEmail(email);
+      if (taken && String(taken.uid || taken.localId || '') !== authUid && String(taken.uid || '') !== userDoc.id) {
+        throw new HttpsError('already-exists', 'Bu e-posta başka hesaba ait');
+      }
+      try {
+        await auth.updateUser(authUid, { email, emailVerified: true });
+      } catch (e) {
+        if (e?.code === 'auth/email-already-exists') {
+          throw new HttpsError('already-exists', 'Bu e-posta Auth’ta kayıtlı');
+        }
+        if (e?.code !== 'auth/user-not-found') {
+          throw new HttpsError(
+            'internal',
+            `E-posta güncellenemedi: ${e?.message || e}`,
+          );
+        }
+      }
+    }
+
+    try {
+      await auth.updateUser(authUid, { displayName: fullName });
+    } catch (_) {}
+
+    if (username && username !== prevUsername) {
+      try {
+        await db.runTransaction(async (tx) => {
+          const handleRef = db.collection('handles').doc(username);
+          const handleSnap = await tx.get(handleRef);
+          if (handleSnap.exists) {
+            const owners = handleOwnerIds(handleSnap.data() || {});
+            if (owners.size && !owners.has(authUid) && !owners.has(userDoc.id)) {
+              throw new Error('HANDLE_TAKEN');
+            }
+          }
+          if (prevUsername && prevUsername !== username) {
+            const prevRef = db.collection('handles').doc(prevUsername);
+            const prevSnap = await tx.get(prevRef);
+            if (prevSnap.exists) {
+              const owners = handleOwnerIds(prevSnap.data() || {});
+              if (owners.has(authUid) || owners.has(userDoc.id) || owners.size === 0) {
+                tx.delete(prevRef);
+              }
+            }
+          }
+          tx.set(handleRef, {
+            uid: authUid,
+            authUid,
+            userId: userDoc.id,
+            createdAt: now,
+            updatedAt: now,
+            temp: false,
+            source: 'admin',
+          });
+        });
+      } catch (e) {
+        if (String(e?.message || e).includes('HANDLE_TAKEN')) {
+          throw new HttpsError('already-exists', 'Bu kullanıcı adı başkasına ait');
+        }
+        throw new HttpsError(
+          'internal',
+          `Kullanıcı adı güncellenemedi: ${e?.message || e}`,
+        );
+      }
+    }
+
+    const patch = {
+      firstName,
+      lastName,
+      fullName,
+      phone,
+      city,
+      university,
+      faculty,
+      department,
+      studentNo,
+      bio,
+      email,
+      updatedAt: now,
+      profileEditedAt: now,
+      profileEditedBy: request.auth.uid,
+    };
+    if (username) {
+      patch.username = username;
+      patch.usernameStatus = 'ok';
+    }
+    await userDoc.ref.set(patch, { merge: true });
+
+    let postsUpdated = 0;
+    try {
+      const prop = await propagateAuthorHandle(
+        userDoc.id,
+        username || prevUsername,
+        fullName,
+      );
+      postsUpdated = prop.updated || 0;
+    } catch (e) {
+      console.warn('[adminUpdateUserDetails] propagate', e?.message || e);
+    }
+
+    try {
+      await db.collection('moderation_actions').add({
+        type: 'edit_profile',
+        userId: userDoc.id,
+        userEmail: email,
+        userName: fullName,
+        actorId: request.auth.uid,
+        createdAt: now,
+        fields: {
+          firstName,
+          lastName,
+          username: username || prevUsername,
+          email,
+        },
+      });
+    } catch (_) {}
+
+    return {
+      ok: true,
+      userId: userDoc.id,
+      firstName,
+      lastName,
+      fullName,
+      username: username || prevUsername,
+      email,
+      phone,
+      city,
+      university,
+      faculty,
+      department,
+      studentNo,
+      bio,
+      postsUpdated,
+    };
+  },
+);
+
+/**
+ * Kullanıcı: ad / soyad değişikliği talebi (doğrudan yazılamaz).
+ */
+exports.requestNameChange = onCall(
+  { region: 'europe-west1' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    const uid = request.auth.uid;
+    const firstName = sanitizePlainText(request.data?.firstName || '', 60);
+    const lastName = sanitizePlainText(request.data?.lastName || '', 60);
+    const reason = sanitizePlainText(request.data?.reason || '', 400);
+    if (firstName.length < 2) {
+      throw new HttpsError('invalid-argument', 'Adınız en az 2 karakter olmalıdır.');
+    }
+    const userDoc = await findUserDocByAnyId(uid);
+    if (!userDoc) throw new HttpsError('not-found', 'Profil yok');
+    const u = userDoc.data() || {};
+    const currentFirst = String(u.firstName || '').trim();
+    const currentLast = String(u.lastName || '').trim();
+    if (
+      firstName === currentFirst &&
+      lastName === currentLast
+    ) {
+      throw new HttpsError('failed-precondition', 'Görünen adınız zaten bu şekilde kayıtlı.');
+    }
+    const existing = await db
+      .collection('name_change_requests')
+      .where('uid', '==', uid)
+      .where('status', '==', 'pending')
+      .limit(1)
+      .get();
+    if (!existing.empty) {
+      throw new HttpsError(
+        'already-exists',
+        'İncelemede olan bir talebiniz bulunmaktadır. Sonuçlandıktan sonra yeni talep açabilirsiniz.',
+      );
+    }
+    const now = new Date().toISOString();
+    const ref = db.collection('name_change_requests').doc();
+    const row = {
+      uid,
+      userDocId: userDoc.id,
+      email: String(u.email || ''),
+      userName: String(u.fullName || `${currentFirst} ${currentLast}`.trim()),
+      currentFirstName: currentFirst,
+      currentLastName: currentLast,
+      requestedFirstName: firstName,
+      requestedLastName: lastName,
+      reason,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await ref.set(row);
+    const requested = `${firstName} ${lastName}`.trim();
+    const greet = currentFirst || firstName;
+    try {
+      await sendUserProcessMail({
+        to: row.email,
+        title: 'İsim değişikliği talebiniz alındı',
+        greetingName: greet,
+        bodyHtml: `
+          <p>Güvenlik nedeniyle görünen adınız yalnızca KampüsteyimAPP yönetim ekibinin onayıyla güncellenir.</p>
+          <p>Talebiniz alınmıştır. İnceleme tamamlandığında size e-posta ve uygulama bildirimi ile yanıt verilecektir.</p>
+          <p><strong>Mevcut adınız:</strong> ${escapeHtml(`${currentFirst} ${currentLast}`.trim())}<br/>
+          <strong>Talep edilen ad:</strong> ${escapeHtml(requested)}</p>
+          ${reason ? `<p><strong>Gerekçeniz:</strong> ${escapeHtml(reason)}</p>` : ''}
+        `,
+      });
+    } catch (e) {
+      console.warn('[requestNameChange] mail', e?.message || e);
+    }
+    return { ok: true, id: ref.id, ...row };
+  },
+);
+
+/**
+ * Admin: isim değişikliği talebini onayla / reddet.
+ */
+exports.reviewNameChange = onCall(
+  { region: 'europe-west1', timeoutSeconds: 45 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertAdminPermission(request.auth.uid, 'manage_users');
+    const requestId = String(request.data?.requestId || '').trim();
+    const approve = request.data?.approve === true;
+    const note = sanitizePlainText(request.data?.note || '', 400);
+    if (!requestId) throw new HttpsError('invalid-argument', 'requestId zorunlu');
+    const snap = await db.collection('name_change_requests').doc(requestId).get();
+    if (!snap.exists) throw new HttpsError('not-found', 'Talep yok');
+    const row = snap.data() || {};
+    if (String(row.status || '') !== 'pending') {
+      throw new HttpsError('failed-precondition', 'Bu talep zaten sonuçlanmış');
+    }
+    const now = new Date().toISOString();
+    const uid = String(row.uid || row.userDocId || '').trim();
+    const userDoc = await findUserDocByAnyId(uid);
+    if (!userDoc) throw new HttpsError('not-found', 'Kullanıcı yok');
+    const u = userDoc.data() || {};
+    const firstName = sanitizePlainText(
+      row.requestedFirstName || '',
+      60,
+    );
+    const lastName = sanitizePlainText(row.requestedLastName || '', 60);
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    if (approve) {
+      if (firstName.length < 2) {
+        throw new HttpsError('invalid-argument', 'Talepteki ad geçersiz');
+      }
+      const { getAuth } = require('firebase-admin/auth');
+      const authUid = String(u.authUid || userDoc.id).trim();
+      try {
+        await getAuth().updateUser(authUid, { displayName: fullName });
+      } catch (_) {}
+      await userDoc.ref.set(
+        {
+          firstName,
+          lastName,
+          fullName,
+          updatedAt: now,
+          profileEditedAt: now,
+          profileEditedBy: request.auth.uid,
+          nameChangeRequestId: requestId,
+        },
+        { merge: true },
+      );
+      try {
+        await propagateAuthorHandle(
+          userDoc.id,
+          String(u.username || ''),
+          fullName,
+        );
+      } catch (e) {
+        console.warn('[reviewNameChange] propagate', e?.message || e);
+      }
+    }
+
+    await snap.ref.set(
+      {
+        status: approve ? 'approved' : 'rejected',
+        reviewedAt: now,
+        reviewedBy: request.auth.uid,
+        reviewNote: note,
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+
+    const title = approve
+      ? 'İsim değişikliği talebiniz onaylandı'
+      : 'İsim değişikliği talebiniz sonuçlandı';
+    const body = approve
+      ? `Görünen adınız “${fullName}” olarak güncellenmiştir.`
+      : `Talebiniz şu anda onaylanamamıştır.${note ? ` Açıklama: ${note}` : ''}`;
+    try {
+      await db.collection('users').doc(userDoc.id).collection('notifications').add({
+        title,
+        body,
+        emoji: approve ? '✅' : 'ℹ️',
+        type: 'name_change',
+        read: false,
+        createdAt: now,
+      });
+    } catch (_) {}
+    try {
+      await sendFcmToUser(
+        userDoc.id,
+        u.fcmTokens || [],
+        buildCampusPushPayload({
+          title: `KampüsteyimAPP · ${title}`,
+          body,
+          type: 'name_change',
+          data: { toUserId: userDoc.id, route: '/profile' },
+        }),
+      );
+    } catch (e) {
+      console.warn('[reviewNameChange] push', e?.message || e);
+    }
+    try {
+      const greet = String(u.firstName || row.currentFirstName || firstName || '');
+      await sendUserProcessMail({
+        to: String(u.email || row.email || ''),
+        title,
+        greetingName: greet,
+        bodyHtml: approve
+          ? `<p>İsim değişikliği talebiniz KampüsteyimAPP yönetim ekibi tarafından onaylanmıştır.</p>
+             <p><strong>Yeni görünen adınız:</strong> ${escapeHtml(fullName)}</p>
+             <p>Profilinizde bu ad artık geçerlidir.</p>`
+          : `<p>İsim değişikliği talebiniz incelenmiş; şu anda onaylanamamıştır.</p>
+             ${note ? `<p><strong>Açıklama:</strong> ${escapeHtml(note)}</p>` : ''}
+             <p>Gerekirse güncel belgelerinizle yeni bir talep iletebilirsiniz.</p>`,
+      });
+    } catch (e) {
+      console.warn('[reviewNameChange] mail', e?.message || e);
+    }
+    return {
+      ok: true,
+      status: approve ? 'approved' : 'rejected',
+      fullName: approve ? fullName : String(u.fullName || ''),
+      userId: userDoc.id,
+      firstName: approve ? firstName : String(u.firstName || ''),
+      lastName: approve ? lastName : String(u.lastName || ''),
+    };
+  },
+);
+
+/**
  * Admin: kullanıcı kısıtlaması — doğru Firestore dokümanına yazar.
  * type: none | warn | mute | postBan | fullBan
  */
@@ -9790,6 +10366,7 @@ exports.trackAdEvent = _commerce.trackAdEvent;
 exports.adminReviewAdCampaign = _commerce.adminReviewAdCampaign;
 exports.getActiveAds = _commerce.getActiveAds;
 exports.getMyTickets = _commerce.getMyTickets;
+exports.renameTicketAttendee = _commerce.renameTicketAttendee;
 exports.checkInTicket = _commerce.checkInTicket;
 
 const { orgGrowthModule } = require('./org_growth');

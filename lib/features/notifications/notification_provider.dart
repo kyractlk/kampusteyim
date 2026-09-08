@@ -20,8 +20,9 @@ class NotificationProvider extends ChangeNotifier {
   Future<void> bindUser(String? userId, {AppUser? profile}) async {
     final authUid = fa.FirebaseAuth.instance.currentUser?.uid;
     final docId = (authUid != null && authUid.isNotEmpty) ? authUid : userId;
+    final prevId = _userId;
     if (docId == _userId && docId != null) {
-      // Aynı kullanıcı — push’u tekrar spam’leme.
+      await refresh();
       return;
     }
     _userId = docId;
@@ -55,7 +56,7 @@ class NotificationProvider extends ChangeNotifier {
 
     final token = await PushService.instance.getToken();
     if (token != null) {
-      await _saveToken(docId, token, profile: profile);
+      await _saveToken(docId, token, profile: profile, previousUserId: prevId);
     } else if (!kIsWeb) {
       // Yalnızca native’de APNs gecikmesi için retry.
       unawaited(_retryToken(docId, profile: profile));
@@ -93,11 +94,23 @@ class NotificationProvider extends ChangeNotifier {
     String docId,
     String token, {
     AppUser? profile,
+    String? previousUserId,
   }) async {
     try {
       final ref = FirebaseFirestore.instance.collection('users').doc(docId);
       final existing = await ref.get();
       if (!existing.exists) return;
+      if (previousUserId != null && previousUserId != docId) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(previousUserId)
+              .set({
+            'fcmTokens': FieldValue.arrayRemove([token]),
+            'updatedAt': DateTime.now().toIso8601String(),
+          }, SetOptions(merge: true));
+        } catch (_) {}
+      }
       await ref.set({
         'fcmTokens': FieldValue.arrayUnion([token]),
         'updatedAt': DateTime.now().toIso8601String(),

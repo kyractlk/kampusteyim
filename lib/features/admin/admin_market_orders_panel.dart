@@ -319,24 +319,83 @@ class _AdminMarketOrdersPanelState extends State<AdminMarketOrdersPanel> {
     );
     if (ok2 != true || !mounted) return;
     try {
-      final res = await _fn.httpsCallable('adminRefundPaymentOrder').call({
-        'orderId': order['id'],
-        'returnAmount': returnAmount,
-        'confirm': true,
-        'confirm2': true,
-      });
-      final data = Map<String, dynamic>.from(res.data as Map? ?? {});
-      if (!mounted) return;
-      final mail = data['mailSent'] == true ? ' · e-posta gitti' : '';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'İade OK · ${data['returnAmount']} TL '
-            '(${data['refundStatus']})$mail',
+      await _callRefund(
+        order: order,
+        returnAmount: returnAmount,
+        forceUsedRefund: false,
+      );
+    } on FirebaseFunctionsException catch (e) {
+      if (!'${e.message}${e.details}$e'.contains('USED_TICKET_NO_REFUND') ||
+          !mounted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('İade hatası: $e')),
+          );
+        }
+        return;
+      }
+      final amountCtrl = TextEditingController(
+        text: returnAmount.toStringAsFixed(2),
+      );
+      final force = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Kullanılmış bilet'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Bu bilet kapıda okutulmuş. Sistem normal iadeye izin vermez. '
+                'Yine de iade etmek istiyorsan tutarı gir.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'İade tutarı (TL)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Yine de iade et'),
+            ),
+          ],
         ),
       );
-      await _load();
+      final forcedAmount =
+          double.tryParse(amountCtrl.text.replaceAll(',', '.')) ?? 0;
+      amountCtrl.dispose();
+      if (force != true || !mounted) return;
+      if (forcedAmount <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Geçersiz iade tutarı')),
+        );
+        return;
+      }
+      try {
+        await _callRefund(
+          order: order,
+          returnAmount: forcedAmount,
+          forceUsedRefund: true,
+        );
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('İade hatası: $e')),
+          );
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -344,6 +403,32 @@ class _AdminMarketOrdersPanelState extends State<AdminMarketOrdersPanel> {
         );
       }
     }
+  }
+
+  Future<void> _callRefund({
+    required Map<String, dynamic> order,
+    required double returnAmount,
+    required bool forceUsedRefund,
+  }) async {
+    final res = await _fn.httpsCallable('adminRefundPaymentOrder').call({
+      'orderId': order['id'],
+      'returnAmount': returnAmount,
+      'confirm': true,
+      'confirm2': true,
+      if (forceUsedRefund) 'forceUsedRefund': true,
+    });
+    final data = Map<String, dynamic>.from(res.data as Map? ?? {});
+    if (!mounted) return;
+    final mail = data['mailSent'] == true ? ' · e-posta gitti' : '';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'İade OK · ${data['returnAmount']} TL '
+          '(${data['refundStatus']})$mail',
+        ),
+      ),
+    );
+    await _load();
   }
 
   Color _statusColor(String s) {

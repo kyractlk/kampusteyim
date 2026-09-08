@@ -85,9 +85,9 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
     }
 
     final pages = [
-      _CommunityEventsTab(me: me),
-      _CommunityAnnouncementsTab(me: me),
-      _CommunityApplicationsTab(me: me),
+      _CommunityEventsTab(me: me, orgId: effectiveOrgId),
+      _CommunityAnnouncementsTab(me: me, orgId: effectiveOrgId),
+      _CommunityApplicationsTab(orgId: effectiveOrgId),
       _CommunityAdsTab(orgId: effectiveOrgId, me: me),
       _CommunityStaffTab(orgId: effectiveOrgId),
     ];
@@ -103,6 +103,11 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Kapı girişi',
+            onPressed: () => context.push('/community/scan'),
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+          ),
           IconButton(
             tooltip: 'Tanıtım kartı',
             onPressed: () => context.push('/tanitimkarti'),
@@ -146,8 +151,9 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
 }
 
 class _CommunityEventsTab extends StatefulWidget {
-  const _CommunityEventsTab({required this.me});
+  const _CommunityEventsTab({required this.me, required this.orgId});
   final AppUser me;
+  final String orgId;
 
   @override
   State<_CommunityEventsTab> createState() => _CommunityEventsTabState();
@@ -158,6 +164,8 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
   final _desc = TextEditingController();
   final _loc = TextEditingController();
   final _cap = TextEditingController(text: '40');
+  final _rules = TextEditingController();
+  int _step = 0;
   String _audience = 'followers';
   DateTime _startsAt = DateTime.now().add(const Duration(days: 7));
   DateTime _deadline = DateTime.now().add(const Duration(days: 5));
@@ -170,6 +178,7 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
     _desc.dispose();
     _loc.dispose();
     _cap.dispose();
+    _rules.dispose();
     super.dispose();
   }
 
@@ -196,84 +205,141 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
   Widget build(BuildContext context) {
     final feed = context.watch<FeedProvider>();
     final mine =
-        feed.events.where((e) => e.communityId == widget.me.id).toList();
+        feed.events.where((e) => e.communityId == widget.orgId).toList();
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Yeni etkinlik', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _title,
-          decoration: const InputDecoration(labelText: 'Baslik'),
+        FilledButton.icon(
+          onPressed: () => context.push('/community/scan'),
+          icon: const Icon(Icons.qr_code_scanner_rounded),
+          label: const Text('Kapı girişi · bilet okut'),
         ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _desc,
-          maxLines: 3,
-          decoration: const InputDecoration(labelText: 'Aciklama'),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _loc,
-          decoration: const InputDecoration(labelText: 'Konum'),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _cap,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'Kontenjan (kadro)'),
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          initialValue: _audience,
-          decoration: const InputDecoration(labelText: 'Kimler katilabilir?'),
-          items: const [
-            DropdownMenuItem(value: 'followers', child: Text('Takipciler')),
-            DropdownMenuItem(value: 'campus', child: Text('Tum kampus')),
-            DropdownMenuItem(value: 'students', child: Text('Sadece ogrenciler')),
-            DropdownMenuItem(
-              value: 'members',
-              child: Text('Topluluk uyeleri'),
-            ),
-          ],
-          onChanged: (v) => setState(() => _audience = v ?? 'followers'),
-        ),
-        const SizedBox(height: 8),
-        EventBannerPreview(
-          url: _bannerUrl,
-          uploading: _bannerBusy,
-          onPick: () async {
-            setState(() => _bannerBusy = true);
-            final url = await pickEventBanner(context);
-            if (!mounted) return;
-            setState(() {
-              _bannerBusy = false;
-              if (url != null && url.isNotEmpty) _bannerUrl = url;
-            });
-          },
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Etkinlik tarihi'),
-          subtitle: Text(_fmt(_startsAt)),
-          trailing: const Icon(Icons.edit_calendar_outlined),
-          onTap: () async {
-            final picked = await _pickDateTime(_startsAt);
-            if (picked != null) setState(() => _startsAt = picked);
-          },
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Son basvuru saati'),
-          subtitle: Text(_fmt(_deadline)),
-          trailing: const Icon(Icons.timer_outlined),
-          onTap: () async {
-            final picked = await _pickDateTime(_deadline);
-            if (picked != null) setState(() => _deadline = picked);
-          },
+        const SizedBox(height: 14),
+        _StepCard(
+          step: 1,
+          title: 'Temel bilgiler',
+          expanded: _step == 0,
+          onToggle: () => setState(() => _step = _step == 0 ? -1 : 0),
+          child: Column(
+            children: [
+              TextField(
+                controller: _title,
+                decoration: const InputDecoration(
+                  labelText: 'Başlık',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _desc,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Açıklama',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _loc,
+                decoration: const InputDecoration(
+                  labelText: 'Konum',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              EventBannerPreview(
+                url: _bannerUrl,
+                uploading: _bannerBusy,
+                onPick: () async {
+                  setState(() => _bannerBusy = true);
+                  final url = await pickEventBanner(context);
+                  if (!mounted) return;
+                  setState(() {
+                    _bannerBusy = false;
+                    if (url != null && url.isNotEmpty) _bannerUrl = url;
+                  });
+                },
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 10),
+        _StepCard(
+          step: 2,
+          title: 'Kimler · kontenjan · tarih',
+          expanded: _step == 1,
+          onToggle: () => setState(() => _step = _step == 1 ? -1 : 1),
+          child: Column(
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: _audience,
+                decoration: const InputDecoration(
+                  labelText: 'Kimler katılabilir?',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'followers', child: Text('Takipçiler')),
+                  DropdownMenuItem(value: 'campus', child: Text('Tüm kampüs')),
+                  DropdownMenuItem(
+                    value: 'students',
+                    child: Text('Sadece öğrenciler'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'members',
+                    child: Text('Topluluk üyeleri'),
+                  ),
+                ],
+                onChanged: (v) => setState(() => _audience = v ?? 'followers'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _cap,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Kontenjan (kadro)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Etkinlik tarihi'),
+                subtitle: Text(_fmt(_startsAt)),
+                trailing: const Icon(Icons.edit_calendar_outlined),
+                onTap: () async {
+                  final picked = await _pickDateTime(_startsAt);
+                  if (picked != null) setState(() => _startsAt = picked);
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Son başvuru saati'),
+                subtitle: Text(_fmt(_deadline)),
+                trailing: const Icon(Icons.timer_outlined),
+                onTap: () async {
+                  final picked = await _pickDateTime(_deadline);
+                  if (picked != null) setState(() => _deadline = picked);
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        _StepCard(
+          step: 3,
+          title: 'Kurallar (opsiyonel)',
+          expanded: _step == 2,
+          onToggle: () => setState(() => _step = _step == 2 ? -1 : 2),
+          child: TextField(
+            controller: _rules,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Kapıda / etkinlikte uyulacak kurallar',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
         FilledButton(
           onPressed: () async {
             final cap = int.tryParse(_cap.text) ?? 40;
@@ -282,7 +348,7 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(
-                    'Son basvuru saati, etkinlik tarihinden once olmali.',
+                    'Son başvuru saati, etkinlik tarihinden önce olmalı.',
                   ),
                 ),
               );
@@ -294,15 +360,18 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
                 title: _title.text.trim(),
                 description: _desc.text.trim(),
                 location:
-                    _loc.text.trim().isEmpty ? 'Kampus' : _loc.text.trim(),
+                    _loc.text.trim().isEmpty ? 'Kampüs' : _loc.text.trim(),
                 startsAt: _startsAt,
                 capacity: cap,
                 audience: _audience,
                 applicationDeadline: _deadline,
                 applicationsOpen: true,
-                communityId: widget.me.id,
+                communityId: widget.orgId,
                 communityName: widget.me.fullName,
                 communityLogoUrl: widget.me.communityLogoUrl,
+                organizerCompanyId: widget.orgId,
+                organizerCompanyName: widget.me.fullName,
+                rules: _rules.text.trim(),
                 imageUrl: _bannerUrl.isNotEmpty
                     ? _bannerUrl
                     : widget.me.communityLogoUrl,
@@ -311,13 +380,14 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
             );
             _title.clear();
             _desc.clear();
+            _rules.clear();
             _bannerUrl = '';
             if (!context.mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Etkinlik yayinlandi')),
+              const SnackBar(content: Text('Etkinlik yayınlandı')),
             );
           },
-          child: const Text('Etkinlik yayinla'),
+          child: const Text('Etkinlik yayınla'),
         ),
         const Divider(height: 32),
         Text(
@@ -426,8 +496,9 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
 }
 
 class _CommunityAnnouncementsTab extends StatefulWidget {
-  const _CommunityAnnouncementsTab({required this.me});
+  const _CommunityAnnouncementsTab({required this.me, required this.orgId});
   final AppUser me;
+  final String orgId;
 
   @override
   State<_CommunityAnnouncementsTab> createState() =>
@@ -452,61 +523,80 @@ class _CommunityAnnouncementsTabState extends State<_CommunityAnnouncementsTab> 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        TextField(
-          controller: _title,
-          decoration: const InputDecoration(labelText: 'Baslik'),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _body,
-          maxLines: 4,
-          decoration: const InputDecoration(labelText: 'Duyuru metni'),
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          initialValue: _audience,
-          decoration: const InputDecoration(labelText: 'Hedef kitle'),
-          items: const [
-            DropdownMenuItem(
-              value: 'followers',
-              child: Text('Takipciler (push + e-posta)'),
-            ),
-            DropdownMenuItem(value: 'members', child: Text('Uyeler')),
-            DropdownMenuItem(value: 'campus', child: Text('Kampus geneli')),
-          ],
-          onChanged: (v) => setState(() => _audience = v ?? 'followers'),
-        ),
-        const SizedBox(height: 12),
-        FilledButton(
-          onPressed: () async {
-            if (_title.text.trim().isEmpty || _body.text.trim().isEmpty) {
-              return;
-            }
-            final ann = Announcement(
-              id: 'a_${const Uuid().v4().substring(0, 8)}',
-              title: _title.text.trim(),
-              body: _body.text.trim(),
-              createdAt: DateTime.now(),
-              audience: _audience,
-              communityId: widget.me.id,
-              communityName: widget.me.fullName,
-              communityLogoUrl: widget.me.communityLogoUrl,
-            );
-            await feed.publishAnnouncement(ann);
-            _title.clear();
-            _body.clear();
-            if (!context.mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  _audience == 'followers'
-                      ? 'Duyuru yayinlandi - takipcilere bildirim gonderiliyor'
-                      : 'Duyuru yayinlandi',
+        _StepCard(
+          step: 1,
+          title: 'Yeni duyuru',
+          expanded: true,
+          onToggle: () {},
+          child: Column(
+            children: [
+              TextField(
+                controller: _title,
+                decoration: const InputDecoration(
+                  labelText: 'Başlık',
+                  border: OutlineInputBorder(),
                 ),
               ),
-            );
-          },
-          child: const Text('Duyuru yayinla'),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _body,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Duyuru metni',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: _audience,
+                decoration: const InputDecoration(
+                  labelText: 'Hedef kitle',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'followers',
+                    child: Text('Takipçiler (push + e-posta)'),
+                  ),
+                  DropdownMenuItem(value: 'members', child: Text('Üyeler')),
+                  DropdownMenuItem(value: 'campus', child: Text('Kampüs geneli')),
+                ],
+                onChanged: (v) => setState(() => _audience = v ?? 'followers'),
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () async {
+                  if (_title.text.trim().isEmpty || _body.text.trim().isEmpty) {
+                    return;
+                  }
+                  final ann = Announcement(
+                    id: 'a_${const Uuid().v4().substring(0, 8)}',
+                    title: _title.text.trim(),
+                    body: _body.text.trim(),
+                    createdAt: DateTime.now(),
+                    audience: _audience,
+                    communityId: widget.orgId,
+                    communityName: widget.me.fullName,
+                    communityLogoUrl: widget.me.communityLogoUrl,
+                  );
+                  await feed.publishAnnouncement(ann);
+                  _title.clear();
+                  _body.clear();
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        _audience == 'followers'
+                            ? 'Duyuru yayınlandı — takipçilere bildirim gönderiliyor'
+                            : 'Duyuru yayınlandı',
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Duyuru yayınla'),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -514,13 +604,13 @@ class _CommunityAnnouncementsTabState extends State<_CommunityAnnouncementsTab> 
 }
 
 class _CommunityApplicationsTab extends StatelessWidget {
-  const _CommunityApplicationsTab({required this.me});
-  final AppUser me;
+  const _CommunityApplicationsTab({required this.orgId});
+  final String orgId;
 
   @override
   Widget build(BuildContext context) {
     final feed = context.watch<FeedProvider>();
-    final events = feed.events.where((e) => e.communityId == me.id).toList();
+    final events = feed.events.where((e) => e.communityId == orgId).toList();
     final rows = <(CampusEvent, EventApplication)>[];
     for (final e in events) {
       for (final a in e.applications) {
@@ -592,7 +682,7 @@ class _CommunityApplicationsTab extends StatelessWidget {
                     await feed.deleteEventApplication(
                       eventId: event.id,
                       applicationId: app.id,
-                      communityAdminId: me.id,
+                      communityAdminId: orgId,
                     );
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -632,8 +722,8 @@ class _CommunityAdsTab extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         const Text(
-          'Sponsor tanit, ucretsiz etkinlik veya ucretli sponsor reklami. '
-          'Il / universite secimi zorunlu; admin onaylar.',
+          'Sponsor tanıtın: ücretsiz etkinlik veya ücretli sponsor reklamı. '
+          'İl / üniversite seçimi zorunludur; yayın için yönetim ekibimiz inceler.',
           style: TextStyle(color: AppColors.textSecondary, height: 1.35),
         ),
         const SizedBox(height: 12),
@@ -792,6 +882,69 @@ class _CommunityStaffTabState extends State<_CommunityStaffTab> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _StepCard extends StatelessWidget {
+  const _StepCard({
+    required this.step,
+    required this.title,
+    required this.expanded,
+    required this.onToggle,
+    required this.child,
+  });
+
+  final int step;
+  final String title;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: expanded ? AppColors.navy : AppColors.border,
+          width: expanded ? 1.6 : 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          ListTile(
+            onTap: onToggle,
+            leading: CircleAvatar(
+              radius: 14,
+              backgroundColor: AppColors.navy,
+              child: Text(
+                '$step',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            title: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            trailing: Icon(
+              expanded
+                  ? Icons.expand_less_rounded
+                  : Icons.expand_more_rounded,
+            ),
+          ),
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: child,
+            ),
+        ],
+      ),
     );
   }
 }

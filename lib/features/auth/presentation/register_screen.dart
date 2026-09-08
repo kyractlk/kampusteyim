@@ -282,10 +282,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (ok) {
       final pending = auth.user?.isAccountPending == true;
       final msg = (require && pending)
-          ? 'Kayıt başarılı. Belgen admin onayına düştü; sonuç mail ile gelir. Giriş yapabilirsin.'
+          ? 'Kayıt başarılı. Belgeniz KampüsteyimAPP yönetim ekibinin incelemesine iletildi; sonuç e-posta ile bildirilir. Giriş yapabilirsiniz.'
           : (_edevletOk
-              ? 'Kayıt başarılı. e-Devlet doğrulaması tamam — giriş yapabilirsin.'
-              : 'Kayıt başarılı. Giriş yapabilirsin.');
+              ? 'Kayıt başarılı. e-Devlet doğrulaması tamamlandı — giriş yapabilirsiniz.'
+              : 'Kayıt başarılı. Giriş yapabilirsiniz.');
       await auth.signOut();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -356,8 +356,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
           res.ok
               ? 'Belgeden eğitim bilgileri alındı — lütfen doğrula.'
               : (_security.allowEdevletPdfFallback
-                  ? 'e-Devlet doğrulanamadı — PDF yükleme açıldı (admin onayı).'
-                  : 'e-Devlet doğrulanamadı. Yeni belge oluşturup tekrar dene.'),
+                  ? 'e-Devlet doğrulanamadı. Belge yüklemeniz açıldı; yönetim ekibimiz inceleyecektir.'
+                  : 'e-Devlet doğrulanamadı. Yeni belge oluşturup tekrar deneyiniz.'),
         ),
       ),
     );
@@ -450,7 +450,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'Bilgiler reddedildi — PDF yükle, başvurun admin onayına düşer.',
+          'Bilgiler güncellenmedi. Belge yükledikten sonra talebiniz yönetim ekibimize iletilir.',
         ),
       ),
     );
@@ -1020,12 +1020,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     final intro = switch (_security.verificationMode) {
       RegVerificationMode.edevletOnly =>
-        'Öğrenci belgeni e-Devlet barkodu ile doğrula. Sistem bilgileri otomatik okur.',
+        'Öğrenci belgenizi e-Devlet barkodu ile doğrulayın. Sistem bilgileri otomatik okur.',
       RegVerificationMode.edevletPlusDoc =>
-        'e-Devlet barkodu + TC ile doğrula. Sistem eğitim bilgilerini otomatik alır. '
-            'Doğrulama olmazsa PDF yükleme açılır (admin onayı).',
+        'e-Devlet barkodu + TC ile doğrulayın. Sistem eğitim bilgilerini otomatik alır. '
+            'Doğrulama olmazsa belge yüklemeniz açılır; inceleme yönetim ekibimizce yapılır.',
       RegVerificationMode.documentOnly =>
-        'Öğrenci kartı veya PDF belge yükle. Başvuru admin onayına düşer.',
+        'Öğrenci kartı veya PDF belge yükleyin. Başvurunuz KampüsteyimAPP yönetim ekibine iletilir.',
       RegVerificationMode.defer =>
         'İstersen şimdi doğrula; istersen “şimdilik geç” — belgeyi sonra isteyeceğiz.',
       RegVerificationMode.off => '',
@@ -1087,8 +1087,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               selected: _verifyType == 'card',
               title: 'Öğrenci kartı',
               subtitle: _security.requireCardBothSides
-                  ? 'Ön ve arka yüz · admin onayı'
-                  : 'Kart fotoğrafı · admin onayı',
+                  ? 'Ön ve arka yüz · yönetim incelemesi'
+                  : 'Kart fotoğrafı · yönetim incelemesi',
               icon: Icons.badge_outlined,
               onTap: () => setState(() {
                 _verifyType = 'card';
@@ -1109,7 +1109,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             _TypeTile(
               selected: _verifyType == 'document',
               title: 'PDF belge',
-              subtitle: 'PDF yükle · admin onayı',
+              subtitle: 'PDF yükleyin · yönetim incelemesi',
               icon: Icons.verified_outlined,
               onTap: () => setState(() {
                 _verifyType = 'document';
@@ -1321,10 +1321,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const SizedBox(height: 4),
                         Text(
                           fallbackOk
-                              ? 'Evet dersen kampüs profilin güncellenir ve hesap açılır. '
-                                  'Hayır dersen PDF yükleyip admin onayına düşersin.'
-                              : 'Evet dersen kampüs profilin güncellenir. '
-                                  'Hayır dersen kayıt için admin destek gerekir.',
+                              ? 'Evet derseniz kampüs profiliniz güncellenir ve hesabınız açılır. '
+                                  'Hayır derseniz belge yükleyerek yönetim ekibimize inceleme talebi iletebilirsiniz.'
+                              : 'Evet derseniz kampüs profiliniz güncellenir. '
+                                  'Hayır derseniz kayıt için yönetim ekibimizin desteği gerekir.',
                           style: const TextStyle(
                             fontSize: 12,
                             height: 1.35,
@@ -1382,7 +1382,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       _edevletUserConfirmed == false)) ...[
                 const SizedBox(height: 16),
                 const Text(
-                  'Manuel yükleme (admin onayı)',
+                  'Belge yükleme (yönetim incelemesi)',
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),

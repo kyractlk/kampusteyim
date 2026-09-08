@@ -21,6 +21,7 @@ class _TicketCheckInScreenState extends State<TicketCheckInScreen> {
   bool _busy = false;
   String? _flash;
   bool _flashOk = false;
+  bool _flashInvalid = false;
   DateTime? _lastScanAt;
   String? _lastPayload;
 
@@ -57,30 +58,71 @@ class _TicketCheckInScreenState extends State<TicketCheckInScreen> {
     setState(() {
       _busy = true;
       _flash = null;
+      _flashInvalid = false;
     });
     try {
-      final result = await CommerceService.checkInTicket(payload);
+      var result = await CommerceService.checkInTicket(payload);
+      if (!mounted) return;
+      if (result['needsConfirm'] == true) {
+        final next = result['nextEntry'] ?? '';
+        final remain = result['remaining'] ?? '';
+        final name = '${result['userName'] ?? ''}'.trim();
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Çoklu giriş'),
+            content: Text(
+              '${name.isEmpty ? 'Bu bilet' : name} daha önce okutuldu.\n\n'
+              '$next. girişi okutmak üzeresin (kalan $remain). Onaylıyor musun?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Vazgeç'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Evet, okut'),
+              ),
+            ],
+          ),
+        );
+        if (ok == true && mounted) {
+          result = await CommerceService.checkInTicket(payload, confirm: true);
+        } else {
+          setState(() {
+            _flashOk = false;
+            _flashInvalid = false;
+            _flash = 'İkinci giriş iptal edildi';
+          });
+          return;
+        }
+      }
       if (!mounted) return;
       final already = result['already'] == true;
-      final ok = result['ok'] == true;
+      final invalid = result['invalid'] == true;
+      final ok = result['ok'] == true && !invalid;
       HapticFeedback.mediumImpact();
       setState(() {
         _flashOk = ok;
-        _flash = already
-            ? (result['remaining'] == 0 || result['remaining'] == '0'
-                ? 'Bu biletin giriş hakkı doldu'
-                : 'Bu okutma zaten kayıtlarda')
-            : ok
-                ? (result['entryType'] == 'multi'
-                    ? 'Giriş ${result['entriesUsed']}/${result['entryLimit']} · kalan ${result['remaining']}'
-                    : 'Giriş onaylandı')
-                : '${result['message'] ?? 'Doğrulanamadı'}';
+        _flashInvalid = invalid;
+        _flash = invalid
+            ? '${result['message'] ?? 'Geçersiz'}'
+            : already
+                ? (result['remaining'] == 0 || result['remaining'] == '0'
+                    ? 'Bu biletin giriş hakkı doldu'
+                    : 'Bu okutma zaten kayıtlarda')
+                : ok
+                    ? '${result['message'] ?? (result['entryType'] == 'multi' ? 'Giriş ${result['entriesUsed']}/${result['entryLimit']} · kalan ${result['remaining']}' : 'Giriş onaylandı')}'
+                    : '${result['message'] ?? 'Doğrulanamadı'}';
         _recent.insert(0, {
           'ok': ok,
           'already': already,
+          'invalid': invalid,
           'name': '${result['userName'] ?? result['userEmail'] ?? ''}',
           'event': '${result['eventTitle'] ?? ''}',
           'tier': '${result['tierLabel'] ?? ''}',
+          'code': '${result['shortCode'] ?? ''}',
           'at': DateTime.now().toIso8601String(),
         });
         if (_recent.length > 20) _recent.removeLast();
@@ -90,7 +132,8 @@ class _TicketCheckInScreenState extends State<TicketCheckInScreen> {
       HapticFeedback.heavyImpact();
       setState(() {
         _flashOk = false;
-        _flash = '$e';
+        _flashInvalid = true;
+        _flash = 'Geçersiz · $e';
       });
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -178,17 +221,36 @@ class _TicketCheckInScreenState extends State<TicketCheckInScreen> {
             right: 16,
             bottom: 16,
             child: Material(
-              color: _flashOk ? const Color(0xFF166534) : const Color(0xFF991B1B),
+              color: _flashInvalid
+                  ? const Color(0xFF991B1B)
+                  : _flashOk
+                      ? const Color(0xFF166534)
+                      : const Color(0xFF92400E),
               borderRadius: BorderRadius.circular(14),
               child: Padding(
                 padding: const EdgeInsets.all(14),
-                child: Text(
-                  _flash!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _flashInvalid
+                          ? Icons.cancel_rounded
+                          : _flashOk
+                              ? Icons.verified_rounded
+                              : Icons.info_outline,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _flash!,
+                        textAlign: TextAlign.left,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -218,7 +280,7 @@ class _TicketCheckInScreenState extends State<TicketCheckInScreen> {
             controller: _manual,
             decoration: InputDecoration(
               labelText: 'Bilet kodu',
-              hintText: 'KT1.… veya bilet id',
+              hintText: 'ABC-123 veya QR',
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(
                 tooltip: 'Doğrula',
@@ -242,15 +304,22 @@ class _TicketCheckInScreenState extends State<TicketCheckInScreen> {
           ..._recent.map((r) {
             final ok = r['ok'] == true;
             final already = r['already'] == true;
+            final invalid = r['invalid'] == true;
             return ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(
-                already
-                    ? Icons.replay
+                invalid
+                    ? Icons.cancel_rounded
+                    : already
+                        ? Icons.replay
+                        : ok
+                            ? Icons.verified
+                            : Icons.error_outline,
+                color: invalid
+                    ? const Color(0xFF991B1B)
                     : ok
-                        ? Icons.verified
-                        : Icons.error_outline,
-                color: ok ? AppColors.lime : Colors.redAccent,
+                        ? AppColors.lime
+                        : Colors.redAccent,
               ),
               title: Text(
                 '${r['name']}'.trim().isEmpty ? 'Katılımcı' : '${r['name']}',
@@ -260,7 +329,12 @@ class _TicketCheckInScreenState extends State<TicketCheckInScreen> {
                 [
                   if ('${r['event']}'.isNotEmpty) '${r['event']}',
                   if ('${r['tier']}'.isNotEmpty) '${r['tier']}',
-                  already ? 'daha önce okutuldu' : (ok ? 'giriş' : 'red'),
+                  if ('${r['code']}'.isNotEmpty) '${r['code']}',
+                  invalid
+                      ? 'geçersiz'
+                      : already
+                          ? 'daha önce okutuldu'
+                          : (ok ? 'giriş' : 'red'),
                 ].join(' · '),
               ),
             );

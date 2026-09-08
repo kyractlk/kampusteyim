@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fa;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -27,6 +29,7 @@ import '../moderation/report_sheet.dart';
 import '../notifications/notification_provider.dart';
 import '../plus/plus_widgets.dart';
 import '../reels/reels_provider.dart';
+import 'linked_accounts_block.dart';
 import 'profile_content_tabs.dart';
 
 Future<void> openThemePicker(BuildContext context) async {
@@ -96,7 +99,11 @@ class ProfileScreen extends StatelessWidget {
         ),
       );
     }
-    return UserProfileView(userId: user.id, isSelf: true);
+    return UserProfileView(
+      key: ValueKey('self-${user.id}'),
+      userId: user.id,
+      isSelf: true,
+    );
   }
 }
 
@@ -274,17 +281,13 @@ class _UserProfileViewState extends State<UserProfileView> {
               },
             ),
           if (isSelf) ...[
-            if (user.linkedAccountIds.isNotEmpty)
+            if (user.linkedAccountIds.isNotEmpty ||
+                (user.panelAccess && (user.panelOrgId ?? '').isNotEmpty))
               IconButton(
                 tooltip: 'Hesap değiştir',
-                onPressed: () => context.push('/profile/settings'),
+                onPressed: () => showAccountSwitchSheet(context, user),
                 icon: const Icon(Icons.swap_horiz_rounded),
               ),
-            IconButton(
-              tooltip: 'Tanıtım kartı',
-              onPressed: () => context.push('/tanitimkarti'),
-              icon: const Icon(Icons.qr_code_2_rounded),
-            ),
             IconButton(
               tooltip: 'Ayarlar',
               onPressed: () => context.push('/profile/settings'),
@@ -349,8 +352,13 @@ class _UserProfileViewState extends State<UserProfileView> {
             child: Column(
               children: [
                 UserAvatar(
+                  key: ValueKey(
+                    'av-${user.id}-${user.photoUrl}-${user.communityLogoUrl}',
+                  ),
                   name: user.fullName,
-                  photoUrl: user.communityLogoUrl ?? user.photoUrl,
+                  photoUrl: user.isCommunity || user.isCompany
+                      ? (user.communityLogoUrl ?? user.photoUrl)
+                      : user.photoUrl,
                   radius: 40,
                   isCommunity: user.isCommunity,
                 ),
@@ -853,9 +861,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _linkLabel;
   late final TextEditingController _linkUrl;
   late final TextEditingController _username;
+  late final TextEditingController _firstName;
+  late final TextEditingController _lastName;
   late List<ProfileLink> _links;
   String? _photoUrl;
   bool _uploading = false;
+  bool _nameBusy = false;
+  Map<String, dynamic>? _pendingName;
 
   @override
   void initState() {
@@ -864,9 +876,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _bio = TextEditingController(text: user.bio);
     _photoUrl = user.photoUrl;
     _username = TextEditingController(text: user.username ?? '');
+    _firstName = TextEditingController(text: user.firstName);
+    _lastName = TextEditingController(text: user.lastName);
     _linkLabel = TextEditingController();
     _linkUrl = TextEditingController();
     _links = List.of(user.links);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadNameRequest());
   }
 
   @override
@@ -875,7 +890,121 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _linkLabel.dispose();
     _linkUrl.dispose();
     _username.dispose();
+    _firstName.dispose();
+    _lastName.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadNameRequest() async {
+    final uid = fa.FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('name_change_requests')
+          .where('uid', isEqualTo: uid)
+          .limit(20)
+          .get();
+      final pending = snap.docs
+          .map((d) => {'id': d.id, ...d.data()})
+          .where((e) => '${e['status']}' == 'pending')
+          .toList();
+      if (!mounted) return;
+      setState(() => _pendingName = pending.isEmpty ? null : pending.first);
+    } catch (_) {}
+  }
+
+  Future<void> _submitNameChange() async {
+    final first = _firstName.text.trim();
+    final last = _lastName.text.trim();
+    final user = context.read<AuthProvider>().user;
+    if (user == null) return;
+    if (first.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Adınız en az 2 karakter olmalıdır')),
+      );
+      return;
+    }
+    if (first == user.firstName && last == user.lastName) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Görünen adınız zaten bu şekilde kayıtlı.'),
+        ),
+      );
+      return;
+    }
+    final reasonCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('İsim değişikliği talebi'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Talep edilen ad: $first $last',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Talebiniz KampüsteyimAPP yönetim ekibine iletilecektir. '
+              'Değerlendirme sonucu kayıtlı e-posta adresinize ve uygulama '
+              'bildirimlerinize gönderilir.',
+              style: TextStyle(height: 1.4, fontSize: 13.5),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Gerekçe (isteğe bağlı)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Talebi ilet'),
+          ),
+        ],
+      ),
+    );
+    final reason = reasonCtrl.text.trim();
+    reasonCtrl.dispose();
+    if (ok != true || !mounted) return;
+    setState(() => _nameBusy = true);
+    try {
+      await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('requestNameChange')
+          .call({
+        'firstName': first,
+        'lastName': last,
+        'reason': reason,
+      });
+      await _loadNameRequest();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Talebiniz alındı. KampüsteyimAPP yönetim ekibi değerlendirme '
+            'sonucunu e-posta ile iletecektir.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gönderilemedi: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _nameBusy = false);
+    }
   }
 
   Future<void> _pickPhoto() async {
@@ -1006,6 +1135,82 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          Text(
+            'Kayıtlı görünen adınız: ${user?.fullName ?? ''}',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 10),
+          Material(
+            color: AppColors.navy.withValues(alpha: 0.06),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(color: AppColors.border),
+            ),
+            child: const Padding(
+              padding: EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Text(
+                'Güvenlik nedeniyle isminiz tarafınızca değiştirilemez. '
+                'Talep açıldıktan sonra KampüsteyimAPP yönetim ekibi tarafından '
+                'incelenir; sonucunuz e-posta ve bildirimle iletilir.',
+                style: TextStyle(height: 1.45, fontSize: 13.5),
+              ),
+            ),
+          ),
+          if (_pendingName != null) ...[
+            const SizedBox(height: 10),
+            Material(
+              color: AppColors.cyan.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  'İncelemede: ${_pendingName!['requestedFirstName']} '
+                  '${_pendingName!['requestedLastName']}. '
+                  'Sonuç, kayıtlı e-posta adresinize bildirilecektir.',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          TextField(
+            controller: _firstName,
+            enabled: _pendingName == null && !_nameBusy,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Yeni ad',
+              prefixIcon: Icon(Icons.badge_outlined),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _lastName,
+            enabled: _pendingName == null && !_nameBusy,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Yeni soyad',
+              prefixIcon: Icon(Icons.badge_outlined),
+            ),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _pendingName != null || _nameBusy
+                ? null
+                : _submitNameChange,
+            icon: _nameBusy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.send_outlined),
+            label: Text(
+              _pendingName != null
+                  ? 'Talebiniz inceleniyor'
+                  : 'İsim değişikliği talebi aç',
+            ),
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _username,
             decoration: const InputDecoration(

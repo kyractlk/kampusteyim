@@ -189,9 +189,24 @@ class CommerceService {
         .toList();
   }
 
-  static Future<Map<String, dynamic>> checkInTicket(String payload) async {
+  static Future<Map<String, dynamic>> checkInTicket(
+    String payload, {
+    bool confirm = false,
+  }) async {
     final res = await _fn.httpsCallable('checkInTicket').call({
       'payload': payload,
+      if (confirm) 'confirm': true,
+    });
+    return _map(res.data);
+  }
+
+  static Future<Map<String, dynamic>> renameTicketAttendee({
+    required String ticketId,
+    required String userName,
+  }) async {
+    final res = await _fn.httpsCallable('renameTicketAttendee').call({
+      'ticketId': ticketId,
+      'userName': userName,
     });
     return _map(res.data);
   }

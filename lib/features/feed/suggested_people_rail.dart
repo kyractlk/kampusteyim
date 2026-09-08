@@ -120,6 +120,10 @@ class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
     context.watch<AuthProvider>();
     context.watch<FeedProvider>();
     context.watch<ReelsProvider>();
+    final me = context.read<AuthProvider>().user;
+    if (me?.hidePeopleSuggestions == true) {
+      return const SizedBox.shrink();
+    }
     _rebuildIfNeeded();
 
     if (_items.isEmpty) return const SizedBox.shrink();
@@ -151,6 +155,46 @@ class _SuggestedPeopleRailState extends State<SuggestedPeopleRail> {
                 ),
                 child: Text(
                   'Karıştır',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.navy.withValues(alpha: 0.7),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Önerilenleri kapat'),
+                      content: const Text(
+                        'Bu bölüm tamamen gizlenir. Gizlilik ayarlarından tekrar açabilirsin.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Vazgeç'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Kapat'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (ok == true && context.mounted) {
+                    await context
+                        .read<AuthProvider>()
+                        .setHidePeopleSuggestions(true);
+                  }
+                },
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: Text(
+                  'Kapat',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,

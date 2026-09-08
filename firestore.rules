@@ -38,7 +38,11 @@ service cloud.firestore {
       // Admin ayrıcalıklı yazmaları Cloud Functions üzerinden yapar; istemciye
       // create izni verilirse stableId ile hayalet doküman oluşuyor.
       allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isAdmin();
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['firstName', 'lastName', 'fullName'])
+      );
       allow delete: if isAdmin();
 
       match /cv/{docId} {
@@ -203,6 +207,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /ticket_short_codes/{code} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /withdrawal_requests/{id} {
       allow read: if isAdmin() ||
         (signedIn() && resource.data.companyId == request.auth.uid);
@@ -257,6 +266,15 @@ service cloud.firestore {
     match /feedback/{id} {
       allow create: if signedIn();
       allow read, update, delete: if isAdmin();
+    }
+
+    match /name_change_requests/{id} {
+      allow create: if signedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending';
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdmin();
     }
 
     /// Landing başvuruları — yalnızca Cloud Functions yazar; admin okur.

@@ -1654,6 +1654,30 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
       if (returnAmount > remaining + 0.001) {
         throw new HttpsError('invalid-argument', 'İade tutarı kalan tutarı aşıyor');
       }
+      const productEarly = String(order.product || '').toLowerCase();
+      const forceUsedRefund = request.data?.forceUsedRefund === true;
+      if (productEarly === 'event') {
+        const ticketId = String(order.ticketId || '').trim();
+        if (ticketId) {
+          const tsnap = await db.collection('event_tickets').doc(ticketId).get();
+          if (tsnap.exists) {
+            const t = tsnap.data() || {};
+            const st = String(t.status || 'active');
+            const usedN = Number(t.entriesUsed);
+            const used =
+              (Number.isFinite(usedN) && usedN > 0) ||
+              st === 'used' ||
+              st === 'checked_in' ||
+              Boolean(t.checkedInAt);
+            if (used && !forceUsedRefund) {
+              throw new HttpsError(
+                'failed-precondition',
+                'USED_TICKET_NO_REFUND',
+              );
+            }
+          }
+        }
+      }
       const cfg = await readPaymentsConfig();
       let json = { status: 'success', channel: 'manual' };
       if (merchantOid) {
@@ -1743,6 +1767,7 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
             ...order,
             ...patch,
             id: orderId,
+            forceUsedRefund,
           });
         }
         if (product === 'merch' && full && typeof reverseMerchFulfillment === 'function') {

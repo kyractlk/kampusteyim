@@ -14,7 +14,7 @@ Hesaplar arasında çıkış yapmadan geç. Tanıtım kartı ve QR istatistikler
 ## Android
 
 - versionName: 1.1.0
-- versionCode: 73
+- versionCode: 74
 - AAB: `release/KampusteyimAPP-1.1.0.aab`
 
 ## Sürüm rayları

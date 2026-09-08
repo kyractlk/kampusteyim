@@ -21,6 +21,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
     bool? hideFromSearch,
     bool? isPrivateAccount,
     bool? isSpectatorMode,
+    bool? hidePeopleSuggestions,
   }) async {
     setState(() => _busy = true);
     try {
@@ -28,6 +29,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
             hideFromSearch: hideFromSearch,
             isPrivateAccount: isPrivateAccount,
             isSpectatorMode: isSpectatorMode,
+            hidePeopleSuggestions: hidePeopleSuggestions,
           );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -99,6 +101,19 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
             onChanged: _busy
                 ? null
                 : (v) => _update(hideFromSearch: v),
+          ),
+          const Divider(),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Önerilenleri kapat'),
+            subtitle: const Text(
+              'Ana akıştaki “Önerilenler” rayı tamamen gizlenir.',
+            ),
+            value: user.hidePeopleSuggestions,
+            activeThumbColor: AppColors.cyan,
+            onChanged: _busy
+                ? null
+                : (v) => _update(hidePeopleSuggestions: v),
           ),
           const Divider(),
           SwitchListTile(

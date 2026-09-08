@@ -9,7 +9,7 @@ enum AdminPermission {
   restrictUsers('restrict_users', 'Ban / paylaşım yasağı uygula', 'Moderasyon'),
   resetPassword(
     'reset_password',
-    'Şifre sıfırlama bağlantısı gönder',
+    'Şifre sıfırlama linki oluştur',
     'Kullanıcılar',
   ),
   reviewReports(

@@ -11,6 +11,7 @@ import '../../core/utils/auth_gate.dart';
 import '../../core/widgets/media_viewer.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../auth/data/auth_provider.dart';
+import '../commerce/commerce_service.dart';
 import '../feed/feed_provider.dart';
 import '../payments/payment_checkout_sheet.dart';
 
@@ -132,46 +133,79 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ],
-          const SizedBox(height: 8),
-          Text(
-            date,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: AppColors.textSecondary),
-          ),
-          if (event.location.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              event.location,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: AppColors.textSecondary),
+          const SizedBox(height: 12),
+          Material(
+            color: AppColors.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppColors.border),
             ),
-          ],
-          if (event.city.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text('Şehir: ${event.city}'),
-          ],
-          const SizedBox(height: 8),
-          Text(
-            'Kimler: ${event.audienceLabel}',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          if (deadlineLabel != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Son başvuru: $deadlineLabel',
-              style: Theme.of(context).textTheme.bodyMedium,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                children: [
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.schedule_rounded),
+                    title: Text(date),
+                  ),
+                  if (event.location.isNotEmpty)
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.place_outlined),
+                      title: Text(event.location),
+                    ),
+                  if (event.city.isNotEmpty)
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.location_city_outlined),
+                      title: Text(event.city),
+                    ),
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.groups_outlined),
+                    title: Text(event.audienceLabel),
+                    subtitle: deadlineLabel == null
+                        ? null
+                        : Text('Son başvuru: $deadlineLabel'),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
           const SizedBox(height: 16),
           Text(event.description, style: Theme.of(context).textTheme.bodyLarge),
           if (event.rules.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text('Kurallar', style: Theme.of(context).textTheme.titleSmall),
-            Text(event.rules),
+            const SizedBox(height: 16),
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: Material(
+                color: AppColors.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: AppColors.border),
+                ),
+                child: ExpansionTile(
+                  initiallyExpanded: false,
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  title: const Text(
+                    'Kurallar',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: const Text('Okumak için aç'),
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        event.rules,
+                        style: const TextStyle(height: 1.45),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
           const SizedBox(height: 12),
           Text(
@@ -186,24 +220,70 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               'Bilet seçenekleri',
               style: TextStyle(fontWeight: FontWeight.w800),
             ),
-            ...tiers.map(
-              (t) => RadioListTile<String>(
-                value: t.label,
-                groupValue: _tierLabel,
-                onChanged:
-                    applied ? null : (v) => setState(() => _tierLabel = v),
-                title: Text(
-                  t.amount <= 0
-                      ? '${t.label} · Ücretsiz'
-                      : '${t.label} · ${t.amount.toStringAsFixed(2)} TL',
+            ...tiers.map((t) {
+              final selected = _tierLabel == t.label;
+              return Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Material(
+                  color: selected
+                      ? AppColors.navy.withValues(alpha: 0.08)
+                      : AppColors.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: selected ? AppColors.navy : AppColors.border,
+                      width: selected ? 1.8 : 1,
+                    ),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: applied
+                        ? null
+                        : () => setState(() => _tierLabel = t.label),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            selected
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            color: selected
+                                ? AppColors.navy
+                                : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  t.amount <= 0
+                                      ? '${t.label} · Ücretsiz'
+                                      : '${t.label} · ${t.amount.toStringAsFixed(2)} TL',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${t.entryLabel}'
+                                  '${t.remaining != null ? ' · kalan ${t.remaining}' : ''}',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                subtitle: Text(
-                  '${t.entryLabel}'
-                  '${t.remaining != null ? ' · kalan ${t.remaining}' : ''}',
-                ),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
+              );
+            }),
           ] else ...[
             const SizedBox(height: 8),
             const Text(
@@ -315,6 +395,14 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             onPressed: () => context.push('/tickets'),
             child: const Text('Biletlerim'),
           ),
+          if (applied) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => _renameTicketName(event.id),
+              icon: const Icon(Icons.badge_outlined),
+              label: const Text('Biletteki ismi değiştir'),
+            ),
+          ],
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: () => context.go('/events'),
@@ -323,5 +411,72 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _renameTicketName(String eventId) async {
+    try {
+      final tickets = await CommerceService.getMyTickets();
+      final mine = tickets.where((t) => '${t['eventId']}' == eventId).toList();
+      if (!mounted) return;
+      if (mine.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Bu etkinlikte bilet bulunamadı')),
+        );
+        return;
+      }
+      final t = mine.first;
+      final used = (t['entriesUsed'] as num?)?.toInt() ?? 0;
+      final st = '${t['status'] ?? 'active'}';
+      if (used > 0 || st == 'used' || st == 'refunded' || st == 'cancelled') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Giriş yapılmış bilette isim değiştirilemez'),
+          ),
+        );
+        return;
+      }
+      final ctrl = TextEditingController(text: '${t['userName'] ?? ''}');
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Biletteki isim'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Kapıda görünecek ad soyad',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Kaydet'),
+            ),
+          ],
+        ),
+      );
+      final name = ctrl.text.trim();
+      ctrl.dispose();
+      if (ok != true || name.length < 2 || !mounted) return;
+      await CommerceService.renameTicketAttendee(
+        ticketId: '${t['id']}',
+        userName: name,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bilet ismi güncellendi')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Güncellenemedi: $e')),
+      );
+    }
   }
 }

@@ -4,9 +4,35 @@ import 'package:provider/provider.dart';
 
 import '../../core/icons/mt_icons.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../jobs/jobs_provider.dart';
+
+List<String> switchableAccountIds(AppUser user) {
+  final out = <String>{};
+  for (final id in user.linkedAccountIds) {
+    if (id.isNotEmpty && id != user.id) out.add(id);
+  }
+  final org = (user.panelOrgId ?? '').trim();
+  if (user.panelAccess && org.isNotEmpty && org != user.id) out.add(org);
+  return out.toList();
+}
+
+Future<void> showAccountSwitchSheet(BuildContext context, AppUser user) async {
+  final ids = switchableAccountIds(user);
+  if (ids.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Geçilecek bağlı hesap yok')),
+    );
+    return;
+  }
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) => _AccountSwitchSheet(user: user, ids: ids),
+  );
+}
 
 /// Çıkış yapmadan bağlı hesaplar arasında geçiş.
 class LinkedAccountsBlock extends StatefulWidget {
@@ -26,7 +52,7 @@ class _LinkedAccountsBlockState extends State<LinkedAccountsBlock> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
-      for (final id in widget.user.linkedAccountIds) {
+      for (final id in switchableAccountIds(widget.user)) {
         auth.ensureUserLoaded(id);
       }
     });
@@ -113,9 +139,7 @@ class _LinkedAccountsBlockState extends State<LinkedAccountsBlock> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final ids = widget.user.linkedAccountIds
-        .where((id) => id.isNotEmpty && id != widget.user.id)
-        .toList();
+    final ids = switchableAccountIds(widget.user);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: DecoratedBox(
@@ -172,6 +196,92 @@ class _LinkedAccountsBlockState extends State<LinkedAccountsBlock> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountSwitchSheet extends StatefulWidget {
+  const _AccountSwitchSheet({required this.user, required this.ids});
+  final AppUser user;
+  final List<String> ids;
+
+  @override
+  State<_AccountSwitchSheet> createState() => _AccountSwitchSheetState();
+}
+
+class _AccountSwitchSheetState extends State<_AccountSwitchSheet> {
+  bool _working = false;
+
+  Future<void> _go(String id) async {
+    if (_working) return;
+    setState(() => _working = true);
+    final auth = context.read<AuthProvider>();
+    context.read<JobsProvider>().companyLogout();
+    final ok = await auth.switchLinkedAccount(id);
+    if (!mounted) return;
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Hesap değiştirildi'
+              : (auth.error ?? 'Geçiş başarısız.'),
+        ),
+      ),
+    );
+    if (ok) context.go('/home');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Hangi hesaba geçilsin?',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Şu an: ${widget.user.fullName}',
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+            if (_working) const LinearProgressIndicator(),
+            const SizedBox(height: 8),
+            ...widget.ids.map((id) {
+              final u = auth.findUser(id);
+              final title = u == null
+                  ? id
+                  : (u.username?.isNotEmpty == true
+                      ? '@${u.username}'
+                      : u.fullName.trim());
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: UserAvatar(
+                  name: title.isEmpty ? 'H' : title,
+                  photoUrl: u?.isCommunity == true
+                      ? (u?.communityLogoUrl ?? u?.photoUrl)
+                      : u?.photoUrl,
+                  isCommunity: u?.isCommunity ?? false,
+                  radius: 20,
+                ),
+                title: Text(
+                  title.isEmpty ? 'Hesap' : title,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text(u?.email ?? 'Bağlı hesap'),
+                trailing: const Icon(Icons.swap_horiz_rounded),
+                onTap: _working ? null : () => _go(id),
+              );
+            }),
+          ],
         ),
       ),
     );

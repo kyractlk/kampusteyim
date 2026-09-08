@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fa;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 
 import '../../../core/auth/secure_session.dart';
 import '../../../core/constants/app_info.dart';
@@ -620,6 +621,7 @@ class AuthProvider extends ChangeNotifier {
         if (user.studentCredential != null)
           'studentCredential': user.studentCredential,
         'hideFromSearch': user.hideFromSearch,
+        'hidePeopleSuggestions': user.hidePeopleSuggestions,
         'isPrivateAccount': user.isPrivateAccount,
         'isSpectatorMode': user.isSpectatorMode,
         'blockedUserIds': user.blockedUserIds,
@@ -1615,6 +1617,7 @@ class AuthProvider extends ChangeNotifier {
       outgoingFollowRequests: _stringList(m['outgoingFollowRequests']),
       deliveryAddresses: _deliveryAddressesFrom(m['deliveryAddresses']),
       linkedAccountIds: _stringList(m['linkedAccountIds']),
+      hidePeopleSuggestions: m['hidePeopleSuggestions'] == true,
       notificationPrefs: prefsRaw is Map
           ? NotificationPrefs.fromJson(Map<String, dynamic>.from(prefsRaw))
           : NotificationPrefs.defaults,
@@ -1708,6 +1711,14 @@ class AuthProvider extends ChangeNotifier {
     if (id.isEmpty) return;
     _dismissedSuggestions.add(id);
     notifyListeners();
+  }
+
+  Future<void> setHidePeopleSuggestions(bool value) async {
+    if (_user == null) return;
+    _user = _user!.copyWith(hidePeopleSuggestions: value);
+    _upsert(_user!);
+    notifyListeners();
+    unawaited(_syncProfileToFirestore(_user!));
   }
 
   void updateProfile({
@@ -1854,12 +1865,14 @@ class AuthProvider extends ChangeNotifier {
     bool? hideFromSearch,
     bool? isPrivateAccount,
     bool? isSpectatorMode,
+    bool? hidePeopleSuggestions,
   }) async {
     if (_user == null) return;
     _user = _user!.copyWith(
       hideFromSearch: hideFromSearch,
       isPrivateAccount: isPrivateAccount,
       isSpectatorMode: isSpectatorMode,
+      hidePeopleSuggestions: hidePeopleSuggestions,
     );
     _upsert(_user!);
     notifyListeners();
@@ -1869,6 +1882,7 @@ class AuthProvider extends ChangeNotifier {
         'hideFromSearch': ?hideFromSearch,
         'isPrivateAccount': ?isPrivateAccount,
         'isSpectatorMode': ?isSpectatorMode,
+        'hidePeopleSuggestions': ?hidePeopleSuggestions,
         'updatedAt': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
     } catch (e) {
@@ -2236,6 +2250,8 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     _intentionalAuth = true;
     try {
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
       final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
           .httpsCallable('switchLinkedAccount');
       final res = await callable.call({'targetId': id});
@@ -2256,11 +2272,11 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[auth] switchLinkedAccount: $e');
       _error = 'Hesap geçişi başarısız.';
-      _busy = false;
-      notifyListeners();
       return false;
     } finally {
       _intentionalAuth = false;
+      _busy = false;
+      notifyListeners();
     }
   }
 

@@ -156,12 +156,13 @@ class ProfileSettingsScreen extends StatelessWidget {
               );
             },
           ),
-          _tile(
-            svg: MtIcons.community,
-            title: 'Tanıtım kartı',
-            subtitle: 'QR, indirme ve okutulma istatistikleri',
-            onTap: () => context.push('/tanitimkarti'),
-          ),
+          if (user.isCommunity || user.isCompany)
+            _tile(
+              svg: MtIcons.community,
+              title: 'Tanıtım kartı',
+              subtitle: 'QR, indirme ve okutulma istatistikleri',
+              onTap: () => context.push('/tanitimkarti'),
+            ),
           _tile(
             svg: MtIcons.follow,
             title: 'Gelen istekler',
@@ -210,7 +211,7 @@ class ProfileSettingsScreen extends StatelessWidget {
           _tile(
             svg: MtIcons.feedback,
             title: 'Geri bildirim',
-            subtitle: 'Öneri / hata · admin paneline düşer',
+            subtitle: 'Öneri ve hata bildirimi · yönetim ekibimize iletilir',
             onTap: () => context.push('/profile/feedback'),
           ),
           if (user.isCommunity ||
@@ -222,13 +223,10 @@ class ProfileSettingsScreen extends StatelessWidget {
               title: user.isCommunity
                   ? 'Topluluk paneli'
                   : '${user.panelOrgName ?? 'Organizasyon'} paneli',
-              subtitle: 'Duyuru, etkinlik, kadro',
+              subtitle: 'Duyuru, etkinlik, kadro, kapı girişi',
               onTap: () => context.push('/community'),
             ),
-          if (user.isCompany ||
-              (user.panelAccess &&
-                  user.panelOrgType == 'company' &&
-                  (user.panelOrgId ?? '').isNotEmpty))
+          if (user.isCompany)
             _tile(
               svg: MtIcons.job,
               title: 'Firma paneli',

@@ -51,7 +51,9 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       _ctrl.clear();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Teşekkürler · geri bildirimin admin paneline iletildi'),
+          content: Text(
+            'Teşekkür ederiz. Geri bildiriminiz KampüsteyimAPP yönetim ekibine iletildi.',
+          ),
         ),
       );
       context.pop();

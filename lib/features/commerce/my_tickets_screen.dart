@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -57,6 +58,7 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Biletlerim'),
         actions: [
@@ -81,20 +83,22 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                       ),
                     )
                   : ListView.separated(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                       itemCount: _tickets.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      separatorBuilder: (_, _) => const SizedBox(height: 14),
                       itemBuilder: (context, i) {
                         final t = _tickets[i];
-                        return _TicketCard(
+                        return _TicketPass(
                           ticket: t,
-                          statusLabel: _statusLabel('${t['status'] ?? 'active'}'),
+                          statusLabel:
+                              _statusLabel('${t['status'] ?? 'active'}'),
                           onOpenEvent: () {
                             final id = '${t['eventId'] ?? ''}'.trim();
                             if (id.isEmpty) return;
                             AppNav.openEvent(context, id);
                           },
                           onShowQr: () => _showTicketQr(t),
+                          onRename: () => _rename(t),
                         );
                       },
                     ),
@@ -112,6 +116,67 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
     );
   }
 
+  Future<void> _rename(Map<String, dynamic> t) async {
+    final st = '${t['status'] ?? 'active'}';
+    final used = (t['entriesUsed'] as num?)?.toInt() ?? 0;
+    if (st == 'refunded' || st == 'cancelled' || st == 'used' || used > 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Giriş yapılmış veya iade edilmiş bilette isim değişmez.'),
+        ),
+      );
+      return;
+    }
+    final ctrl = TextEditingController(
+      text: '${t['userName'] ?? ''}'.trim(),
+    );
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Biletteki isim'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Kapıda görünecek ad soyad',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Kaydet'),
+          ),
+        ],
+      ),
+    );
+    final name = ctrl.text.trim();
+    ctrl.dispose();
+    if (ok != true || name.length < 2 || !mounted) return;
+    try {
+      await CommerceService.renameTicketAttendee(
+        ticketId: '${t['id']}',
+        userName: name,
+      );
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bilet ismi güncellendi')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Güncellenemedi: $e')),
+      );
+    }
+  }
+
   Future<void> _showTicketQr(Map<String, dynamic> t) async {
     final st = '${t['status'] ?? 'active'}';
     if (st == 'refunded' || st == 'cancelled') {
@@ -122,6 +187,9 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
       return;
     }
     final payload = '${t['qrPayload'] ?? t['id'] ?? ''}'.trim();
+    final code = formatTicketShortCode(
+      '${t['shortCode'] ?? t['displayCode'] ?? ''}',
+    );
     final starts = DateTime.tryParse('${t['startsAt'] ?? ''}');
     final date = starts == null
         ? ''
@@ -150,7 +218,10 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                 ),
                 if (date.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Text(date, style: const TextStyle(color: AppColors.textSecondary)),
+                  Text(
+                    date,
+                    style: const TextStyle(color: AppColors.textSecondary),
+                  ),
                 ],
                 const SizedBox(height: 16),
                 if (payload.isEmpty)
@@ -169,9 +240,32 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                       backgroundColor: Colors.white,
                     ),
                   ),
-                const SizedBox(height: 12),
+                if (code.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    code,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 22,
+                      letterSpacing: 3,
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: code.replaceAll('-', '')));
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Kısa kod kopyalandı')),
+                      );
+                    },
+                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    label: const Text('Kodu kopyala'),
+                  ),
+                ],
+                const SizedBox(height: 8),
                 Text(
                   [
+                    if ('${t['userName'] ?? ''}'.trim().isNotEmpty)
+                      '${t['userName']}',
                     if ('${t['tierLabel'] ?? ''}'.isNotEmpty) '${t['tierLabel']}',
                     '${t['amountPaid'] ?? 0} TL',
                     'Durum: ${_statusLabel('${t['status'] ?? 'active'}')}',
@@ -198,18 +292,26 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
   }
 }
 
-class _TicketCard extends StatelessWidget {
-  const _TicketCard({
+String formatTicketShortCode(String raw) {
+  final s = raw.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+  if (s.length != 6) return s;
+  return '${s.substring(0, 3)}-${s.substring(3)}';
+}
+
+class _TicketPass extends StatelessWidget {
+  const _TicketPass({
     required this.ticket,
     required this.statusLabel,
     required this.onOpenEvent,
     required this.onShowQr,
+    required this.onRename,
   });
 
   final Map<String, dynamic> ticket;
   final String statusLabel;
   final VoidCallback onOpenEvent;
   final VoidCallback onShowQr;
+  final VoidCallback onRename;
 
   @override
   Widget build(BuildContext context) {
@@ -219,75 +321,190 @@ class _TicketCard extends StatelessWidget {
         : DateFormat('d MMM yyyy · HH:mm', 'tr').format(starts);
     final used = statusLabel == 'Giriş yapıldı';
     final refunded = statusLabel == 'İade edildi';
-    return Card(
-      clipBehavior: Clip.antiAlias,
+    final code = formatTicketShortCode(
+      '${ticket['shortCode'] ?? ticket['displayCode'] ?? ''}',
+    );
+    final accent = refunded
+        ? AppColors.crimson
+        : used
+            ? const Color(0xFF166534)
+            : AppColors.navy;
+
+    return Material(
+      color: AppColors.surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: accent.withValues(alpha: 0.28), width: 1.4),
+      ),
       child: InkWell(
+        borderRadius: BorderRadius.circular(20),
         onTap: onShowQr,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: refunded
-                      ? AppColors.crimson.withValues(alpha: 0.12)
-                      : AppColors.navy.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  refunded
-                      ? Icons.money_off_outlined
-                      : used
-                          ? Icons.verified
-                          : Icons.qr_code_2_rounded,
-                  color: refunded
-                      ? AppColors.crimson
-                      : used
-                          ? AppColors.lime
-                          : AppColors.navy,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${ticket['eventTitle'] ?? 'Etkinlik'}',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      [
-                        if (date.isNotEmpty) date,
-                        if ('${ticket['tierLabel'] ?? ''}'.isNotEmpty)
-                          '${ticket['tierLabel']}',
-                        if ('${ticket['entryType'] ?? ''}' == 'multi')
-                          'Giriş ${ticket['entriesUsed'] ?? 0}/${ticket['entryLimit'] ?? 0}',
-                        '${ticket['amountPaid'] ?? 0} TL',
-                        statusLabel,
-                      ].join(' · '),
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: AppColors.textSecondary,
-                        height: 1.35,
-                      ),
-                    ),
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    accent,
+                    accent.withValues(alpha: 0.82),
                   ],
                 ),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(18.5),
+                ),
               ),
-              IconButton(
-                tooltip: 'Etkinlik',
-                onPressed: onOpenEvent,
-                icon: const Icon(Icons.chevron_right),
+              child: Row(
+                children: [
+                  const Icon(Icons.confirmation_number_outlined,
+                      color: Colors.white, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${ticket['eventTitle'] ?? 'Etkinlik'}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15.5,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (date.isNotEmpty)
+                          Text(
+                            date,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        const SizedBox(height: 4),
+                        Text(
+                          [
+                            if ('${ticket['userName'] ?? ''}'.trim().isNotEmpty)
+                              '${ticket['userName']}',
+                            if ('${ticket['tierLabel'] ?? ''}'.isNotEmpty)
+                              '${ticket['tierLabel']}',
+                            if ('${ticket['entryType'] ?? ''}' == 'multi')
+                              'Giriş ${ticket['entriesUsed'] ?? 0}/${ticket['entryLimit'] ?? 0}',
+                            '${ticket['amountPaid'] ?? 0} TL',
+                          ].join(' · '),
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: AppColors.textSecondary,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (code.isNotEmpty)
+                    Column(
+                      children: [
+                        Text(
+                          code,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            letterSpacing: 1.4,
+                            color: accent,
+                          ),
+                        ),
+                        const Text(
+                          'Kısa kod',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: CustomPaint(
+                painter: _DashPainter(),
+                child: SizedBox(width: double.infinity, height: 12),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: onShowQr,
+                    icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+                    label: const Text('QR göster'),
+                  ),
+                  TextButton.icon(
+                    onPressed: onRename,
+                    icon: const Icon(Icons.badge_outlined, size: 18),
+                    label: const Text('İsim'),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Etkinlik',
+                    onPressed: onOpenEvent,
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+class _DashPainter extends CustomPainter {
+  const _DashPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.border
+      ..strokeWidth = 1.2;
+    const dash = 6.0;
+    const gap = 5.0;
+    var x = 0.0;
+    final y = size.height / 2;
+    while (x < size.width) {
+      canvas.drawLine(Offset(x, y), Offset(x + dash, y), paint);
+      x += dash + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

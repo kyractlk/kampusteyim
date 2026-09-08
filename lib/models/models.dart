@@ -177,6 +177,7 @@ class AppUser {
     this.outgoingFollowRequests = const [],
     this.deliveryAddresses = const [],
     this.linkedAccountIds = const [],
+    this.hidePeopleSuggestions = false,
   });
 
   final String id;
@@ -320,6 +321,9 @@ class AppUser {
   /// Çıkış yapmadan geçilebilen bağlı hesaplar (topluluk / firma / resmi).
   final List<String> linkedAccountIds;
 
+  /// Akıştaki önerilen kişiler rayını tamamen gizle.
+  final bool hidePeopleSuggestions;
+
   /// Panel erişimi: süper admin, UserRole.admin veya atanmış staff rolü.
   bool get canAccessAdmin =>
       isSuperAdmin || role == UserRole.admin || staffRoleId != null;
@@ -454,6 +458,8 @@ class AppUser {
     List<ProfileLink>? links,
     List<String>? following,
     List<String>? followers,
+    String? email,
+    String? studentNo,
     String? firstName,
     String? lastName,
     String? phone,
@@ -514,6 +520,7 @@ class AppUser {
     List<String>? outgoingFollowRequests,
     List<DeliveryAddress>? deliveryAddresses,
     List<String>? linkedAccountIds,
+    bool? hidePeopleSuggestions,
     bool clearPhoto = false,
     bool clearAffiliation = false,
     bool clearRestrictionUntil = false,
@@ -523,8 +530,8 @@ class AppUser {
   }) {
     return AppUser(
       id: id,
-      email: email,
-      studentNo: studentNo,
+      email: email ?? this.email,
+      studentNo: studentNo ?? this.studentNo,
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
       phone: phone ?? this.phone,
@@ -612,6 +619,8 @@ class AppUser {
           outgoingFollowRequests ?? this.outgoingFollowRequests,
       deliveryAddresses: deliveryAddresses ?? this.deliveryAddresses,
       linkedAccountIds: linkedAccountIds ?? this.linkedAccountIds,
+      hidePeopleSuggestions:
+          hidePeopleSuggestions ?? this.hidePeopleSuggestions,
     );
   }
 

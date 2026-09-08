@@ -553,38 +553,42 @@ class _PromoCardStudioScreenState extends State<PromoCardStudioScreen> {
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: TextField(
-            controller: _filter,
-            onChanged: (_) => setState(() {}),
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w700,
-              fontSize: 16,
-            ),
-            cursorColor: AppColors.navy,
-            decoration: InputDecoration(
-              hintText: 'Filtrele: gaun, ieee, ays…',
-              hintStyle: const TextStyle(
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
+        if (isAdmin)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: TextField(
+              controller: _filter,
+              onChanged: (_) => setState(() {}),
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
               ),
-              prefixIcon: const Icon(Icons.search_rounded, color: AppColors.navy),
-              filled: true,
-              fillColor: AppColors.surface,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: AppColors.border, width: 1.4),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: AppColors.navy, width: 2),
+              cursorColor: AppColors.navy,
+              decoration: InputDecoration(
+                hintText: 'Filtrele: gaun, ieee, ays…',
+                hintStyle: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+                prefixIcon:
+                    const Icon(Icons.search_rounded, color: AppColors.navy),
+                filled: true,
+                fillColor: AppColors.surface,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide:
+                      const BorderSide(color: AppColors.border, width: 1.4),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppColors.navy, width: 2),
+                ),
               ),
             ),
           ),
-        ),
         if (isAdmin)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),

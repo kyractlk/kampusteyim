@@ -865,6 +865,106 @@ class AdminProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateUserDetails({
+    required AuthProvider auth,
+    required AppUser user,
+    required String firstName,
+    required String lastName,
+    String? username,
+    String? email,
+    String? phone,
+    String? studentNo,
+    String? city,
+    String? university,
+    String? faculty,
+    String? department,
+    String? bio,
+  }) async {
+    busy = true;
+    status = 'Hesap güncelleniyor…';
+    notifyListeners();
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable(
+        'adminUpdateUserDetails',
+        options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
+      );
+      final res = await callable.call({
+        'userId': user.id,
+        'firstName': firstName.trim(),
+        'lastName': lastName.trim(),
+        'username': (username ?? '').trim(),
+        'email': (email ?? '').trim(),
+        'phone': (phone ?? '').trim(),
+        'studentNo': (studentNo ?? '').trim(),
+        'city': (city ?? '').trim(),
+        'university': (university ?? '').trim(),
+        'faculty': (faculty ?? '').trim(),
+        'department': (department ?? '').trim(),
+        'bio': (bio ?? '').trim(),
+      });
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      auth.upsertUser(
+        user.copyWith(
+          firstName: '${map['firstName'] ?? firstName}'.trim(),
+          lastName: '${map['lastName'] ?? lastName}'.trim(),
+          email: '${map['email'] ?? email ?? user.email}'.trim(),
+          studentNo: '${map['studentNo'] ?? studentNo ?? user.studentNo}'.trim(),
+          phone: '${map['phone'] ?? phone ?? user.phone}'.trim(),
+          city: '${map['city'] ?? city ?? user.city}'.trim(),
+          university: '${map['university'] ?? university ?? user.university}'
+              .trim(),
+          faculty: '${map['faculty'] ?? faculty ?? user.faculty}'.trim(),
+          department: '${map['department'] ?? department ?? user.department}'
+              .trim(),
+          bio: '${map['bio'] ?? bio ?? user.bio}'.trim(),
+          username: '${map['username'] ?? username ?? user.username ?? ''}'
+              .trim()
+              .replaceFirst(RegExp(r'^@'), ''),
+          usernameStatus: 'ok',
+        ),
+        syncRemote: false,
+      );
+      status = 'Hesap güncellendi';
+      busy = false;
+      notifyListeners();
+    } catch (e) {
+      busy = false;
+      status = 'Hesap güncellenemedi';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> createPasswordResetLink({
+    required String email,
+    String? uid,
+    bool alsoEmail = false,
+  }) async {
+    busy = true;
+    status = 'Sıfırlama linki oluşturuluyor…';
+    notifyListeners();
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('adminCreatePasswordResetLink');
+      final res = await callable.call({
+        'email': email,
+        if (uid != null && uid.isNotEmpty) 'uid': uid,
+        'alsoEmail': alsoEmail,
+      });
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      status = 'Link hazır';
+      busy = false;
+      notifyListeners();
+      return map;
+    } catch (e) {
+      busy = false;
+      status = 'Link oluşturulamadı';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   Future<void> sendPasswordReset({required String email}) async {
     busy = true;
     status = 'Şifre sıfırlama gönderiliyor…';

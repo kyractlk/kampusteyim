@@ -238,6 +238,11 @@ GoRouter createRouter(AuthProvider auth) {
         parentNavigatorKey: appRootNavigatorKey,
         builder: (context, state) => const CommunityPortalScreen(),
       ),
+      GoRoute(
+        path: '/community/scan',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (_, _) => const TicketCheckInScreen(),
+      ),
       // Twitter tarzı: gaunengineering.com.tr/post/{id}
       GoRoute(
         path: '/post/:id',

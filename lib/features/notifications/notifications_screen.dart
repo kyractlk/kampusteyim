@@ -176,6 +176,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final auth = context.read<AuthProvider>();
+      await context.read<NotificationProvider>().refresh();
+      if (!mounted) return;
       final ids = auth.user?.incomingFollowRequests ?? const <String>[];
       for (final id in ids) {
         await auth.ensureUserLoaded(id);

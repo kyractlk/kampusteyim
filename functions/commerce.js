@@ -19,6 +19,8 @@ function commerceModule({
   brandHome,
 }) {
   const TICKETS = 'event_tickets';
+  const SHORT_CODES = 'ticket_short_codes';
+  const SHORT_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const WITHDRAWALS = 'withdrawal_requests';
   const ADS = 'ad_campaigns';
   const DISCOUNTS = 'event_discounts';
@@ -72,8 +74,76 @@ function commerceModule({
       if (!hmacEqual(signTicketId(m[1]), m[2].toLowerCase())) return '';
       return m[1];
     }
+    const compact = s.replace(/\s+/g, '').toUpperCase();
+    if (new RegExp(`^[${SHORT_ALPHABET}]{6}$`).test(compact)) return compact;
     if (/^[A-Za-z0-9_-]{8,64}$/.test(s)) return s;
     return '';
+  }
+
+  function randomShortCode() {
+    let out = '';
+    for (let i = 0; i < 6; i += 1) {
+      out += SHORT_ALPHABET[crypto.randomInt(SHORT_ALPHABET.length)];
+    }
+    return out;
+  }
+
+  async function allocateShortCode(ticketId) {
+    const tid = String(ticketId || '').trim();
+    if (!tid) throw new Error('ticketId gerekli');
+    for (let i = 0; i < 32; i += 1) {
+      const code = randomShortCode();
+      const ref = db.collection(SHORT_CODES).doc(code);
+      try {
+        await db.runTransaction(async (tx) => {
+          const snap = await tx.get(ref);
+          if (snap.exists) {
+            const err = new Error('taken');
+            err.code = 'taken';
+            throw err;
+          }
+          tx.set(ref, { ticketId: tid, createdAt: nowIso() });
+        });
+        return code;
+      } catch (e) {
+        if (e && (e.code === 'taken' || String(e.message || '') === 'taken')) {
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error('short-code-exhausted');
+  }
+
+  async function resolveTicketSnap(raw) {
+    const parsed = parseQrPayload(raw);
+    if (!parsed) return null;
+    const code = String(parsed).toUpperCase();
+    if (new RegExp(`^[${SHORT_ALPHABET}]{6}$`).test(code)) {
+      const map = await db.collection(SHORT_CODES).doc(code).get();
+      if (map.exists) {
+        const tid = String(map.data()?.ticketId || '').trim();
+        if (tid) {
+          const byId = await db.collection(TICKETS).doc(tid).get();
+          if (byId.exists) return byId;
+        }
+      }
+      const q = await db
+        .collection(TICKETS)
+        .where('shortCode', '==', code)
+        .limit(1)
+        .get();
+      if (!q.empty) return q.docs[0];
+    }
+    const snap = await db.collection(TICKETS).doc(parsed).get();
+    return snap.exists ? snap : null;
+  }
+
+  function ticketIsUsed(ticket) {
+    const st = String(ticket?.status || 'active');
+    const usedNow = Number(ticket?.entriesUsed);
+    if (Number.isFinite(usedNow) && usedNow > 0) return true;
+    return st === 'used' || st === 'checked_in' || Boolean(ticket?.checkedInAt);
   }
 
   async function resolveCommerceOwner(uid) {
@@ -131,7 +201,11 @@ function commerceModule({
           ? `çoklu · ${Number(ticket.entryLimit) || 2} kez okutulabilir`
           : 'tek giriş'
       }</p>
-      <p>Kod: <code>${esc(qr)}</code></p>
+      ${
+        ticket.shortCode
+          ? `<p>Kısa kod: <strong style="letter-spacing:2px;font-size:18px;">${esc(ticket.shortCode)}</strong></p>`
+          : ''
+      }
       <p style="color:#64748B;font-size:13px;">Bilet kişiye özeldir. ${
         event && event.refundsAllowed === true
           ? 'Bu etkinlikte iade, organizatör bakiyesinden net tutar düşülerek yapılabilir (platform komisyonu iade edilmez).'
@@ -285,6 +359,7 @@ function commerceModule({
       balance: Number(balance || 0),
       isEventOrganizer: u.isEventOrganizer === true,
       isCompany: u.role === 'company',
+      isCommunity: u.role === 'community' || u.isCommunity === true,
       name: String(u.companyName || u.displayName || u.username || uid),
     };
   }
@@ -317,7 +392,9 @@ function commerceModule({
     const eventSnap = await eventRef.get();
     if (!eventSnap.exists) return { ok: false };
     const event = eventSnap.data() || {};
-    const organizerId = String(event.organizerCompanyId || '').trim();
+    const organizerId = String(
+      event.organizerCompanyId || event.communityId || '',
+    ).trim();
     if (!organizerId) {
       console.error('[fulfillEvent] no organizer', eventId);
       return { ok: false };
@@ -338,6 +415,13 @@ function commerceModule({
     const entry = normalizeTicketEntry(sourceTier);
 
     const ticketRef = db.collection(TICKETS).doc();
+    let shortCode = '';
+    try {
+      shortCode = await allocateShortCode(ticketRef.id);
+    } catch (e) {
+      console.error('[fulfillEvent] shortCode', e);
+    }
+    const qrKey = shortCode || ticketRef.id;
     const ticket = {
       id: ticketRef.id,
       eventId,
@@ -356,7 +440,8 @@ function commerceModule({
       startsAt: event.startsAt || null,
       createdAt: nowIso(),
       ibanReference: order.ibanReference || null,
-      qrPayload: buildQrPayload(ticketRef.id),
+      shortCode: shortCode || null,
+      qrPayload: buildQrPayload(qrKey),
       refundsAllowed: event.refundsAllowed === true,
       entryType: entry.entryType,
       entryLimit: entry.entryLimit,
@@ -533,12 +618,16 @@ function commerceModule({
       const tsnap = await tref.get();
       if (tsnap.exists) {
         const t = tsnap.data() || {};
+        if (ticketIsUsed(t) && order.forceUsedRefund !== true) {
+          return { ok: false, blocked: true, code: 'USED_TICKET_NO_REFUND' };
+        }
         if (t.status !== 'refunded' && t.status !== 'cancelled') {
           await tref.set(
             {
               status: 'refunded',
               refundedAt: nowIso(),
               previousStatus: t.status || 'active',
+              forceUsedRefund: order.forceUsedRefund === true,
               updatedAt: nowIso(),
             },
             { merge: true },
@@ -800,7 +889,7 @@ function commerceModule({
       const uid = request.auth.uid;
       const { ownerId } = await resolveCommerceOwner(uid);
       const org = await getOrganizerSettings(ownerId);
-      if (!org.isCompany && !org.isEventOrganizer) {
+      if (!org.isCompany && !org.isEventOrganizer && !org.isCommunity) {
         throw new HttpsError('permission-denied', 'Firma hesabı gerekli');
       }
 
@@ -1796,14 +1885,62 @@ function commerceModule({
         .orderBy('createdAt', 'desc')
         .limit(100)
         .get();
-      return {
-        ok: true,
-        tickets: snap.docs.map((d) => {
-          const t = { id: d.id, ...d.data() };
-          t.qrPayload = t.qrPayload || buildQrPayload(d.id);
-          return t;
-        }),
-      };
+      const tickets = [];
+      let backfilled = 0;
+      for (const d of snap.docs) {
+        const t = { id: d.id, ...d.data() };
+        if (!t.shortCode && backfilled < 8) {
+          try {
+            const code = await allocateShortCode(d.id);
+            t.shortCode = code;
+            if (!t.qrPayload) t.qrPayload = buildQrPayload(code);
+            await d.ref.set(
+              { shortCode: code, qrPayload: t.qrPayload, updatedAt: nowIso() },
+              { merge: true },
+            );
+            backfilled += 1;
+          } catch (e) {
+            console.error('[getMyTickets] shortCode', d.id, e);
+          }
+        }
+        t.qrPayload = t.qrPayload || buildQrPayload(t.shortCode || d.id);
+        t.displayCode = t.shortCode || '';
+        tickets.push(t);
+      }
+      return { ok: true, tickets };
+    },
+  );
+
+  const renameTicketAttendee = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      const ticketId = String(request.data?.ticketId || '').trim();
+      const userName = sanitizePlainText(request.data?.userName || '', 80);
+      if (!ticketId || userName.length < 2) {
+        throw new HttpsError('invalid-argument', 'Bilet ve yeni isim gerekli');
+      }
+      const snap = await db.collection(TICKETS).doc(ticketId).get();
+      if (!snap.exists) throw new HttpsError('not-found', 'Bilet bulunamadı');
+      const ticket = snap.data() || {};
+      if (String(ticket.uid || '') !== request.auth.uid) {
+        throw new HttpsError('permission-denied', 'Bu bilet sana ait değil');
+      }
+      const st = String(ticket.status || 'active');
+      if (st === 'refunded' || st === 'cancelled') {
+        throw new HttpsError('failed-precondition', 'İade edilmiş bilet güncellenemez');
+      }
+      if (ticketIsUsed(ticket)) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Giriş yapılmış bilette isim değiştirilemez',
+        );
+      }
+      await snap.ref.set(
+        { userName, updatedAt: nowIso() },
+        { merge: true },
+      );
+      return { ok: true, ticketId, userName };
     },
   );
 
@@ -1813,29 +1950,40 @@ function commerceModule({
       if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
       const { ownerId } = await resolveCommerceOwner(request.auth.uid);
       const org = await getOrganizerSettings(ownerId);
-      if (!org.isCompany && !org.isEventOrganizer) {
+      if (!org.isCompany && !org.isEventOrganizer && !org.isCommunity) {
         throw new HttpsError('permission-denied', 'Organizatör yetkisi gerekli');
       }
-      const ticketId = parseQrPayload(
-        request.data?.payload || request.data?.ticketId || '',
+      const snap = await resolveTicketSnap(
+        request.data?.payload || request.data?.ticketId || request.data?.code || '',
       );
-      if (!ticketId) {
-        throw new HttpsError('invalid-argument', 'Geçersiz QR / bilet kodu');
-      }
-      const snap = await db.collection(TICKETS).doc(ticketId).get();
-      if (!snap.exists) {
-        throw new HttpsError('not-found', 'Bilet bulunamadı');
+      if (!snap) {
+        return {
+          ok: false,
+          invalid: true,
+          message: 'Geçersiz · bilet bulunamadı',
+        };
       }
       const ticket = snap.data() || {};
+      const ticketId = snap.id;
       if (String(ticket.organizerId || '') !== ownerId) {
-        throw new HttpsError(
-          'permission-denied',
-          'Bu bilet sizin etkinliğinize ait değil',
-        );
+        return {
+          ok: false,
+          invalid: true,
+          message: 'Geçersiz · bu etkinliğe ait değil',
+        };
       }
       const st = String(ticket.status || 'active');
       if (st === 'refunded' || st === 'cancelled') {
-        throw new HttpsError('failed-precondition', 'Bu bilet iade edilmiş');
+        return {
+          ok: false,
+          invalid: true,
+          already: true,
+          ticketId,
+          eventTitle: ticket.eventTitle || '',
+          userName: ticket.userName || '',
+          shortCode: ticket.shortCode || '',
+          message: 'Geçersiz · iade edilmiş',
+        };
       }
       const entry = normalizeTicketEntry(ticket);
       const usedNow = Number(ticket.entriesUsed);
@@ -1844,45 +1992,88 @@ function commerceModule({
         : st === 'used' || st === 'checked_in' || Boolean(ticket.checkedInAt)
           ? entry.entryLimit
           : 0;
-      const already = used >= entry.entryLimit;
-      const nextUsed = already ? used : used + 1;
-      const depleted = nextUsed >= entry.entryLimit;
-      if (!already) {
-        const entries = Array.isArray(ticket.entries) ? [...ticket.entries] : [];
-        entries.push({
-          at: nowIso(),
-          by: request.auth.uid,
-          n: nextUsed,
-        });
-        await snap.ref.set(
-          {
-            status: depleted ? 'used' : 'active',
-            entriesUsed: nextUsed,
-            entryType: entry.entryType,
-            entryLimit: entry.entryLimit,
-            entries,
-            checkedInAt: nowIso(),
-            checkedInBy: request.auth.uid,
-            updatedAt: nowIso(),
-          },
-          { merge: true },
-        );
+      const remainingNow = Math.max(0, entry.entryLimit - used);
+      if (used >= entry.entryLimit || remainingNow <= 0) {
+        return {
+          ok: false,
+          invalid: true,
+          already: true,
+          ticketId,
+          eventId: ticket.eventId || '',
+          eventTitle: ticket.eventTitle || '',
+          userName: ticket.userName || '',
+          userEmail: ticket.userEmail || '',
+          tierLabel: ticket.tierLabel || '',
+          shortCode: ticket.shortCode || '',
+          status: 'used',
+          entryType: entry.entryType,
+          entryLimit: entry.entryLimit,
+          entriesUsed: used,
+          remaining: 0,
+          message: 'Geçersiz · giriş hakkı doldu',
+        };
       }
+      const confirm = request.data?.confirm === true;
+      if (used >= 1 && remainingNow > 0 && !confirm) {
+        return {
+          ok: false,
+          needsConfirm: true,
+          ticketId,
+          eventId: ticket.eventId || '',
+          eventTitle: ticket.eventTitle || '',
+          userName: ticket.userName || '',
+          userEmail: ticket.userEmail || '',
+          tierLabel: ticket.tierLabel || '',
+          shortCode: ticket.shortCode || '',
+          entryType: entry.entryType,
+          entryLimit: entry.entryLimit,
+          entriesUsed: used,
+          remaining: remainingNow,
+          nextEntry: used + 1,
+          message: `Çift giriş · ${used + 1}. okutmayı onaylıyor musun? (kalan ${remainingNow})`,
+        };
+      }
+      const nextUsed = used + 1;
+      const depleted = nextUsed >= entry.entryLimit;
+      const entries = Array.isArray(ticket.entries) ? [...ticket.entries] : [];
+      entries.push({
+        at: nowIso(),
+        by: request.auth.uid,
+        n: nextUsed,
+      });
+      await snap.ref.set(
+        {
+          status: depleted ? 'used' : 'active',
+          entriesUsed: nextUsed,
+          entryType: entry.entryType,
+          entryLimit: entry.entryLimit,
+          entries,
+          checkedInAt: nowIso(),
+          checkedInBy: request.auth.uid,
+          updatedAt: nowIso(),
+        },
+        { merge: true },
+      );
       return {
         ok: true,
-        already,
+        already: false,
+        invalid: false,
         ticketId,
         eventId: ticket.eventId || '',
         eventTitle: ticket.eventTitle || '',
         userName: ticket.userName || '',
         userEmail: ticket.userEmail || '',
         tierLabel: ticket.tierLabel || '',
-        status: already || depleted ? 'used' : 'active',
+        shortCode: ticket.shortCode || '',
+        status: depleted ? 'used' : 'active',
         entryType: entry.entryType,
         entryLimit: entry.entryLimit,
-        entriesUsed: already ? used : nextUsed,
-        remaining: Math.max(0, entry.entryLimit - (already ? used : nextUsed)),
-        checkedInAt: already ? ticket.checkedInAt : nowIso(),
+        entriesUsed: nextUsed,
+        remaining: Math.max(0, entry.entryLimit - nextUsed),
+        checkedInAt: nowIso(),
+        message: depleted
+          ? 'Giriş onaylandı · hak doldu'
+          : `Giriş ${nextUsed}/${entry.entryLimit} · kalan ${entry.entryLimit - nextUsed}`,
       };
     },
   );
@@ -1909,6 +2100,7 @@ function commerceModule({
     adminReviewAdCampaign,
     getActiveAds,
     getMyTickets,
+    renameTicketAttendee,
     checkInTicket,
     reverseEventFulfillment,
     reverseMerchFulfillment,

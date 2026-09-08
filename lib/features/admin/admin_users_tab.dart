@@ -480,12 +480,17 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
   List<PopupMenuEntry<String>> _menuFor(AppUser u) {
     return [
       const PopupMenuItem(value: 'profile', child: Text('Profili aç')),
+      if (widget.admin.can(widget.me, AdminPermission.manageUsers))
+        const PopupMenuItem(value: 'edit', child: Text('Hesabı düzenle')),
       const PopupMenuItem(
         value: 'credential',
         child: Text('Öğrenci doğrulama / belge'),
       ),
       if (widget.admin.can(widget.me, AdminPermission.resetPassword))
-        const PopupMenuItem(value: 'reset', child: Text('Şifre sıfırla')),
+        const PopupMenuItem(
+          value: 'reset',
+          child: Text('Şifre sıfırlama linki oluştur'),
+        ),
       if (widget.admin.can(widget.me, AdminPermission.manageBadges)) ...[
         PopupMenuItem(
           value: u.isCommunity ? 'ungold' : 'gold',

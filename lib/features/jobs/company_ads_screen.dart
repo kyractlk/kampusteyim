@@ -121,8 +121,8 @@ class _CompanyAdsScreenState extends State<CompanyAdsScreen> {
               child: const Text(
                 'Akış, Reels, Hikâye, Push veya e-posta için reklam talebi '
                 'oluşturun. Görseli yükleyin; sistem feed (16:9), reels (4:5) '
-                've hikâye (9:16) boyutlarını kendisi üretir. Admin onayından '
-                'sonra yayınlanır.',
+                've hikâye (9:16) boyutlarını kendisi üretir. Yönetim ekibi '
+                'onayından sonra yayınlanır.',
                 style: TextStyle(
                   color: AppColors.textSecondary,
                   height: 1.4,
@@ -484,7 +484,7 @@ class _CampaignDetailSheetState extends State<_CampaignDetailSheet> {
                     const Text(
                       'Teklifi kabul edince IBAN ve ödeme kodu açılır. '
                       'Havale sonrası “Ödemeyi yaptım” ile bildirirsiniz; '
-                      'admin onaylayınca reklam yayına girer.',
+                      'yönetim ekibi onaylayınca reklam yayına girer.',
                       style: TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,

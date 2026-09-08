@@ -103,6 +103,14 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
+    // Topluluk logoları — herkes okur.
+    match /community_logos/{allPaths=**} {
+      allow read: if true;
+      allow write: if signedIn()
+        && underSize()
+        && request.resource.contentType.matches('image/.*');
+    }
+
     // Firma mail imzası logosu.
     match /company_logos/{userId}/{allPaths=**} {
       allow read: if true;

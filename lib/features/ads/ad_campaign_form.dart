@@ -510,7 +510,7 @@ class AdIbanPaymentCard extends StatelessWidget {
           _row(context, 'Açıklama kodu', code, emphasize: true),
           const SizedBox(height: 6),
           const Text(
-            'Açıklamaya yalnızca kodu yaz. Ödeme sonrası admin onaylar.',
+            'Açıklamaya yalnızca kodu yazın. Ödeme sonrası yönetim ekibimiz inceler.',
             style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
         ],

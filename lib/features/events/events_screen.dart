@@ -173,8 +173,8 @@ class _EventsScreenState extends State<EventsScreen>
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: Text(
-                  'Kampüs dışı etkinlikler, admin onaylı organizatör firmaların '
-                  'etkinlikleridir. Kendi şehrin varsayılan seçilir.',
+                  'Kampüs dışı etkinlikler, yönetim ekibimizin onayladığı organizatör firmaların '
+                  'etkinlikleridir. Kendi şehriniz varsayılan seçilir.',
                   style: TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,
@@ -187,7 +187,7 @@ class _EventsScreenState extends State<EventsScreen>
                   events: off,
                   emptyTitle: 'Bu şehirde kampüs dışı etkinlik yok',
                   emptySubtitle:
-                      'Organizatör firmalar etkinlik ekleyip admin onayı alınca burada listelenir.',
+                      'Organizatör firmalar etkinlik ekleyip yönetim onayı alınca burada listelenir.',
                 ),
               ),
             ],
