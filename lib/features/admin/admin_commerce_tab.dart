@@ -871,8 +871,7 @@ class _AdAdminCardState extends State<_AdAdminCard> {
     final status = '${widget.data['status'] ?? ''}';
     final placements = (widget.data['placements'] as List? ?? []).join(', ');
     final targets =
-        '${(widget.data['targetCities'] as List? ?? []).join(', ')} / '
-        '${(widget.data['targetUniversities'] as List? ?? []).join(', ')}';
+        '${(widget.data['targetCities'] as List? ?? []).join(', ')}';
     final metrics = Map<String, dynamic>.from(
       widget.data['metrics'] as Map? ?? {},
     );

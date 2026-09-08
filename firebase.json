@@ -46,6 +46,13 @@
           }
         },
         {
+          "source": "/invites/**",
+          "function": {
+            "functionId": "openAppInvite",
+            "region": "europe-west1"
+          }
+        },
+        {
           "source": "/market",
           "destination": "/market.html"
         },

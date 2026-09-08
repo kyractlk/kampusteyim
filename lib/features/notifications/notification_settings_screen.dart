@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../auth/data/auth_provider.dart';
 import 'notification_prefs.dart';
+import 'notification_provider.dart';
 import 'push_service.dart';
 
 /// Profil → bildirim / izin tercihleri.
@@ -37,8 +38,8 @@ class _NotificationSettingsScreenState
     auth.updateNotificationPrefs(next);
     final user = auth.user;
     if (user != null) {
+      final docId = auth.currentDocId ?? user.id;
       try {
-        final docId = auth.currentDocId ?? user.id;
         final ref = FirebaseFirestore.instance.collection('users').doc(docId);
         final existing = await ref.get();
         if (existing.exists) {
@@ -50,7 +51,10 @@ class _NotificationSettingsScreenState
       } catch (_) {}
       if (next.pushEnabled) {
         await PushService.instance.init();
-        await PushService.instance.getToken();
+        await context.read<NotificationProvider>().bindUser(
+              docId,
+              profile: user,
+            );
       }
     }
     if (mounted) {

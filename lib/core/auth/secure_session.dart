@@ -141,6 +141,38 @@ class SecureSession {
     return r != false;
   }
 
+  static const _kSwitchSession = 'mt_switch_session_id';
+  static const _kSwitchFrom = 'mt_switch_from_uid';
+  static const _kSwitchOrg = 'mt_switch_org_uid';
+
+  static Future<void> saveSwitchOrigin({
+    required String fromUid,
+    required String orgUid,
+    required String sessionId,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kSwitchFrom, fromUid);
+    await prefs.setString(_kSwitchOrg, orgUid);
+    await prefs.setString(_kSwitchSession, sessionId);
+  }
+
+  static Future<({String fromUid, String orgUid, String sessionId})?>
+      readSwitchOrigin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final fromUid = prefs.getString(_kSwitchFrom) ?? '';
+    final orgUid = prefs.getString(_kSwitchOrg) ?? '';
+    final sessionId = prefs.getString(_kSwitchSession) ?? '';
+    if (fromUid.isEmpty || orgUid.isEmpty || sessionId.isEmpty) return null;
+    return (fromUid: fromUid, orgUid: orgUid, sessionId: sessionId);
+  }
+
+  static Future<void> clearSwitchOrigin() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kSwitchFrom);
+    await prefs.remove(_kSwitchOrg);
+    await prefs.remove(_kSwitchSession);
+  }
+
   static Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
     final tabUid = kIsWeb ? tab_session.tabGetUid() : null;
@@ -160,6 +192,9 @@ class SecureSession {
     await prefs.remove(_kFp);
     await prefs.remove(_kNonce);
     await prefs.remove(_kVersion);
+    await prefs.remove(_kSwitchFrom);
+    await prefs.remove(_kSwitchOrg);
+    await prefs.remove(_kSwitchSession);
     if (kIsWeb) tab_session.tabClearUid();
   }
 

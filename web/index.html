@@ -110,6 +110,15 @@
         tasks.push(
           navigator.serviceWorker.getRegistrations().then(function (regs) {
             return Promise.all(regs.map(function (reg) {
+              var script =
+                (reg.active && reg.active.scriptURL) ||
+                (reg.waiting && reg.waiting.scriptURL) ||
+                (reg.installing && reg.installing.scriptURL) ||
+                '';
+              // FCM arka plan bildirimi bu SW’ye bağlı; silinmesin.
+              if (/firebase-messaging-sw\.js/i.test(script)) {
+                return Promise.resolve();
+              }
               return reg.unregister().catch(function () {});
             }));
           }).catch(function () {})

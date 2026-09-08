@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../data/campus_catalog.dart';
 import '../../data/mock/mock_data.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
@@ -136,6 +137,10 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
     }
 
     if (!context.mounted) return;
+    final catalog = await CampusCatalog.load();
+    final cities = catalog.cities.isNotEmpty
+        ? catalog.cities
+        : List<String>.from(MockData.cities);
     final title = TextEditingController(text: existing?.title ?? '');
     final desc = TextEditingController(text: existing?.description ?? '');
     final location = TextEditingController(text: existing?.location ?? '');
@@ -151,7 +156,12 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
     ];
     var city = (existing?.city.isNotEmpty == true)
         ? existing!.city
-        : MockData.cities.first;
+        : (cities.contains('Gaziantep')
+            ? 'Gaziantep'
+            : (cities.isNotEmpty ? cities.first : MockData.cities.first));
+    if (cities.isNotEmpty && !cities.contains(city)) {
+      city = cities.contains('Gaziantep') ? 'Gaziantep' : cities.first;
+    }
     var startsAt =
         existing?.startsAt ?? DateTime.now().add(const Duration(days: 14));
     DateTime? deadline = existing?.applicationDeadline;
@@ -245,7 +255,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                       initialValue: city,
                       decoration: const InputDecoration(labelText: 'Şehir'),
                       items: [
-                        for (final c in MockData.cities)
+                        for (final c in cities)
                           DropdownMenuItem(value: c, child: Text(c)),
                       ],
                       onChanged: (v) {

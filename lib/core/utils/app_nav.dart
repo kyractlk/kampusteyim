@@ -192,7 +192,15 @@ class AppNav {
       case 'profile':
       case 'market':
       case 'search':
+      case 'tickets':
         GoRouter.of(context).go('/$head');
+        return true;
+      case 'invites':
+        if (id != null && id.isNotEmpty) {
+          open(context, '/invites/${Uri.encodeComponent(id)}');
+          return true;
+        }
+        GoRouter.of(context).go('/notifications');
         return true;
       default:
         if (segs.length >= 2) {
@@ -281,6 +289,13 @@ class AppNav {
       // Topluluk hedefi çoğunlukla etkinlik; duyuru link’i varsa zaten yukarıda açıldı.
       openEvent(context, tid);
       return;
+    }
+
+    if (t == 'org_invite' || t == 'invite') {
+      if (tid != null && tid.isNotEmpty) {
+        open(context, '/invites/${Uri.encodeComponent(tid)}');
+        return;
+      }
     }
 
     if (t == 'job') {

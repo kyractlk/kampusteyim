@@ -4,11 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../models/models.dart';
-import '../ads/ad_campaign_form.dart';
+import '../../core/widgets/panel_chrome.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
 import 'commerce_service.dart';
+import 'staff_invite_panel.dart';
 
 /// Firma organizatörü: bakiye, satışlar, IBAN, çekim, indirim
 class CompanyOrganizerHubScreen extends StatefulWidget {
@@ -23,6 +23,7 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
   Map<String, dynamic>? _data;
   bool _loading = true;
   String? _error;
+  String? _salesEventId;
 
   final _iban = TextEditingController();
   final _holder = TextEditingController();
@@ -93,7 +94,7 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
       await CommerceService.requestWithdrawal(amount);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Çekim talebi admin’e iletildi')),
+        const SnackBar(content: Text('Çekim talebi yönetime iletildi')),
       );
       _withdraw.clear();
       await _load();
@@ -105,25 +106,76 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
     }
   }
 
+  String _statusLabel(String raw) {
+    switch (raw) {
+      case 'used':
+      case 'checked_in':
+        return 'giriş yapıldı';
+      case 'refunded':
+        return 'iade';
+      case 'cancelled':
+        return 'iptal';
+      case 'active':
+        return 'aktif';
+      case 'pending':
+        return 'beklemede';
+      case 'paid':
+      case 'approved':
+        return 'ödendi';
+      case 'rejected':
+        return 'reddedildi';
+      default:
+        return raw.isEmpty ? 'aktif' : raw;
+    }
+  }
+
+  String _csvCell(Object? v) {
+    final s = '${v ?? ''}'.replaceAll('"', '""');
+    return '"$s"';
+  }
+
   Future<void> _exportCsv() async {
-    final sales = (_data?['salesByEvent'] as List? ?? const []);
-    final buf = StringBuffer('eventId,eventTitle,count,revenue,buyers\n');
-    for (final raw in sales) {
-      final e = Map<String, dynamic>.from(raw as Map);
-      final buyers = (e['buyers'] as List? ?? const [])
-          .map((b) {
-            final m = Map<String, dynamic>.from(b as Map);
-            return '${m['email']}|${m['amount']}';
-          })
-          .join(';');
+    final tickets = (_data?['tickets'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    final buf = StringBuffer(
+      'etkinlik,biletId,ad,eposta,paket,tutar,durum,kisaKod,olusturma,giris\n',
+    );
+    for (final t in tickets) {
       buf.writeln(
-        '"${e['eventId']}","${e['eventTitle']}",${e['count']},${e['revenue']},"$buyers"',
+        [
+          _csvCell(t['eventTitle']),
+          _csvCell(t['id'] ?? t['ticketId']),
+          _csvCell(t['userName']),
+          _csvCell(t['userEmail']),
+          _csvCell(t['tierLabel']),
+          t['amountPaid'] ?? 0,
+          _csvCell(_statusLabel('${t['status'] ?? ''}')),
+          _csvCell(t['shortCode']),
+          _csvCell(t['createdAt']),
+          _csvCell(t['checkedInAt']),
+        ].join(','),
       );
+    }
+    if (tickets.isEmpty) {
+      final sales = (_data?['salesByEvent'] as List? ?? const []);
+      buf.writeln('# ozet');
+      buf.writeln('eventId,eventTitle,netBilet,iadeBilet,netCiro,iadeTutar');
+      for (final raw in sales) {
+        final e = Map<String, dynamic>.from(raw as Map);
+        buf.writeln(
+          '${_csvCell(e['eventId'])},${_csvCell(e['eventTitle'])},'
+          '${e['count'] ?? 0},${e['refundedCount'] ?? 0},'
+          '${e['revenue'] ?? 0},${e['refundedRevenue'] ?? 0}',
+        );
+      }
     }
     await Clipboard.setData(ClipboardData(text: buf.toString()));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Satış CSV panoya kopyalandı')),
+      const SnackBar(
+        content: Text('Satış CSV panoya kopyalandı (iadeler dahil)'),
+      ),
     );
   }
 
@@ -187,7 +239,9 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
     final minW = (s['minWithdrawal'] as num?)?.toDouble() ?? 500;
     final commission = (s['commissionPercent'] as num?)?.toDouble() ?? 10;
     final hasIban = s['hasPayoutIban'] == true;
-    final sales = (_data?['salesByEvent'] as List? ?? const []);
+    final sales = (_data?['salesByEvent'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
     final withdrawals = (_data?['withdrawals'] as List? ?? const []);
     final discounts = (_data?['discounts'] as List? ?? const []);
     final events = context
@@ -195,8 +249,18 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
         .events
         .where((e) => e.organizerCompanyId == me.id)
         .toList();
+    final salesEventId = _salesEventId ??
+        (sales.isNotEmpty ? '${sales.first['eventId']}' : null);
+    Map<String, dynamic>? selectedSales;
+    if (sales.isNotEmpty) {
+      selectedSales = sales.firstWhere(
+        (e) => '${e['eventId']}' == salesEventId,
+        orElse: () => sales.first,
+      );
+    }
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Organizatör paneli'),
         actions: [
@@ -217,198 +281,346 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
         label: const Text('QR doğrula'),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
         children: [
           if (!hasIban)
-            Container(
-              padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange),
-              ),
-              child: const Text(
-                'Etkinlik açmadan önce çekim IBAN’ını kaydetmelisin.',
-                style: TextStyle(fontWeight: FontWeight.w600),
+            PanelCard(
+              color: const Color(0xFFFFF4E5),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Color(0xFFB45309)),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Etkinlik açmadan önce çekim IBAN’ını kaydet.',
+                      style: TextStyle(fontWeight: FontWeight.w600, height: 1.35),
+                    ),
+                  ),
+                ],
               ),
             ),
-          Card(
+          if (!hasIban) const SizedBox(height: 12),
+          PanelCard(
             color: AppColors.navy,
-            child: ListTile(
-              leading: const Icon(Icons.qr_code_scanner, color: Colors.white),
-              title: const Text(
-                'Kapı girişi · QR oku',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
-              ),
-              subtitle: const Text(
-                'Katılımcı biletini saniyeler içinde doğrula',
-                style: TextStyle(color: Colors.white70),
-              ),
-              trailing: const Icon(Icons.chevron_right, color: Colors.white),
-              onTap: () => context.push('/firma/organizer/scan'),
+            onTap: () => context.push('/firma/organizer/scan'),
+            child: const Row(
+              children: [
+                Icon(Icons.qr_code_scanner, color: Colors.white, size: 28),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Kapı girişi',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Katılımcı biletini saniyeler içinde doğrula',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: Colors.white),
+              ],
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            'Bakiye: ${balance.toStringAsFixed(2)} TL',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
+          PanelCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Bakiye',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
                 ),
-          ),
-          Text(
-            'Komisyon: %${commission.toStringAsFixed(0)} · Min. çekim: ${minW.toStringAsFixed(0)} TL',
-            style: const TextStyle(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 16),
-          const Text('Çekim IBAN’ı', style: TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _iban,
-            decoration: const InputDecoration(
-              labelText: 'IBAN',
-              border: OutlineInputBorder(),
+                const SizedBox(height: 4),
+                Text(
+                  '${balance.toStringAsFixed(2)} TL',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Komisyon %${commission.toStringAsFixed(0)} · '
+                  'Minimum çekim ${minW.toStringAsFixed(0)} TL',
+                  style: const TextStyle(color: AppColors.textSecondary),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _holder,
-            decoration: const InputDecoration(
-              labelText: 'Hesap sahibi',
-              border: OutlineInputBorder(),
+          const SizedBox(height: 12),
+          PanelCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const PanelSectionLabel(
+                  'Çekim hesabı',
+                  subtitle: 'Bilet gelirleri bu IBAN’a aktarılır',
+                ),
+                TextField(
+                  controller: _iban,
+                  decoration: const InputDecoration(labelText: 'IBAN'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _holder,
+                  decoration: const InputDecoration(labelText: 'Hesap sahibi'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _bank,
+                  decoration: const InputDecoration(labelText: 'Banka'),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _saveIban,
+                  child: const Text('IBAN kaydet'),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _bank,
-            decoration: const InputDecoration(
-              labelText: 'Banka',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          FilledButton(onPressed: _saveIban, child: const Text('IBAN kaydet')),
-          const SizedBox(height: 20),
-          const Text('Çekim talebi', style: TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
+          const SizedBox(height: 12),
+          PanelCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const PanelSectionLabel(
+                  'Çekim talebi',
+                  subtitle: 'Bakiyenden yönetim onayına gönderilir',
+                ),
+                TextField(
                   controller: _withdraw,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
-                    labelText: 'Tutar (min $minW)',
-                    border: const OutlineInputBorder(),
+                    labelText: 'Tutar',
+                    hintText: 'En az ${minW.toStringAsFixed(0)} TL',
+                    prefixIcon: const Icon(Icons.payments_outlined),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: balance >= minW ? _doWithdraw : null,
-                child: const Text('Talep et'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ...withdrawals.take(5).map((raw) {
-            final w = Map<String, dynamic>.from(raw as Map);
-            return ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text('${w['amount']} TL · ${w['status']}'),
-              subtitle: Text('${w['createdAt'] ?? ''}'),
-            );
-          }),
-          const Divider(height: 32),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Satışlar',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: balance >= minW ? _doWithdraw : null,
+                  child: const Text('Talep et'),
                 ),
-              ),
-              TextButton(onPressed: _exportCsv, child: const Text('CSV')),
-            ],
-          ),
-          if (sales.isEmpty)
-            const Text(
-              'Henüz bilet satışı yok.',
-              style: TextStyle(color: AppColors.textSecondary),
+                if (withdrawals.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Son talepler',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                  ),
+                  const SizedBox(height: 6),
+                  ...withdrawals.take(5).map((raw) {
+                    final w = Map<String, dynamic>.from(raw as Map);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${w['amount']} TL',
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          Text(
+                            _statusLabel('${w['status']}'),
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ],
             ),
-          ...sales.map((raw) {
-            final e = Map<String, dynamic>.from(raw as Map);
-            final buyers = e['buyers'] as List? ?? const [];
-            return Card(
-              child: ExpansionTile(
-                title: Text(
-                  '${e['eventTitle']}',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          PanelCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: PanelSectionLabel(
+                        'Satışlar',
+                        subtitle: 'Etkinlik seç, iadeler ayrı görünür',
+                      ),
+                    ),
+                    TextButton(onPressed: _exportCsv, child: const Text('CSV')),
+                  ],
                 ),
-                subtitle: Text(
-                  '${e['count']} bilet · ${e['revenue']} TL brüt',
-                ),
-                children: [
-                  for (final bRaw in buyers)
-                    Builder(builder: (_) {
+                if (sales.isEmpty)
+                  const Text(
+                    'Henüz bilet satışı yok.',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  )
+                else ...[
+                  if (sales.length > 1)
+                    DropdownButtonFormField<String>(
+                      initialValue: salesEventId,
+                      items: [
+                        for (final e in sales)
+                          DropdownMenuItem(
+                            value: '${e['eventId']}',
+                            child: Text(
+                              '${e['eventTitle']}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (v) => setState(() => _salesEventId = v),
+                      decoration: const InputDecoration(labelText: 'Etkinlik'),
+                    ),
+                  if (selectedSales != null) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _pill(
+                          '${selectedSales['count'] ?? 0} net bilet',
+                          AppColors.navy,
+                        ),
+                        _pill(
+                          '${selectedSales['refundedCount'] ?? 0} iade',
+                          AppColors.crimson,
+                        ),
+                        _pill(
+                          '${selectedSales['revenue'] ?? 0} TL net',
+                          const Color(0xFF166534),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ...((selectedSales['buyers'] as List? ?? const []).map((bRaw) {
                       final b = Map<String, dynamic>.from(bRaw as Map);
+                      final st = '${b['status'] ?? ''}';
+                      final refunded = st == 'refunded' || st == 'cancelled';
+                      final used =
+                          st == 'used' || st == 'checked_in' || b['checkedInAt'] != null;
                       return ListTile(
+                        contentPadding: EdgeInsets.zero,
                         dense: true,
                         title: Text('${b['name'] ?? b['email'] ?? b['uid']}'),
                         subtitle: Text(
-                          '${b['email']} · ${b['tierLabel'] ?? ''} · ${b['amount']} TL'
-                          '${b['status'] == 'used' || b['checkedInAt'] != null ? ' · giriş yapıldı' : ''}',
+                          [
+                            '${b['email'] ?? ''}',
+                            '${b['tierLabel'] ?? ''}',
+                            '${b['amount']} TL',
+                            _statusLabel(st),
+                          ].where((x) => x.trim().isNotEmpty).join(' · '),
                         ),
                         trailing: Icon(
-                          b['status'] == 'used' || b['checkedInAt'] != null
-                              ? Icons.verified
-                              : Icons.confirmation_number_outlined,
-                          color: b['status'] == 'used' || b['checkedInAt'] != null
-                              ? AppColors.lime
-                              : AppColors.textSecondary,
+                          refunded
+                              ? Icons.undo_rounded
+                              : used
+                                  ? Icons.verified
+                                  : Icons.confirmation_number_outlined,
+                          color: refunded
+                              ? AppColors.crimson
+                              : used
+                                  ? AppColors.lime
+                                  : AppColors.textSecondary,
                         ),
                       );
-                    }),
+                    })),
+                  ],
                 ],
-              ),
-            );
-          }),
-          const Divider(height: 32),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.campaign_outlined),
-            title: const Text('Reklamlar'),
-            subtitle: const Text('Görsel yükleme ve yayın talepleri'),
-            trailing: const Icon(Icons.chevron_right),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          PanelCard(
             onTap: () => context.push('/firma/ads'),
+            child: const Row(
+              children: [
+                Icon(Icons.campaign_outlined, color: AppColors.navy),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Reklamlar',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      Text(
+                        'Görsel yükleme ve yayın talepleri',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right),
+              ],
+            ),
           ),
-          const Divider(height: 32),
-          const Text('İndirim kodları', style: TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          FilledButton.tonal(
-            onPressed: events.isEmpty
-                ? null
-                : () => _createDiscount(context, events.map((e) => e.id).toList(),
-                    events.map((e) => e.title).toList()),
-            child: const Text('Yeni indirim'),
+          const SizedBox(height: 12),
+          PanelCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const PanelSectionLabel('İndirim kodları'),
+                FilledButton.tonal(
+                  onPressed: events.isEmpty
+                      ? null
+                      : () => _createDiscount(
+                            context,
+                            events.map((e) => e.id).toList(),
+                            events.map((e) => e.title).toList(),
+                          ),
+                  child: const Text('Yeni indirim'),
+                ),
+                ...discounts.map((raw) {
+                  final d = Map<String, dynamic>.from(raw as Map);
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('${d['code']} · ${d['type']} ${d['value']}'),
+                    subtitle: Text(
+                      'Kullanım: ${d['usedCount']}/${d['maxUses'] ?? '∞'}',
+                    ),
+                  );
+                }),
+              ],
+            ),
           ),
-          ...discounts.map((raw) {
-            final d = Map<String, dynamic>.from(raw as Map);
-            return ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text('${d['code']} · ${d['type']} ${d['value']}'),
-              subtitle: Text(
-                'Kullanım: ${d['usedCount']}/${d['maxUses'] ?? '∞'} · ${d['eventId']}',
-              ),
-            );
-          }),
-          const Divider(height: 32),
-          const Text('Firmaya kadro davet', style: TextStyle(fontWeight: FontWeight.w800)),
-          const _CompanyStaffInvite(),
+          const SizedBox(height: 16),
+          StaffInvitePanel(orgId: me.id, orgType: 'company'),
         ],
+      ),
+    );
+  }
+
+  Widget _pill(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
       ),
     );
   }
@@ -494,101 +706,5 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     }
-  }
-}
-
-class _CompanyStaffInvite extends StatefulWidget {
-  const _CompanyStaffInvite();
-
-  @override
-  State<_CompanyStaffInvite> createState() => _CompanyStaffInviteState();
-}
-
-class _CompanyStaffInviteState extends State<_CompanyStaffInvite> {
-  final _query = TextEditingController();
-  bool _panel = true;
-  bool _badge = true;
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _query.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final me = context.watch<AuthProvider>().user;
-    final auth = context.watch<AuthProvider>();
-    if (me == null) return const SizedBox.shrink();
-    final q = _query.text.trim();
-    final hits = q.isEmpty
-        ? <AppUser>[]
-        : auth
-            .searchUsers(q)
-            .where((u) => !u.isCommunity && !u.isCompany)
-            .take(15)
-            .toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Panele erişim'),
-          value: _panel,
-          onChanged: (v) => setState(() => _panel = v),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Mavi tick'),
-          value: _badge,
-          onChanged: (v) => setState(() => _badge = v),
-        ),
-        TextField(
-          controller: _query,
-          decoration: const InputDecoration(
-            labelText: 'Kullanıcı ara',
-            border: OutlineInputBorder(),
-          ),
-          onChanged: (_) => setState(() {}),
-        ),
-        ...hits.map(
-          (u) => ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(u.fullName),
-            subtitle: Text(u.email),
-            trailing: FilledButton(
-              onPressed: _busy
-                  ? null
-                  : () async {
-                      setState(() => _busy = true);
-                      try {
-                        await OrgInviteService.invite(
-                          orgId: me.id,
-                          orgType: 'company',
-                          inviteeUid: u.id,
-                          grantPanelAccess: _panel,
-                          grantBlueBadge: _badge,
-                        );
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('${u.fullName} davet edildi')),
-                        );
-                      } catch (e) {
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('$e')),
-                        );
-                      } finally {
-                        if (mounted) setState(() => _busy = false);
-                      }
-                    },
-              child: const Text('Davet'),
-            ),
-          ),
-        ),
-      ],
-    );
   }
 }

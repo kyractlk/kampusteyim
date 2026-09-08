@@ -11,7 +11,6 @@ import '../../core/utils/auth_gate.dart';
 import '../../core/widgets/media_viewer.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../auth/data/auth_provider.dart';
-import '../commerce/commerce_service.dart';
 import '../feed/feed_provider.dart';
 import '../payments/payment_checkout_sheet.dart';
 
@@ -395,14 +394,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             onPressed: () => context.push('/tickets'),
             child: const Text('Biletlerim'),
           ),
-          if (applied) ...[
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => _renameTicketName(event.id),
-              icon: const Icon(Icons.badge_outlined),
-              label: const Text('Biletteki ismi değiştir'),
-            ),
-          ],
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: () => context.go('/events'),
@@ -411,72 +402,5 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _renameTicketName(String eventId) async {
-    try {
-      final tickets = await CommerceService.getMyTickets();
-      final mine = tickets.where((t) => '${t['eventId']}' == eventId).toList();
-      if (!mounted) return;
-      if (mine.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bu etkinlikte bilet bulunamadı')),
-        );
-        return;
-      }
-      final t = mine.first;
-      final used = (t['entriesUsed'] as num?)?.toInt() ?? 0;
-      final st = '${t['status'] ?? 'active'}';
-      if (used > 0 || st == 'used' || st == 'refunded' || st == 'cancelled') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Giriş yapılmış bilette isim değiştirilemez'),
-          ),
-        );
-        return;
-      }
-      final ctrl = TextEditingController(text: '${t['userName'] ?? ''}');
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Biletteki isim'),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Kapıda görünecek ad soyad',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Vazgeç'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Kaydet'),
-            ),
-          ],
-        ),
-      );
-      final name = ctrl.text.trim();
-      ctrl.dispose();
-      if (ok != true || name.length < 2 || !mounted) return;
-      await CommerceService.renameTicketAttendee(
-        ticketId: '${t['id']}',
-        userName: name,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bilet ismi güncellendi')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Güncellenemedi: $e')),
-      );
-    }
   }
 }

@@ -123,6 +123,15 @@ function resolveDeepLinkPath({
     const u = aid || tid;
     return u ? `/stories/view/${enc(u)}` : null;
   }
+  if (t === 'org_invite' || t === 'invite') {
+    return tid ? `/invites/${enc(tid)}` : '/notifications';
+  }
+  if (t === 'ticket' || t === 'refund') {
+    return '/tickets';
+  }
+  if (t === 'sale') {
+    return '/notifications';
+  }
   if (t === 'event' || t === 'event_application' || (tid && tid.startsWith('e_'))) {
     return tid ? `/event/${enc(tid)}` : '/events';
   }
@@ -667,6 +676,12 @@ function buildCampusPushPayload({
           sound: 'default',
           badge: 1,
         },
+      },
+    },
+    webpush: {
+      headers: { Urgency: 'high' },
+      fcmOptions: {
+        link: String(data.link || data.linkPath || BRAND_HOME),
       },
     },
   };
@@ -6632,17 +6647,23 @@ function accountAliasIds(doc) {
   ].filter(Boolean);
 }
 
-function canSwitchToLinkedAccount(meDoc, targetDoc, rawTarget) {
+function isOrgAccountData(data) {
+  const role = String(data?.role || '');
+  return (
+    role === 'company' ||
+    role === 'community' ||
+    data?.isCompany === true ||
+    data?.isCommunity === true
+  );
+}
+
+function canSwitchPersonalToOrg(meDoc, targetDoc, rawTarget) {
   const me = meDoc.data() || {};
   const target = targetDoc.data() || {};
   const meIds = new Set(accountAliasIds(meDoc));
-  const targetIds = new Set([...accountAliasIds(targetDoc), String(rawTarget || '').trim()].filter(Boolean));
-
-  const links = (me.linkedAccountIds || []).map(String);
-  if (links.some((id) => targetIds.has(id))) return true;
-
-  const back = (target.linkedAccountIds || []).map(String);
-  if (back.some((id) => meIds.has(id))) return true;
+  const targetIds = new Set(
+    [...accountAliasIds(targetDoc), String(rawTarget || '').trim()].filter(Boolean),
+  );
 
   const panelOrg = String(me.panelOrgId || '').trim();
   if (me.panelAccess === true && panelOrg && targetIds.has(panelOrg)) return true;
@@ -6656,7 +6677,51 @@ function canSwitchToLinkedAccount(meDoc, targetDoc, rawTarget) {
   ) {
     return true;
   }
+
+  const links = (me.linkedAccountIds || []).map(String);
+  if (links.some((id) => targetIds.has(id))) return true;
   return false;
+}
+
+async function createAccountSwitchSession(fromUid, toUid) {
+  const ref = db.collection('account_switch_sessions').doc();
+  const now = Date.now();
+  await ref.set({
+    id: ref.id,
+    fromUid,
+    toUid,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 30 * 24 * 3600 * 1000).toISOString(),
+  });
+  return ref.id;
+}
+
+async function assertReturnSwitchSession(sessionId, orgUid, personalUid) {
+  const id = String(sessionId || '').trim();
+  if (!id) {
+    throw new HttpsError(
+      'permission-denied',
+      'Firma/topluluk hesabından yalnızca bu cihazda giriş yaptığın kişisel hesaba dönebilirsin.',
+    );
+  }
+  const snap = await db.collection('account_switch_sessions').doc(id).get();
+  if (!snap.exists) {
+    throw new HttpsError('permission-denied', 'Geçiş oturumu bulunamadı');
+  }
+  const s = snap.data() || {};
+  if (String(s.toUid || '') !== String(orgUid || '')) {
+    throw new HttpsError('permission-denied', 'Bu cihaz oturumu bu hesaba ait değil');
+  }
+  if (String(s.fromUid || '') !== String(personalUid || '')) {
+    throw new HttpsError(
+      'permission-denied',
+      'Yalnızca bu cihazdan gelen kişisel hesaba dönebilirsin',
+    );
+  }
+  const exp = Date.parse(s.expiresAt || '');
+  if (Number.isFinite(exp) && exp < Date.now()) {
+    throw new HttpsError('failed-precondition', 'Geçiş oturumu süresi doldu. Kişisel hesapla tekrar giriş yap.');
+  }
 }
 
 exports.switchLinkedAccount = onCall(
@@ -6673,17 +6738,42 @@ exports.switchLinkedAccount = onCall(
     if (!meDoc) throw new HttpsError('not-found', 'Profil yok');
     const targetDoc = await findUserDocByAnyId(raw);
     if (!targetDoc) throw new HttpsError('not-found', 'Hedef hesap yok');
+    const meData = meDoc.data() || {};
     const targetData = targetDoc.data() || {};
     const authUid = String(targetData.authUid || targetDoc.id).trim();
     if (accountAliasIds(meDoc).includes(authUid) || targetDoc.id === meDoc.id) {
       throw new HttpsError('failed-precondition', 'Zaten bu hesaptasın');
     }
-    if (!canSwitchToLinkedAccount(meDoc, targetDoc, raw)) {
-      throw new HttpsError('permission-denied', 'Bu hesaba bağlı değilsin');
-    }
     if (isDeletedUserData(targetData)) {
       throw new HttpsError('not-found', 'Hedef hesap silinmiş');
     }
+
+    const meIsOrg = isOrgAccountData(meData);
+    const targetIsOrg = isOrgAccountData(targetData);
+    const sessionIdIn = String(request.data?.switchSessionId || '').trim();
+    let switchSessionId = sessionIdIn;
+
+    if (meIsOrg && !targetIsOrg) {
+      const personalUid = String(targetData.authUid || targetDoc.id).trim();
+      await assertReturnSwitchSession(sessionIdIn, meUid, personalUid);
+    } else if (!meIsOrg && targetIsOrg) {
+      if (!canSwitchPersonalToOrg(meDoc, targetDoc, raw)) {
+        throw new HttpsError('permission-denied', 'Bu hesaba bağlı değilsin');
+      }
+      switchSessionId = await createAccountSwitchSession(meUid, authUid);
+    } else if (!meIsOrg && !targetIsOrg) {
+      const links = (meData.linkedAccountIds || []).map(String);
+      const targetIds = new Set(accountAliasIds(targetDoc));
+      if (!links.some((id) => targetIds.has(id))) {
+        throw new HttpsError('permission-denied', 'Bu hesaba bağlı değilsin');
+      }
+    } else {
+      throw new HttpsError(
+        'permission-denied',
+        'Firma/topluluk hesapları arasında geçiş yok',
+      );
+    }
+
     const { getAuth } = require('firebase-admin/auth');
     try {
       await getAuth().getUser(authUid);
@@ -6703,7 +6793,7 @@ exports.switchLinkedAccount = onCall(
         'Hesap geçiş token’ı üretilemedi. IAM signBlob yetkisini kontrol et.',
       );
     }
-    return { ok: true, token, uid: authUid };
+    return { ok: true, token, uid: authUid, switchSessionId };
   },
 );
 
@@ -6737,6 +6827,22 @@ exports.linkOwnedAccount = onCall(
       isDeletedUserData(otherDoc.data() || {})
     ) {
       throw new HttpsError('failed-precondition', 'Silinmiş hesap bağlanamaz');
+    }
+    const meData = meDoc.data() || {};
+    const otherData = otherDoc.data() || {};
+    const meOrg =
+      String(meData.role || '') === 'company' ||
+      String(meData.role || '') === 'community' ||
+      meData.isCommunity === true;
+    const otherOrg =
+      String(otherData.role || '') === 'company' ||
+      String(otherData.role || '') === 'community' ||
+      otherData.isCommunity === true;
+    if (meOrg && otherOrg) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Firma/topluluk hesapları birbirine bağlanamaz',
+      );
     }
     const meLinks = new Set(
       (meDoc.data()?.linkedAccountIds || []).map(String).filter(Boolean),
@@ -10347,6 +10453,9 @@ const _commerce = commerceModule({
   loadCompanyMailBrand,
   escapeHtml,
   brandHome: BRAND_HOME,
+  sendFcmToUser,
+  buildCampusPushPayload,
+  userAllowsPush,
 });
 exports.saveOrganizerPayoutIban = _commerce.saveOrganizerPayoutIban;
 exports.adminSetOrganizerCommerce = _commerce.adminSetOrganizerCommerce;
@@ -10390,6 +10499,8 @@ exports.inviteOrgMember = _orgGrowth.inviteOrgMember;
 exports.respondOrgInvite = _orgGrowth.respondOrgInvite;
 exports.revokeOrgMember = _orgGrowth.revokeOrgMember;
 exports.getOrgInvite = _orgGrowth.getOrgInvite;
+exports.listOrgInvites = _orgGrowth.listOrgInvites;
+exports.openAppInvite = _orgGrowth.openAppInvite;
 exports.dispatchAdCampaignReach = _orgGrowth.dispatchAdCampaignReach;
 exports.dispatchScheduledAdReach = _orgGrowth.dispatchScheduledAdReach;
 exports.trackAdEmailOpen = _orgGrowth.trackAdEmailOpen;

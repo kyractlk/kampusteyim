@@ -200,14 +200,4 @@ class CommerceService {
     return _map(res.data);
   }
 
-  static Future<Map<String, dynamic>> renameTicketAttendee({
-    required String ticketId,
-    required String userName,
-  }) async {
-    final res = await _fn.httpsCallable('renameTicketAttendee').call({
-      'ticketId': ticketId,
-      'userName': userName,
-    });
-    return _map(res.data);
-  }
 }

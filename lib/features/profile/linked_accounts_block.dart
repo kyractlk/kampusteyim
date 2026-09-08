@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/auth/secure_session.dart';
 import '../../core/icons/mt_icons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/social_widgets.dart';
@@ -9,28 +10,65 @@ import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../jobs/jobs_provider.dart';
 
-List<String> switchableAccountIds(AppUser user) {
+Future<List<String>> switchableAccountIds(AppUser user) async {
+  if (user.isCompany || user.isCommunity) {
+    final origin = await SecureSession.readSwitchOrigin();
+    if (origin == null) return const [];
+    if (origin.orgUid != user.id) return const [];
+    if (origin.fromUid.isEmpty || origin.fromUid == user.id) return const [];
+    return [origin.fromUid];
+  }
   final out = <String>{};
+  final org = (user.panelOrgId ?? '').trim();
+  if (user.panelAccess && org.isNotEmpty && org != user.id) out.add(org);
   for (final id in user.linkedAccountIds) {
     if (id.isNotEmpty && id != user.id) out.add(id);
   }
-  final org = (user.panelOrgId ?? '').trim();
-  if (user.panelAccess && org.isNotEmpty && org != user.id) out.add(org);
   return out.toList();
 }
 
+bool _isOrgUser(AppUser? u) =>
+    u != null && (u.isCompany || u.isCommunity);
+
+List<String> _visibleSwitchIds(
+  AppUser current,
+  List<String> ids,
+  AuthProvider auth,
+) {
+  final fromOrg = current.isCompany || current.isCommunity;
+  return ids.where((id) {
+    final u = auth.findUser(id);
+    if (u == null) return true;
+    if (fromOrg) return !_isOrgUser(u);
+    return _isOrgUser(u);
+  }).toList();
+}
+
 Future<void> showAccountSwitchSheet(BuildContext context, AppUser user) async {
-  final ids = switchableAccountIds(user);
-  if (ids.isEmpty) {
+  final ids = await switchableAccountIds(user);
+  if (!context.mounted) return;
+  final auth = context.read<AuthProvider>();
+  for (final id in ids) {
+    await auth.ensureUserLoaded(id);
+  }
+  if (!context.mounted) return;
+  final visible = _visibleSwitchIds(user, ids, auth);
+  if (visible.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Geçilecek bağlı hesap yok')),
+      SnackBar(
+        content: Text(
+          user.isCompany || user.isCommunity
+              ? 'Bu cihazda yalnızca bu hesap açık. Kişisel hesaba dönmek için o hesapla giriş yap.'
+              : 'Geçilecek bağlı hesap yok',
+        ),
+      ),
     );
     return;
   }
   await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
-    builder: (ctx) => _AccountSwitchSheet(user: user, ids: ids),
+    builder: (ctx) => _AccountSwitchSheet(user: user, ids: visible),
   );
 }
 
@@ -46,16 +84,29 @@ class LinkedAccountsBlock extends StatefulWidget {
 
 class _LinkedAccountsBlockState extends State<LinkedAccountsBlock> {
   bool _working = false;
+  List<String> _ids = const [];
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final auth = context.read<AuthProvider>();
-      for (final id in switchableAccountIds(widget.user)) {
-        auth.ensureUserLoaded(id);
-      }
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadIds());
+  }
+
+  @override
+  void didUpdateWidget(covariant LinkedAccountsBlock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user.id != widget.user.id) _reloadIds();
+  }
+
+  Future<void> _reloadIds() async {
+    final ids = await switchableAccountIds(widget.user);
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    for (final id in ids) {
+      await auth.ensureUserLoaded(id);
+    }
+    if (!mounted) return;
+    setState(() => _ids = _visibleSwitchIds(widget.user, ids, auth));
   }
 
   Future<void> _switchTo(String id) async {
@@ -139,7 +190,8 @@ class _LinkedAccountsBlockState extends State<LinkedAccountsBlock> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final ids = switchableAccountIds(widget.user);
+    final ids = _ids;
+    final isOrg = widget.user.isCompany || widget.user.isCommunity;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: DecoratedBox(
@@ -158,7 +210,9 @@ class _LinkedAccountsBlockState extends State<LinkedAccountsBlock> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Topluluk / firma hesapların arasında çıkış yapmadan geç.',
+                isOrg
+                    ? 'Bu cihazda yalnızca giriş yaptığın kişisel hesaba dönebilirsin.'
+                    : 'Topluluk / firma hesabına çıkış yapmadan geç.',
                 style: TextStyle(
                   color: Colors.black.withValues(alpha: 0.6),
                   fontSize: 13,
@@ -189,11 +243,12 @@ class _LinkedAccountsBlockState extends State<LinkedAccountsBlock> {
                   onTap: _working ? null : () => _switchTo(id),
                 );
               }),
-              TextButton.icon(
-                onPressed: _working ? null : _linkOther,
-                icon: const Icon(Icons.add_link_rounded),
-                label: const Text('Başka hesap bağla'),
-              ),
+              if (!isOrg)
+                TextButton.icon(
+                  onPressed: _working ? null : _linkOther,
+                  icon: const Icon(Icons.add_link_rounded),
+                  label: const Text('Başka hesap bağla'),
+                ),
             ],
           ),
         ),

@@ -15,6 +15,7 @@ import '../../core/theme/theme_provider.dart';
 import '../../core/utils/app_share.dart';
 import '../../core/utils/auth_gate.dart';
 import '../../core/widgets/brand_widgets.dart';
+import '../../core/widgets/panel_chrome.dart';
 import '../../core/widgets/safe_network_image.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../../models/models.dart';
@@ -1072,22 +1073,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
           if (user?.needsUsernameChange == true)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.crimson.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
+            PanelCard(
+              color: AppColors.crimson.withValues(alpha: 0.08),
               child: const Text(
                 'Geçici kullanıcı adın var. Kalıcı bir ad seçmen gerekiyor.',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
-          Center(
+          if (user?.needsUsernameChange == true) const SizedBox(height: 12),
+          PanelCard(
             child: Column(
               children: [
                 Stack(
@@ -1095,19 +1092,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   children: [
                     ClipOval(
                       child: SizedBox(
-                        width: 96,
-                        height: 96,
+                        width: 104,
+                        height: 104,
                         child: (_photoUrl ?? '').isNotEmpty
                             ? SafeNetworkImage(
                                 url: _photoUrl!,
                                 fit: BoxFit.cover,
-                                width: 96,
-                                height: 96,
-                                cacheWidth: 192,
+                                width: 104,
+                                height: 104,
+                                cacheWidth: 208,
                               )
                             : const ColoredBox(
                                 color: Color(0xFFE8EEF5),
-                                child: Icon(Icons.person, size: 44),
+                                child: Icon(Icons.person, size: 48),
                               ),
                       ),
                     ),
@@ -1123,166 +1120,158 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 const Text(
-                  'Fotoğraf seç / yükle · max 75 MB',
+                  'Profil fotoğrafı · en fazla 75 MB',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 12.5,
                     color: AppColors.textSecondary,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Kayıtlı görünen adınız: ${user?.fullName ?? ''}',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 10),
-          Material(
-            color: AppColors.navy.withValues(alpha: 0.06),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: const BorderSide(color: AppColors.border),
-            ),
-            child: const Padding(
-              padding: EdgeInsets.fromLTRB(14, 12, 14, 12),
-              child: Text(
-                'Güvenlik nedeniyle isminiz tarafınızca değiştirilemez. '
-                'Talep açıldıktan sonra KampüsteyimAPP yönetim ekibi tarafından '
-                'incelenir; sonucunuz e-posta ve bildirimle iletilir.',
-                style: TextStyle(height: 1.45, fontSize: 13.5),
-              ),
-            ),
-          ),
-          if (_pendingName != null) ...[
-            const SizedBox(height: 10),
-            Material(
-              color: AppColors.cyan.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  'İncelemede: ${_pendingName!['requestedFirstName']} '
-                  '${_pendingName!['requestedLastName']}. '
-                  'Sonuç, kayıtlı e-posta adresinize bildirilecektir.',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+          const SizedBox(height: 12),
+          PanelCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                PanelSectionLabel(
+                  'Görünen ad',
+                  subtitle: 'Kayıtlı adınız: ${user?.fullName ?? ''}',
                 ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          TextField(
-            controller: _firstName,
-            enabled: _pendingName == null && !_nameBusy,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Yeni ad',
-              prefixIcon: Icon(Icons.badge_outlined),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _lastName,
-            enabled: _pendingName == null && !_nameBusy,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Yeni soyad',
-              prefixIcon: Icon(Icons.badge_outlined),
-            ),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: _pendingName != null || _nameBusy
-                ? null
-                : _submitNameChange,
-            icon: _nameBusy
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.send_outlined),
-            label: Text(
-              _pendingName != null
-                  ? 'Talebiniz inceleniyor'
-                  : 'İsim değişikliği talebi aç',
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _username,
-            decoration: const InputDecoration(
-              labelText: 'Kullanıcı adı',
-              prefixText: '@',
-              prefixIcon: Icon(Icons.alternate_email),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _bio,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              labelText: 'Biyografi',
-              prefixIcon: Icon(Icons.info_outline),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Linkler',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 8),
-          ..._links.asMap().entries.map((e) {
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.link),
-              title: Text(e.value.label),
-              subtitle: Text(e.value.url),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => setState(() => _links.removeAt(e.key)),
-              ),
-            );
-          }),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _linkLabel,
-                  decoration: const InputDecoration(labelText: 'Etiket'),
+                const Text(
+                  'Güvenlik nedeniyle isim değişikliği yönetim ekibi onayına tabidir. '
+                  'Sonuç e-posta ve bildirimle iletilir.',
+                  style: TextStyle(
+                    height: 1.4,
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: _linkUrl,
-                  decoration: const InputDecoration(labelText: 'URL'),
+                if (_pendingName != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'İncelemede: ${_pendingName!['requestedFirstName']} '
+                    '${_pendingName!['requestedLastName']}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _firstName,
+                  enabled: _pendingName == null && !_nameBusy,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(labelText: 'Yeni ad'),
                 ),
-              ),
-              IconButton(
-                onPressed: () {
-                  if (_linkLabel.text.trim().isEmpty ||
-                      _linkUrl.text.trim().isEmpty) {
-                    return;
-                  }
-                  setState(() {
-                    _links.add(ProfileLink(
-                      label: _linkLabel.text.trim(),
-                      url: _linkUrl.text.trim(),
-                    ));
-                    _linkLabel.clear();
-                    _linkUrl.clear();
-                  });
-                },
-                icon: const Icon(Icons.add_circle, color: AppColors.cyan),
-              ),
-            ],
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _lastName,
+                  enabled: _pendingName == null && !_nameBusy,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(labelText: 'Yeni soyad'),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  onPressed: _pendingName != null || _nameBusy
+                      ? null
+                      : _submitNameChange,
+                  icon: _nameBusy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send_outlined),
+                  label: Text(
+                    _pendingName != null
+                        ? 'Talebiniz inceleniyor'
+                        : 'İsim değişikliği talebi aç',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          PanelCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const PanelSectionLabel('Profil'),
+                TextField(
+                  controller: _username,
+                  decoration: const InputDecoration(
+                    labelText: 'Kullanıcı adı',
+                    prefixText: '@',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _bio,
+                  maxLines: 4,
+                  decoration: const InputDecoration(labelText: 'Biyografi'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          PanelCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const PanelSectionLabel(
+                  'Linkler',
+                  subtitle: 'Instagram, web sitesi veya portfolyo',
+                ),
+                ..._links.asMap().entries.map((e) {
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.link),
+                    title: Text(e.value.label),
+                    subtitle: Text(e.value.url),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => setState(() => _links.removeAt(e.key)),
+                    ),
+                  );
+                }),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _linkLabel,
+                        decoration: const InputDecoration(labelText: 'Etiket'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: _linkUrl,
+                        decoration: const InputDecoration(labelText: 'URL'),
+                      ),
+                    ),
+                    IconButton.filledTonal(
+                      onPressed: () {
+                        if (_linkLabel.text.trim().isEmpty ||
+                            _linkUrl.text.trim().isEmpty) {
+                          return;
+                        }
+                        setState(() {
+                          _links.add(ProfileLink(
+                            label: _linkLabel.text.trim(),
+                            url: _linkUrl.text.trim(),
+                          ));
+                          _linkLabel.clear();
+                          _linkUrl.clear();
+                        });
+                      },
+                      icon: const Icon(Icons.add),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),

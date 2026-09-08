@@ -416,10 +416,6 @@ class _CampaignDetailSheetState extends State<_CampaignDetailSheet> {
             _sectionTitle('Yayın detayları'),
             _info('Mecralar', (ad['placements'] as List? ?? const []).join(', ')),
             _info('Hedef iller', (ad['targetCities'] as List? ?? const []).join(', ')),
-            _info(
-              'Hedef üniversiteler',
-              (ad['targetUniversities'] as List? ?? const []).join(', '),
-            ),
             _info('Başlangıç', '${ad['scheduleStart'] ?? '—'}'),
             _info('Bitiş', '${ad['scheduleEnd'] ?? '—'}'),
             _info('Bağlantı', '${ad['linkUrl'] ?? '—'}'),

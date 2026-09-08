@@ -32,6 +32,81 @@ function orgGrowthModule({
     return new Date().toISOString();
   }
 
+  function citiesAreNationwide(cities) {
+    return (cities || []).some((c) => {
+      const s = String(c || '')
+        .toLowerCase()
+        .replace(/ı/g, 'i')
+        .replace(/ş/g, 's')
+        .replace(/ğ/g, 'g')
+        .replace(/ü/g, 'u')
+        .replace(/ö/g, 'o')
+        .replace(/ç/g, 'c');
+      return (
+        s.includes('turkiye geneli') ||
+        s.includes('tum turkiye') ||
+        s === 'turkiye' ||
+        s === '*'
+      );
+    });
+  }
+
+  function openAppLandingHtml(path) {
+    const safePath = String(path || '/home').replace(/[^a-zA-Z0-9/?=&._-]/g, '');
+    return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="robots" content="noindex"/>
+<meta name="theme-color" content="#0B1F3A"/>
+<title>KampüsteyimAPP · Açılıyor…</title>
+<link rel="icon" href="https://ayskampuss.web.app/kampusteyim_icon.png" type="image/png"/>
+<script>
+(function(){
+  var PACKAGE='com.aystech.kampusteyimapp';
+  var HOST='app.kampusteyim.app';
+  var path=${JSON.stringify(safePath)};
+  var ua=navigator.userAgent||'';
+  var isIOS=/iphone|ipad|ipod/i.test(ua)||(/macintosh/i.test(ua)&&'ontouchend'in document);
+  var isAndroid=/android/i.test(ua);
+  window.__ktPath=path;
+  window.__ktIOS=isIOS;
+  window.__ktAndroid=isAndroid;
+  window.__ktStore=isIOS?'https://apps.apple.com/tr/app/id6793663176':(isAndroid?('https://play.google.com/store/apps/details?id='+PACKAGE):'https://kampusteyim.app/#indir');
+  if(!isIOS&&!isAndroid)return;
+  location.href='kampusteyim://open'+path;
+  if(isAndroid){
+    setTimeout(function(){
+      if(document.hidden)return;
+      location.href='intent://'+HOST+path+'#Intent;scheme=https;package='+PACKAGE+';S.browser_fallback_url='+encodeURIComponent(window.__ktStore)+';end';
+    },80);
+  }
+})();
+</script>
+<style>
+body{margin:0;min-height:100svh;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;background:linear-gradient(155deg,#061426 0%,#0B1F3A 55%,#123456 100%);padding:1.5rem;text-align:center}
+.card{max-width:22rem;width:100%}
+.logo{width:72px;height:72px;border-radius:18px;margin:0 auto 1.1rem}
+h1{font-size:1.45rem;font-weight:800;margin:0 0 .4rem}
+h1 span{color:#00D4C8}
+p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
+.btn{display:block;width:100%;border:0;border-radius:14px;padding:.95rem 1rem;margin:.55rem 0 0;font-weight:700;text-decoration:none;color:#061426;background:#00D4C8}
+.btn.secondary{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.28)}
+</style>
+</head>
+<body>
+<div class="card">
+<img class="logo" src="https://ayskampuss.web.app/kampusteyim_icon.png" width="72" height="72" alt="KampüsteyimAPP"/>
+<h1>Kampüsteyim<span>APP</span></h1>
+<p>Davet uygulamada açılıyor… Giriş yaptıktan sonra kabul veya red verebilirsin.</p>
+<a class="btn" href="kampusteyim://open${safePath}">Uygulamayı aç</a>
+<a class="btn secondary" href="https://app.kampusteyim.app${safePath}">Tarayıcıda devam et</a>
+</div>
+</body>
+</html>`;
+  }
+
   function adEmailHtml(ad, recipientId) {
     const variants = ad.imageVariants || {};
     const image = String(variants.email || variants.feed || ad.imageUrl || '');
@@ -229,14 +304,22 @@ function orgGrowthModule({
         try {
           await sendMail({
             to: mailTo,
-            subject: `${orgName} seni KampüsteyimAPP’e davet etti`,
-            html: `<p>Merhaba,</p>
-<p><strong>${orgName}</strong> seni ${
-              grantPanelAccess ? 'panele erişim' : 'üyelik / rozet'
-            } için davet etti.</p>
-<p>Mailini kontrol et ve uygulamada daveti yanıtla:</p>
-<p><a href="${link}">${link}</a></p>
-<p>KampüsteyimAPP</p>`,
+            subject: `${orgName} seni KampüsteyimAPP kadrosuna davet etti`,
+            html: `<!doctype html><html lang="tr"><body style="margin:0;padding:24px;background:#F1F5F9;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#0B1F3A;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #E2E8F0;">
+<tr><td style="padding:18px 24px;background:#0B1F3A;color:#fff;font-weight:800;">KampüsteyimAPP</td></tr>
+<tr><td style="padding:28px 24px 32px;">
+<p style="margin:0 0 12px;">Merhaba${row.inviteeName ? ` ${escapeHtml(row.inviteeName)}` : ''},</p>
+<p style="margin:0 0 16px;line-height:1.55;"><strong>${escapeHtml(orgName)}</strong> seni ${
+              grantPanelAccess ? 'yönetim paneline erişim' : 'üyelik / mavi tick'
+            } için kadroya davet etti.</p>
+<p style="margin:0 0 22px;text-align:center;">
+<a href="${link}" style="display:inline-block;background:#0B1F3A;color:#ffffff;text-decoration:none;padding:14px 26px;border-radius:12px;font-weight:800;">Daveti uygulamada aç</a>
+</p>
+<p style="margin:0;color:#64748B;font-size:13px;line-height:1.5;">Butona basınca Android veya iOS uygulaması açılır; giriş yaptıktan sonra kabul veya red verebilirsin.</p>
+</td></tr></table></td></tr></table>
+</body></html>`,
           });
         } catch (e) {
           console.error('[inviteOrgMember] mail', e);
@@ -253,7 +336,7 @@ function orgGrowthModule({
             title: 'Organizasyon daveti',
             body: `${orgName} seni davet etti. Mailini ve bildirimleri kontrol et.`,
             emoji: '✉️',
-            type: 'system',
+            type: 'org_invite',
             targetId: ref.id,
             link,
             read: false,
@@ -266,7 +349,7 @@ function orgGrowthModule({
             buildCampusPushPayload({
               title: 'Organizasyon daveti',
               body: `${orgName} seni davet etti`,
-              type: 'system',
+              type: 'org_invite',
               data: { targetId: ref.id, link },
             }),
           );
@@ -415,6 +498,61 @@ function orgGrowthModule({
     },
   );
 
+  const listOrgInvites = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      const orgId = String(request.data?.orgId || request.auth.uid).trim();
+      const actor = await loadUser(request.auth.uid);
+      if (!canManageOrg({ id: request.auth.uid, ...actor.data }, orgId)) {
+        throw new HttpsError('permission-denied', 'Yetki yok');
+      }
+      const snap = await db.collection(INVITES).where('orgId', '==', orgId).limit(80).get();
+      const invites = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+      const org = await loadUser(orgId);
+      const rawStaff = Array.isArray(org.data.orgStaff) ? org.data.orgStaff : [];
+      const staff = [];
+      for (const row of rawStaff.slice(0, 40)) {
+        const uid = String(row?.uid || '').trim();
+        if (!uid) continue;
+        const member = await loadUser(uid);
+        const name = String(
+          `${member.data.firstName || ''} ${member.data.lastName || ''}`.trim() ||
+            member.data.username ||
+            member.data.email ||
+            uid,
+        );
+        staff.push({
+          uid,
+          name,
+          email: String(member.data.email || ''),
+          photoUrl: String(member.data.photoUrl || ''),
+          invitedAt: row.invitedAt || '',
+        });
+      }
+      return { ok: true, invites, staff };
+    },
+  );
+
+  const openAppInvite = onRequest(
+    { region: 'europe-west1', cors: true },
+    async (request, response) => {
+      const raw = String(request.path || request.url || '');
+      const m = raw.match(/\/invites\/([^/?#]+)/);
+      let id = '';
+      try {
+        id = sanitizePlainText(m ? decodeURIComponent(m[1]) : '', 80);
+      } catch (_) {
+        id = sanitizePlainText(m ? m[1] : '', 80);
+      }
+      const path = id ? `/invites/${id}` : '/home';
+      response.set('Cache-Control', 'no-store, max-age=0');
+      response.status(200).send(openAppLandingHtml(path));
+    },
+  );
+
   async function ensureAdLinkedPost(adId, ad, adRef) {
     const savedId = sanitizePlainText(ad.feedPostId || '', 120);
     const postId = savedId || `adpost_${adId}`;
@@ -516,6 +654,7 @@ function orgGrowthModule({
     const unis = (ad.targetUniversities || []).map((x) =>
       String(x).toLowerCase(),
     );
+    const nationwide = citiesAreNationwide(cities);
     const usersSnap = await db.collection('users').limit(800).get();
     const targets = [];
     for (const d of usersSnap.docs) {
@@ -523,6 +662,7 @@ function orgGrowthModule({
       const city = String(u.city || '').toLowerCase();
       const uni = String(u.university || '').toLowerCase();
       const cityOk =
+        nationwide ||
         cities.length === 0 ||
         cities.some((c) => city.includes(c) || c.includes(city));
       const uniOk =
@@ -668,6 +808,8 @@ function orgGrowthModule({
     respondOrgInvite,
     revokeOrgMember,
     getOrgInvite,
+    listOrgInvites,
+    openAppInvite,
     dispatchAdCampaignReach,
     dispatchScheduledAdReach,
     trackAdEmailOpen,

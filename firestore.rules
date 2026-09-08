@@ -249,6 +249,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /account_switch_sessions/{id} {
+      allow read, write: if false;
+    }
+
     match /org_invites/{id} {
       allow read: if isAdmin() ||
         (signedIn() && (

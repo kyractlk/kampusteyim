@@ -2245,6 +2245,8 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> switchLinkedAccount(String targetId) async {
     final id = targetId.trim();
     if (id.isEmpty) return false;
+    final fromUser = _user;
+    final fromUid = fa.FirebaseAuth.instance.currentUser?.uid ?? fromUser?.id ?? '';
     _busy = true;
     _error = null;
     notifyListeners();
@@ -2252,9 +2254,18 @@ class AuthProvider extends ChangeNotifier {
     try {
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
+      final origin = await SecureSession.readSwitchOrigin();
+      final fromIsOrg = fromUser != null &&
+          (fromUser.isCompany || fromUser.isCommunity);
       final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
           .httpsCallable('switchLinkedAccount');
-      final res = await callable.call({'targetId': id});
+      final res = await callable.call({
+        'targetId': id,
+        if (fromIsOrg &&
+            origin != null &&
+            origin.orgUid == fromUid)
+          'switchSessionId': origin.sessionId,
+      });
       final map = Map<String, dynamic>.from(res.data as Map? ?? {});
       final token = '${map['token'] ?? ''}'.trim();
       if (token.isEmpty) {
@@ -2268,6 +2279,19 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
       await _finishFirebaseUser(fb, fb.email ?? '');
+      final sessionId = '${map['switchSessionId'] ?? ''}'.trim();
+      final landed = _user;
+      final landedOrg = landed != null &&
+          (landed.isCompany || landed.isCommunity);
+      if (!fromIsOrg && landedOrg && sessionId.isNotEmpty && fromUid.isNotEmpty) {
+        await SecureSession.saveSwitchOrigin(
+          fromUid: fromUid,
+          orgUid: fb.uid,
+          sessionId: sessionId,
+        );
+      } else if (fromIsOrg && !landedOrg) {
+        await SecureSession.clearSwitchOrigin();
+      }
       return _user != null;
     } catch (e) {
       debugPrint('[auth] switchLinkedAccount: $e');

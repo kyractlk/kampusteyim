@@ -17,7 +17,9 @@
           "/home",
           "/profile",
           "/search",
-          "/about"
+          "/about",
+          "/invites",
+          "/invites/*"
         ]
       }
     ]

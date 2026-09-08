@@ -57,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
         context.go('/home');
       } else {
         final next = GoRouterState.of(context).uri.queryParameters['next'] ?? '';
-        if (next == '/tanitimkarti' && !auth.mustCompleteStudentVerification) {
+        if (_isSafeNext(next) && !auth.mustCompleteStudentVerification) {
           context.go(next);
         } else {
           context.go(auth.homeRoute);
@@ -216,4 +216,11 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
+}
+
+bool _isSafeNext(String next) {
+  if (!next.startsWith('/') || next.startsWith('//') || next.contains('://')) {
+    return false;
+  }
+  return next == '/tanitimkarti' || next.startsWith('/invites/');
 }

@@ -104,12 +104,12 @@ GoRouter createRouter(AuthProvider auth) {
               loc == '/register' ||
               loc == '/pending-approval')) {
         final next = state.uri.queryParameters['next'] ?? '';
-        if (next == '/tanitimkarti') return next;
+        if (next == '/tanitimkarti' || next.startsWith('/invites/')) return next;
         return auth.homeRoute;
       }
       if (loggedIn && (loc == '/login' || loc == '/register')) {
         final next = state.uri.queryParameters['next'] ?? '';
-        if (next == '/tanitimkarti') return next;
+        if (next == '/tanitimkarti' || next.startsWith('/invites/')) return next;
         return auth.homeRoute;
       }
       return null;

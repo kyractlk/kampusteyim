@@ -69,6 +69,7 @@
                 <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/profile"/>
                 <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/search"/>
                 <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/about"/>
+                <data android:scheme="https" android:host="app.kampusteyim.app" android:pathPrefix="/invites"/>
             </intent-filter>
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>

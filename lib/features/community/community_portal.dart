@@ -10,6 +10,7 @@ import '../../core/theme/app_colors.dart';
 import '../../models/models.dart';
 import '../ads/ad_campaign_form.dart';
 import '../auth/data/auth_provider.dart';
+import '../commerce/staff_invite_panel.dart';
 import '../events/event_banner_picker.dart';
 import '../feed/feed_provider.dart';
 
@@ -791,96 +792,16 @@ class _CommunityAdsTab extends StatelessWidget {
   }
 }
 
-class _CommunityStaffTab extends StatefulWidget {
+class _CommunityStaffTab extends StatelessWidget {
   const _CommunityStaffTab({required this.orgId});
   final String orgId;
 
   @override
-  State<_CommunityStaffTab> createState() => _CommunityStaffTabState();
-}
-
-class _CommunityStaffTabState extends State<_CommunityStaffTab> {
-  final _query = TextEditingController();
-  bool _panel = true;
-  bool _badge = true;
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _query.dispose();
-    super.dispose();
-  }
-
-  Future<void> _invite(AppUser u) async {
-    setState(() => _busy = true);
-    try {
-      await OrgInviteService.invite(
-        orgId: widget.orgId,
-        orgType: 'community',
-        inviteeUid: u.id,
-        grantPanelAccess: _panel,
-        grantBlueBadge: _badge,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${u.fullName} davet edildi')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    final q = _query.text.trim();
-    final hits = q.isEmpty
-        ? <AppUser>[]
-        : auth
-            .searchUsers(q)
-            .where((u) => !u.isCommunity && !u.isCompany)
-            .take(20)
-            .toList();
-
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
-        const Text(
-          'Yonetim kadrosu davet et: panel erisimi ve/veya mavi tick.',
-          style: TextStyle(color: AppColors.textSecondary),
-        ),
-        SwitchListTile(
-          title: const Text('Panele erisim'),
-          value: _panel,
-          onChanged: (v) => setState(() => _panel = v),
-        ),
-        SwitchListTile(
-          title: const Text('Mavi tick'),
-          value: _badge,
-          onChanged: (v) => setState(() => _badge = v),
-        ),
-        TextField(
-          controller: _query,
-          decoration: const InputDecoration(
-            labelText: 'Kullanici ara',
-            border: OutlineInputBorder(),
-          ),
-          onChanged: (_) => setState(() {}),
-        ),
-        if (_busy) const LinearProgressIndicator(),
-        ...hits.map(
-          (u) => ListTile(
-            title: Text(u.fullName),
-            subtitle: Text(u.email),
-            trailing: FilledButton(
-              onPressed: _busy ? null : () => _invite(u),
-              child: const Text('Davet'),
-            ),
-          ),
-        ),
+        StaffInvitePanel(orgId: orgId, orgType: 'community'),
       ],
     );
   }

@@ -98,7 +98,6 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                             AppNav.openEvent(context, id);
                           },
                           onShowQr: () => _showTicketQr(t),
-                          onRename: () => _rename(t),
                         );
                       },
                     ),
@@ -114,67 +113,6 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _rename(Map<String, dynamic> t) async {
-    final st = '${t['status'] ?? 'active'}';
-    final used = (t['entriesUsed'] as num?)?.toInt() ?? 0;
-    if (st == 'refunded' || st == 'cancelled' || st == 'used' || used > 0) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Giriş yapılmış veya iade edilmiş bilette isim değişmez.'),
-        ),
-      );
-      return;
-    }
-    final ctrl = TextEditingController(
-      text: '${t['userName'] ?? ''}'.trim(),
-    );
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Biletteki isim'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Kapıda görünecek ad soyad',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Kaydet'),
-          ),
-        ],
-      ),
-    );
-    final name = ctrl.text.trim();
-    ctrl.dispose();
-    if (ok != true || name.length < 2 || !mounted) return;
-    try {
-      await CommerceService.renameTicketAttendee(
-        ticketId: '${t['id']}',
-        userName: name,
-      );
-      await _load();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bilet ismi güncellendi')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Güncellenemedi: $e')),
-      );
-    }
   }
 
   Future<void> _showTicketQr(Map<String, dynamic> t) async {
@@ -304,14 +242,12 @@ class _TicketPass extends StatelessWidget {
     required this.statusLabel,
     required this.onOpenEvent,
     required this.onShowQr,
-    required this.onRename,
   });
 
   final Map<String, dynamic> ticket;
   final String statusLabel;
   final VoidCallback onOpenEvent;
   final VoidCallback onShowQr;
-  final VoidCallback onRename;
 
   @override
   Widget build(BuildContext context) {
@@ -465,11 +401,6 @@ class _TicketPass extends StatelessWidget {
                     onPressed: onShowQr,
                     icon: const Icon(Icons.qr_code_2_rounded, size: 18),
                     label: const Text('QR göster'),
-                  ),
-                  TextButton.icon(
-                    onPressed: onRename,
-                    icon: const Icon(Icons.badge_outlined, size: 18),
-                    label: const Text('İsim'),
                   ),
                   const Spacer(),
                   IconButton(

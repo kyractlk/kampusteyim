@@ -19,5 +19,36 @@ firebase.initializeApp({
 
 try {
   const messaging = firebase.messaging();
-  messaging.onBackgroundMessage(() => {});
+  messaging.onBackgroundMessage((payload) => {
+    const n = (payload && payload.notification) || {};
+    const d = (payload && payload.data) || {};
+    const title = n.title || d.title || 'KampüsteyimAPP';
+    const body = n.body || d.body || '';
+    if (!body && title === 'KampüsteyimAPP') return;
+    return self.registration.showNotification(title, {
+      body,
+      icon: '/kampusteyim_icon.png',
+      badge: '/kampusteyim_icon.png',
+      data: d,
+    });
+  });
 } catch (_) {}
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = (event.notification && event.notification.data) || {};
+  const link = data.link || '/';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (let i = 0; i < list.length; i += 1) {
+        const client = list[i];
+        if (client.url && 'focus' in client) {
+          client.focus();
+          return;
+        }
+      }
+      if (clients.openWindow) return clients.openWindow(link);
+      return undefined;
+    }),
+  );
+});

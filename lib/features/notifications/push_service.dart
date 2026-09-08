@@ -7,6 +7,8 @@ import 'package:flutter/material.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../core/storage/media_warm_helper.dart';
+import 'push_web_notify_stub.dart'
+    if (dart.library.js_interop) 'push_web_notify_web.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -16,6 +18,10 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 class PushService {
   PushService._();
   static final instance = PushService._();
+
+  /// Firebase Console → Cloud Messaging → Web Push certificates.
+  /// `--dart-define=FCM_WEB_VAPID=...` ile verilebilir.
+  static const _webVapidKey = String.fromEnvironment('FCM_WEB_VAPID');
 
   final _messaging = FirebaseMessaging.instance;
   final _local = FlutterLocalNotificationsPlugin();
@@ -215,7 +221,19 @@ class PushService {
       if (u.isEmpty) return null;
       return '/stories/view/${Uri.encodeComponent(u)}';
     }
-    if (t == 'event' || (tid.isNotEmpty && tid.startsWith('e_'))) {
+    if (t == 'org_invite' || t == 'invite') {
+      if (tid.isEmpty) return '/notifications';
+      return '/invites/${Uri.encodeComponent(tid)}';
+    }
+    if (t == 'ticket' || t == 'refund') {
+      return '/tickets';
+    }
+    if (t == 'sale') {
+      return '/notifications';
+    }
+    if (t == 'event' ||
+        t == 'event_application' ||
+        (tid.isNotEmpty && tid.startsWith('e_'))) {
       if (tid.isEmpty) return '/events';
       return '/event/${Uri.encodeComponent(tid)}';
     }
@@ -301,7 +319,10 @@ class PushService {
           return null;
         }
       }
-      final token = await _messaging.getToken();
+      final vapid = _webVapidKey.trim();
+      final token = await _messaging.getToken(
+        vapidKey: kIsWeb && vapid.isNotEmpty ? vapid : null,
+      );
       if (token != null && kDebugMode) {
         debugPrint('[push] token ok ${token.substring(0, 12)}…');
       }
@@ -327,7 +348,10 @@ class PushService {
     String channelId = 'mt_mobil_social',
     String? payload,
   }) async {
-    if (kIsWeb) return;
+    if (kIsWeb) {
+      showWebNotification(title: title, body: body);
+      return;
+    }
     final android = AndroidNotificationDetails(
       channelId,
       channelId == 'mt_mobil_admin' ? 'Admin Duyuruları' : 'Sosyal & Kampüs',

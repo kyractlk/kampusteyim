@@ -12,6 +12,7 @@ class NotificationProvider extends ChangeNotifier {
   final List<AppNotification> _items = [];
   String? _userId;
   bool _retrying = false;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _inboxSub;
 
   List<AppNotification> get items => List.unmodifiable(_items);
   int get unreadCount => _items.where((n) => !n.read).length;
@@ -21,12 +22,16 @@ class NotificationProvider extends ChangeNotifier {
     final authUid = fa.FirebaseAuth.instance.currentUser?.uid;
     final docId = (authUid != null && authUid.isNotEmpty) ? authUid : userId;
     final prevId = _userId;
-    if (docId == _userId && docId != null) {
-      await refresh();
-      return;
+    final switched = docId != _userId;
+
+    if (switched) {
+      await _inboxSub?.cancel();
+      _inboxSub = null;
+      _userId = docId;
+      _items.clear();
+      notifyListeners();
     }
-    _userId = docId;
-    _items.clear();
+
     if (docId == null) {
       PushService.instance.onTokenRefresh = null;
       notifyListeners();
@@ -37,8 +42,19 @@ class NotificationProvider extends ChangeNotifier {
       await _saveToken(docId, token, profile: profile);
     };
 
-    // İzin yoksa (web/iOS) token deneme + retry yok.
-    if (!await PushService.instance.canRequestToken()) {
+    if (await PushService.instance.canRequestToken()) {
+      final token = await PushService.instance.getToken();
+      if (token != null) {
+        await _saveToken(
+          docId,
+          token,
+          profile: profile,
+          previousUserId: prevId,
+        );
+      } else if (!kIsWeb) {
+        unawaited(_retryToken(docId, profile: profile));
+      }
+    } else {
       try {
         final ref = FirebaseFirestore.instance.collection('users').doc(docId);
         final existing = await ref.get();
@@ -50,18 +66,33 @@ class NotificationProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint('[push] bindUser profile sync: $e');
       }
-      await refresh();
-      return;
     }
 
-    final token = await PushService.instance.getToken();
-    if (token != null) {
-      await _saveToken(docId, token, profile: profile, previousUserId: prevId);
-    } else if (!kIsWeb) {
-      // Yalnızca native’de APNs gecikmesi için retry.
-      unawaited(_retryToken(docId, profile: profile));
+    if (_inboxSub == null) {
+      _listenInbox(docId);
     }
-    await refresh();
+  }
+
+  void _listenInbox(String docId) {
+    unawaited(_inboxSub?.cancel());
+    _inboxSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(docId)
+        .collection('notifications')
+        .orderBy('createdAt', descending: true)
+        .limit(50)
+        .snapshots()
+        .listen((snap) {
+      if (_userId != docId) return;
+      _items
+        ..clear()
+        ..addAll(
+          snap.docs.map((d) => AppNotification.fromJson(d.id, d.data())),
+        );
+      notifyListeners();
+    }, onError: (e) {
+      debugPrint('[push] inbox listen: $e');
+    });
   }
 
   /// iOS APNs gecikmesi için tekrarlı FCM token denemesi.
@@ -137,19 +168,8 @@ class NotificationProvider extends ChangeNotifier {
       _items
         ..clear()
         ..addAll(snap.docs.map((d) => AppNotification.fromJson(d.id, d.data())));
-    } catch (_) {
-      if (_items.isEmpty) {
-        _items.addAll([
-          AppNotification(
-            id: 'n1',
-            title: 'Hoş geldin',
-            body: 'KampüsteyimAPP bildirimleri aktif.',
-            emoji: '🚀',
-            type: 'community',
-            createdAt: DateTime.now(),
-          ),
-        ]);
-      }
+    } catch (e) {
+      debugPrint('[push] refresh: $e');
     }
     notifyListeners();
   }
@@ -242,6 +262,7 @@ class NotificationProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_inboxSub?.cancel());
     PushService.instance.onTokenRefresh = null;
     super.dispose();
   }

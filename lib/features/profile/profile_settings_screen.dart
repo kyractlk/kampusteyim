@@ -20,46 +20,79 @@ class ProfileSettingsScreen extends StatelessWidget {
   Future<void> _changePassword(BuildContext context) async {
     final currentCtrl = TextEditingController();
     final nextCtrl = TextEditingController();
+    var obscureCurrent = true;
+    var obscureNext = true;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            MtIcon(MtIcons.password, size: 22, color: AppColors.navy),
-            SizedBox(width: 10),
-            Text('Şifre değiştir'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          title: const Text('Şifre değiştir'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Mevcut şifreni doğrula, ardından en az 6 karakterlik yeni şifre belirle.',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    height: 1.4,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: currentCtrl,
+                  obscureText: obscureCurrent,
+                  decoration: InputDecoration(
+                    labelText: 'Mevcut şifre',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      onPressed: () =>
+                          setLocal(() => obscureCurrent = !obscureCurrent),
+                      icon: Icon(
+                        obscureCurrent
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nextCtrl,
+                  obscureText: obscureNext,
+                  decoration: InputDecoration(
+                    labelText: 'Yeni şifre',
+                    hintText: 'En az 6 karakter',
+                    prefixIcon: const Icon(Icons.key_outlined),
+                    suffixIcon: IconButton(
+                      onPressed: () =>
+                          setLocal(() => obscureNext = !obscureNext),
+                      icon: Icon(
+                        obscureNext
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Kaydet'),
+            ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: currentCtrl,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Mevcut şifre',
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: nextCtrl,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Yeni şifre (min. 6)',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Kaydet'),
-          ),
-        ],
       ),
     );
     if (ok != true || !context.mounted) return;

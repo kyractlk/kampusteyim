@@ -17,6 +17,9 @@ function commerceModule({
   loadCompanyMailBrand,
   escapeHtml,
   brandHome,
+  sendFcmToUser,
+  buildCampusPushPayload,
+  userAllowsPush,
 }) {
   const TICKETS = 'event_tickets';
   const SHORT_CODES = 'ticket_short_codes';
@@ -28,8 +31,78 @@ function commerceModule({
   const QR_SECRET = process.env.TICKET_QR_SECRET || 'kampusteyim-kt1-ticket-v1';
   const APP_HOME = brandHome || 'https://app.kampusteyim.app';
 
+  async function notifyUser({
+    uid,
+    title,
+    body,
+    emoji = '🔔',
+    type = 'community',
+    targetId,
+    link,
+  }) {
+    const to = String(uid || '').trim();
+    if (!to) return;
+    try {
+      const userDoc = await db.collection('users').doc(to).get();
+      if (!userDoc.exists) return;
+      const userData = userDoc.data() || {};
+      await db.collection('users').doc(to).collection('notifications').add({
+        title,
+        body,
+        emoji,
+        type,
+        targetId: targetId || null,
+        link: link || null,
+        read: false,
+        createdAt: nowIso(),
+      });
+      const tokens = userData.fcmTokens || [];
+      if (
+        tokens.length &&
+        typeof sendFcmToUser === 'function' &&
+        typeof buildCampusPushPayload === 'function' &&
+        (!userAllowsPush || userAllowsPush(userData, type))
+      ) {
+        await sendFcmToUser(
+          to,
+          tokens,
+          buildCampusPushPayload({
+            title,
+            body,
+            type,
+            data: {
+              targetId: targetId || '',
+              link: link || '',
+            },
+          }),
+        );
+      }
+    } catch (e) {
+      console.error('[commerce] notifyUser', e);
+    }
+  }
+
   function nowIso() {
     return new Date().toISOString();
+  }
+
+  function citiesAreNationwide(cities) {
+    return (cities || []).some((c) => {
+      const s = String(c || '')
+        .toLowerCase()
+        .replace(/ı/g, 'i')
+        .replace(/ş/g, 's')
+        .replace(/ğ/g, 'g')
+        .replace(/ü/g, 'u')
+        .replace(/ö/g, 'o')
+        .replace(/ç/g, 'c');
+      return (
+        s.includes('turkiye geneli') ||
+        s.includes('tum turkiye') ||
+        s === 'turkiye' ||
+        s === '*'
+      );
+    });
   }
 
   function normalizeTicketEntry(tierOrTicket) {
@@ -582,6 +655,28 @@ function commerceModule({
       console.error('[fulfillEvent] ticket email', e);
     }
 
+    const eventTitle = String(event?.title || event?.name || 'Etkinlik').trim();
+    await notifyUser({
+      uid,
+      title: 'Biletin hazır',
+      body: `${eventTitle} biletin uygulamada. Biletlerim’den açabilirsin.`,
+      emoji: '🎫',
+      type: 'ticket',
+      targetId: ticketRef.id,
+      link: `${APP_HOME}/tickets`,
+    });
+    if (organizerId && organizerId !== uid) {
+      await notifyUser({
+        uid: organizerId,
+        title: 'Yeni bilet satışı',
+        body: `${eventTitle} · bir bilet satıldı`,
+        emoji: '🎟️',
+        type: 'sale',
+        targetId: ticketRef.id,
+        link: `${APP_HOME}/notifications`,
+      });
+    }
+
     return { ok: true, ticketId: ticketRef.id, net, commission };
   }
 
@@ -723,6 +818,17 @@ function commerceModule({
         },
         { merge: true },
       );
+    }
+    if (uid) {
+      await notifyUser({
+        uid,
+        title: 'İade alındı',
+        body: 'Etkinlik biletin iptal edildi, iade işleme alındı.',
+        emoji: '↩️',
+        type: 'refund',
+        targetId: ticketId || '',
+        link: `${APP_HOME}/tickets`,
+      });
     }
     return { ok: true, clawback };
   }
@@ -912,7 +1018,7 @@ function commerceModule({
           db.collection(DISCOUNTS).where('organizerId', '==', ownerId).limit(80).get(),
         ]);
 
-      const tickets = ticketsSnap.docs.map((d) => d.data());
+      const tickets = ticketsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
       const byEvent = {};
       for (const t of tickets) {
         const eid = t.eventId || 'unknown';
@@ -922,11 +1028,21 @@ function commerceModule({
             eventTitle: t.eventTitle || eid,
             count: 0,
             revenue: 0,
+            refundedCount: 0,
+            refundedRevenue: 0,
             buyers: [],
           };
         }
-        byEvent[eid].count += 1;
-        byEvent[eid].revenue += Number(t.amountPaid) || 0;
+        const st = String(t.status || 'active');
+        const refunded = st === 'refunded' || st === 'cancelled';
+        const amount = Number(t.amountPaid) || 0;
+        if (refunded) {
+          byEvent[eid].refundedCount += 1;
+          byEvent[eid].refundedRevenue += amount;
+        } else {
+          byEvent[eid].count += 1;
+          byEvent[eid].revenue += amount;
+        }
         byEvent[eid].buyers.push({
           uid: t.uid,
           email: t.userEmail,
@@ -934,7 +1050,7 @@ function commerceModule({
           amount: t.amountPaid,
           tierLabel: t.tierLabel,
           ticketId: t.id,
-          status: t.status || 'active',
+          status: st,
           checkedInAt: t.checkedInAt || null,
           createdAt: t.createdAt,
         });
@@ -1214,7 +1330,7 @@ function commerceModule({
       if (targetCities.length === 0 && targetUniversities.length === 0) {
         throw new HttpsError(
           'invalid-argument',
-          'En az bir il veya üniversite seçmelisin',
+          'En az bir hedef il seçmelisin',
         );
       }
       let adKind = String(request.data?.adKind || 'standard').toLowerCase();
@@ -1793,7 +1909,9 @@ function commerceModule({
           String(x).toLowerCase(),
         );
         if (cities.length === 0 && unis.length === 0) continue;
+        const nationwide = citiesAreNationwide(cities);
         const cityOk =
+          nationwide ||
           !cities.length ||
           cities.some(
             (c) => viewerCity && (viewerCity.includes(c) || c.includes(viewerCity)),
