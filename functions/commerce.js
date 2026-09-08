@@ -12,15 +12,139 @@ function commerceModule({
   FieldValue,
   findUserDocByAnyId,
   expandFieldPaths,
+  sendMail,
+  companyBrandedEmail,
+  loadCompanyMailBrand,
+  escapeHtml,
+  brandHome,
 }) {
   const TICKETS = 'event_tickets';
   const WITHDRAWALS = 'withdrawal_requests';
   const ADS = 'ad_campaigns';
   const DISCOUNTS = 'event_discounts';
   const LEDGER = 'organizer_ledger';
+  const QR_SECRET = process.env.TICKET_QR_SECRET || 'kampusteyim-kt1-ticket-v1';
+  const APP_HOME = brandHome || 'https://app.kampusteyim.app';
 
   function nowIso() {
     return new Date().toISOString();
+  }
+
+  function signTicketId(id) {
+    return crypto
+      .createHmac('sha256', QR_SECRET)
+      .update(String(id))
+      .digest('hex')
+      .slice(0, 20);
+  }
+
+  function buildQrPayload(id) {
+    const tid = String(id || '').trim();
+    return tid ? `KT1.${tid}.${signTicketId(tid)}` : '';
+  }
+
+  function hmacEqual(a, b) {
+    const left = Buffer.from(String(a || ''), 'utf8');
+    const right = Buffer.from(String(b || ''), 'utf8');
+    if (left.length !== right.length) return false;
+    return crypto.timingSafeEqual(left, right);
+  }
+
+  function parseQrPayload(raw) {
+    const s = String(raw || '').trim();
+    const m = s.match(/^KT1\.([A-Za-z0-9_-]+)\.([a-f0-9]{16,64})$/i);
+    if (m) {
+      if (!hmacEqual(signTicketId(m[1]), m[2].toLowerCase())) return '';
+      return m[1];
+    }
+    if (/^[A-Za-z0-9_-]{8,64}$/.test(s)) return s;
+    return '';
+  }
+
+  async function resolveCommerceOwner(uid) {
+    const snap = await db.collection('users').doc(uid).get();
+    const user = snap.data() || {};
+    if (
+      user.panelAccess === true &&
+      user.panelOrgId &&
+      ['company', 'community'].includes(String(user.panelOrgType || ''))
+    ) {
+      return { ownerId: String(user.panelOrgId), actor: user };
+    }
+    return { ownerId: uid, actor: user };
+  }
+
+  async function sendTicketEmail(ticket, event, organizerId) {
+    const to = String(ticket.userEmail || '').trim();
+    if (!to || !to.includes('@') || typeof sendMail !== 'function') return;
+    const esc =
+      typeof escapeHtml === 'function'
+        ? escapeHtml
+        : (v) =>
+            String(v ?? '')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;');
+    let brand = {
+      companyName: String(event.organizerCompanyName || event.communityName || 'Organizatör'),
+      logoUrl: '',
+      signature: {},
+    };
+    try {
+      if (typeof loadCompanyMailBrand === 'function') {
+        brand = await loadCompanyMailBrand(organizerId);
+      }
+    } catch (_) {}
+    const qr = ticket.qrPayload || buildQrPayload(ticket.id);
+    const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&ecc=M&data=${encodeURIComponent(qr)}`;
+    const eventUrl = `${APP_HOME}/event/${encodeURIComponent(ticket.eventId)}`;
+    const ticketsUrl = `${APP_HOME}/tickets`;
+    const starts = ticket.startsAt
+      ? esc(String(ticket.startsAt)).replace('T', ' ').slice(0, 16)
+      : '';
+    const bodyHtml = `
+      <p>Biletin hazır. Kapıda aşağıdaki QR kodunu göster.</p>
+      <p style="text-align:center;margin:22px 0;">
+        <img src="${qrImg}" alt="Bilet QR" width="220" height="220" style="display:inline-block;border:1px solid #E2E8F0;border-radius:16px;padding:8px;background:#fff;"/>
+      </p>
+      <p><strong>${esc(ticket.eventTitle || 'Etkinlik')}</strong></p>
+      ${starts ? `<p>Tarih: ${starts}</p>` : ''}
+      ${ticket.tierLabel ? `<p>Bilet: ${esc(ticket.tierLabel)}</p>` : ''}
+      <p>Kod: <code>${esc(qr)}</code></p>
+      <p style="color:#64748B;font-size:13px;">Bilet kişiye özeldir. İade / iptal yoktur.</p>
+    `;
+    const html =
+      typeof companyBrandedEmail === 'function'
+        ? companyBrandedEmail({
+            companyName: brand.companyName,
+            logoUrl: brand.logoUrl,
+            signature: brand.signature,
+            title: 'Biletin hazır',
+            greeting: ticket.userName ? `Merhaba ${ticket.userName},` : 'Merhaba,',
+            bodyHtml,
+            ctaLabel: 'Biletimi aç',
+            ctaUrl: ticketsUrl,
+            footerNote: `Etkinlik sayfası: ${eventUrl}`,
+          })
+        : `<div>${bodyHtml}</div>`;
+    const attachments = [];
+    try {
+      const res = await fetch(qrImg);
+      if (res.ok) {
+        attachments.push({
+          filename: 'bilet-qr.png',
+          content: Buffer.from(await res.arrayBuffer()),
+          cid: 'ticketqr',
+        });
+      }
+    } catch (_) {}
+    await sendMail({
+      to,
+      subject: `${brand.companyName || 'KampüsteyimAPP'} · ${ticket.eventTitle || 'Biletin'}`,
+      html,
+      attachments,
+    });
   }
 
   async function resolveAdOwner(uid) {
@@ -200,6 +324,7 @@ function commerceModule({
       startsAt: event.startsAt || null,
       createdAt: nowIso(),
       ibanReference: order.ibanReference || null,
+      qrPayload: buildQrPayload(ticketRef.id),
     };
     await ticketRef.set(ticket);
 
@@ -310,6 +435,27 @@ function commerceModule({
       },
       { merge: true },
     );
+
+    try {
+      if (!ticket.userEmail) {
+        const buyer = await db.collection('users').doc(uid).get();
+        const bd = buyer.data() || {};
+        ticket.userEmail = String(bd.email || '');
+        ticket.userName =
+          ticket.userName ||
+          String(bd.fullName || `${bd.firstName || ''} ${bd.lastName || ''}`).trim();
+        if (ticket.userEmail) {
+          await ticketRef.set(
+            { userEmail: ticket.userEmail, userName: ticket.userName },
+            { merge: true },
+          );
+        }
+      }
+      await sendTicketEmail(ticket, event, organizerId);
+      await ticketRef.set({ ticketEmailSentAt: nowIso() }, { merge: true });
+    } catch (e) {
+      console.error('[fulfillEvent] ticket email', e);
+    }
 
     return { ok: true, ticketId: ticketRef.id, net, commission };
   }
@@ -428,28 +574,29 @@ function commerceModule({
     async (request) => {
       if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
       const uid = request.auth.uid;
-      const org = await getOrganizerSettings(uid);
-      if (!org.isCompany) {
+      const { ownerId } = await resolveCommerceOwner(uid);
+      const org = await getOrganizerSettings(ownerId);
+      if (!org.isCompany && !org.isEventOrganizer) {
         throw new HttpsError('permission-denied', 'Firma hesabı gerekli');
       }
 
       const [ticketsSnap, ledgerSnap, withdrawSnap, adsSnap, discountsSnap] =
         await Promise.all([
-          db.collection(TICKETS).where('organizerId', '==', uid).limit(200).get(),
+          db.collection(TICKETS).where('organizerId', '==', ownerId).limit(200).get(),
           db
             .collection(LEDGER)
-            .where('organizerId', '==', uid)
+            .where('organizerId', '==', ownerId)
             .orderBy('createdAt', 'desc')
             .limit(100)
             .get(),
           db
             .collection(WITHDRAWALS)
-            .where('companyId', '==', uid)
+            .where('companyId', '==', ownerId)
             .orderBy('createdAt', 'desc')
             .limit(40)
             .get(),
-          db.collection(ADS).where('ownerId', '==', uid).limit(40).get(),
-          db.collection(DISCOUNTS).where('organizerId', '==', uid).limit(80).get(),
+          db.collection(ADS).where('ownerId', '==', ownerId).limit(40).get(),
+          db.collection(DISCOUNTS).where('organizerId', '==', ownerId).limit(80).get(),
         ]);
 
       const tickets = ticketsSnap.docs.map((d) => d.data());
@@ -474,6 +621,8 @@ function commerceModule({
           amount: t.amountPaid,
           tierLabel: t.tierLabel,
           ticketId: t.id,
+          status: t.status || 'active',
+          checkedInAt: t.checkedInAt || null,
           createdAt: t.createdAt,
         });
       }
@@ -1425,7 +1574,67 @@ function commerceModule({
         .get();
       return {
         ok: true,
-        tickets: snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+        tickets: snap.docs.map((d) => {
+          const t = { id: d.id, ...d.data() };
+          t.qrPayload = t.qrPayload || buildQrPayload(d.id);
+          return t;
+        }),
+      };
+    },
+  );
+
+  const checkInTicket = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      const { ownerId } = await resolveCommerceOwner(request.auth.uid);
+      const org = await getOrganizerSettings(ownerId);
+      if (!org.isCompany && !org.isEventOrganizer) {
+        throw new HttpsError('permission-denied', 'Organizatör yetkisi gerekli');
+      }
+      const ticketId = parseQrPayload(
+        request.data?.payload || request.data?.ticketId || '',
+      );
+      if (!ticketId) {
+        throw new HttpsError('invalid-argument', 'Geçersiz QR / bilet kodu');
+      }
+      const snap = await db.collection(TICKETS).doc(ticketId).get();
+      if (!snap.exists) {
+        throw new HttpsError('not-found', 'Bilet bulunamadı');
+      }
+      const ticket = snap.data() || {};
+      if (String(ticket.organizerId || '') !== ownerId) {
+        throw new HttpsError(
+          'permission-denied',
+          'Bu bilet sizin etkinliğinize ait değil',
+        );
+      }
+      const already =
+        ticket.status === 'used' ||
+        ticket.status === 'checked_in' ||
+        Boolean(ticket.checkedInAt);
+      if (!already) {
+        await snap.ref.set(
+          {
+            status: 'used',
+            checkedInAt: nowIso(),
+            checkedInBy: request.auth.uid,
+            updatedAt: nowIso(),
+          },
+          { merge: true },
+        );
+      }
+      return {
+        ok: true,
+        already,
+        ticketId,
+        eventId: ticket.eventId || '',
+        eventTitle: ticket.eventTitle || '',
+        userName: ticket.userName || '',
+        userEmail: ticket.userEmail || '',
+        tierLabel: ticket.tierLabel || '',
+        status: 'used',
+        checkedInAt: already ? ticket.checkedInAt : nowIso(),
       };
     },
   );
@@ -1452,6 +1661,7 @@ function commerceModule({
     adminReviewAdCampaign,
     getActiveAds,
     getMyTickets,
+    checkInTicket,
   };
 }
 

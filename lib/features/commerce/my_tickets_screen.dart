@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/app_nav.dart';
 import '../commerce/commerce_service.dart';
 
 class MyTicketsScreen extends StatefulWidget {
@@ -38,6 +39,20 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
     }
   }
 
+  String _statusLabel(String raw) {
+    switch (raw) {
+      case 'used':
+      case 'checked_in':
+        return 'Giriş yapıldı';
+      case 'active':
+        return 'Aktif';
+      case 'cancelled':
+        return 'İptal';
+      default:
+        return raw.isEmpty ? 'Aktif' : raw;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -67,38 +82,18 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                   : ListView.separated(
                       padding: const EdgeInsets.all(16),
                       itemCount: _tickets.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
                       itemBuilder: (context, i) {
                         final t = _tickets[i];
-                        final starts = DateTime.tryParse('${t['startsAt'] ?? ''}');
-                        final date = starts == null
-                            ? ''
-                            : DateFormat('d MMM yyyy · HH:mm', 'tr')
-                                .format(starts);
-                        return Card(
-                          child: ListTile(
-                            title: Text(
-                              '${t['eventTitle'] ?? 'Etkinlik'}',
-                              style: const TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                            subtitle: Text(
-                              [
-                                if (date.isNotEmpty) date,
-                                if ('${t['tierLabel'] ?? ''}'.isNotEmpty)
-                                  '${t['tierLabel']}',
-                                '${t['amountPaid'] ?? 0} TL',
-                                if ('${t['ibanReference'] ?? ''}'.isNotEmpty)
-                                  'Kod: ${t['ibanReference']}',
-                                'Durum: ${t['status'] ?? 'active'}',
-                              ].join('\n'),
-                            ),
-                            isThreeLine: true,
-                            trailing: const Icon(Icons.confirmation_number_outlined),
-                            onTap: () {
-                              final id = '${t['eventId'] ?? ''}';
-                              if (id.isNotEmpty) context.push('/events/$id');
-                            },
-                          ),
+                        return _TicketCard(
+                          ticket: t,
+                          statusLabel: _statusLabel('${t['status'] ?? 'active'}'),
+                          onOpenEvent: () {
+                            final id = '${t['eventId'] ?? ''}'.trim();
+                            if (id.isEmpty) return;
+                            AppNav.openEvent(context, id);
+                          },
+                          onShowQr: () => _showTicketQr(t),
                         );
                       },
                     ),
@@ -110,6 +105,164 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
             'Bilet kişiye özeldir; ödeyen hesap = katılımcı.',
             style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
             textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showTicketQr(Map<String, dynamic> t) async {
+    final payload = '${t['qrPayload'] ?? t['id'] ?? ''}'.trim();
+    final starts = DateTime.tryParse('${t['startsAt'] ?? ''}');
+    final date = starts == null
+        ? ''
+        : DateFormat('d MMM yyyy · HH:mm', 'tr').format(starts);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final maxW = MediaQuery.sizeOf(ctx).width;
+        final qrSize = (maxW - 80).clamp(180.0, 280.0);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${t['eventTitle'] ?? 'Etkinlik'}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                if (date.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(date, style: const TextStyle(color: AppColors.textSecondary)),
+                ],
+                const SizedBox(height: 16),
+                if (payload.isEmpty)
+                  const Text('QR henüz oluşturulamadı')
+                else
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: QrImageView(
+                      data: payload,
+                      size: qrSize,
+                      backgroundColor: Colors.white,
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Text(
+                  [
+                    if ('${t['tierLabel'] ?? ''}'.isNotEmpty) '${t['tierLabel']}',
+                    '${t['amountPaid'] ?? 0} TL',
+                    'Durum: ${_statusLabel('${t['status'] ?? 'active'}')}',
+                  ].join(' · '),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    final id = '${t['eventId'] ?? ''}'.trim();
+                    if (id.isNotEmpty) AppNav.openEvent(context, id);
+                  },
+                  icon: const Icon(Icons.event_outlined),
+                  label: const Text('Etkinliği aç'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TicketCard extends StatelessWidget {
+  const _TicketCard({
+    required this.ticket,
+    required this.statusLabel,
+    required this.onOpenEvent,
+    required this.onShowQr,
+  });
+
+  final Map<String, dynamic> ticket;
+  final String statusLabel;
+  final VoidCallback onOpenEvent;
+  final VoidCallback onShowQr;
+
+  @override
+  Widget build(BuildContext context) {
+    final starts = DateTime.tryParse('${ticket['startsAt'] ?? ''}');
+    final date = starts == null
+        ? ''
+        : DateFormat('d MMM yyyy · HH:mm', 'tr').format(starts);
+    final used = statusLabel == 'Giriş yapıldı';
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onShowQr,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppColors.navy.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  used ? Icons.verified : Icons.qr_code_2_rounded,
+                  color: used ? AppColors.lime : AppColors.navy,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${ticket['eventTitle'] ?? 'Etkinlik'}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        if (date.isNotEmpty) date,
+                        if ('${ticket['tierLabel'] ?? ''}'.isNotEmpty)
+                          '${ticket['tierLabel']}',
+                        '${ticket['amountPaid'] ?? 0} TL',
+                        statusLabel,
+                      ].join(' · '),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textSecondary,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Etkinlik',
+                onPressed: onOpenEvent,
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
           ),
         ),
       ),

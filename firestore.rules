@@ -72,7 +72,10 @@ service cloud.firestore {
 
     match /companies/{companyId} {
       allow read: if true;
-      allow write: if signedIn();
+      allow create, update: if signedIn() && (
+        request.auth.uid == companyId || isAdmin()
+      );
+      allow delete: if isAdmin();
     }
 
     match /offers/{offerId} {

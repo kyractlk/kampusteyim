@@ -27,6 +27,7 @@ import '../features/jobs/company_settings_screen.dart';
 import '../features/commerce/company_organizer_hub.dart';
 import '../features/commerce/my_tickets_screen.dart';
 import '../features/commerce/org_invite_screen.dart';
+import '../features/commerce/ticket_checkin_screen.dart';
 import '../features/jobs/staj_ai_screen.dart';
 import '../features/legal/account_delete_screen.dart';
 import '../features/payments/pay_result_screen.dart';
@@ -455,9 +456,23 @@ GoRouter createRouter(AuthProvider auth) {
         builder: (_, _) => const CompanyOrganizerHubScreen(),
       ),
       GoRoute(
+        path: '/firma/organizer/scan',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (_, _) => const TicketCheckInScreen(),
+      ),
+      GoRoute(
         path: '/tickets',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (_, _) => const MyTicketsScreen(),
+      ),
+      GoRoute(
+        path: '/events/:id',
+        parentNavigatorKey: appRootNavigatorKey,
+        redirect: (context, state) {
+          final id = state.pathParameters['id'] ?? '';
+          if (id.isEmpty) return '/events';
+          return '/event/${Uri.encodeComponent(id)}';
+        },
       ),
       GoRoute(
         path: '/invites/:id',

@@ -471,8 +471,9 @@ async function loadCompanyMailBrand(companyId) {
             `${ud.firstName || ''} ${ud.lastName || ''}`.trim();
         }
         if (!logoUrl) {
-          logoUrl = String(ud.communityLogoUrl || ud.photoUrl || '').trim();
+          logoUrl = String(ud.communityLogoUrl || ud.photoUrl || ud.companyLogoUrl || '').trim();
         }
+        if (!signature && ud.mailSignature) signature = ud.mailSignature;
       }
     } catch (_) {}
   }
@@ -9703,6 +9704,11 @@ const _commerce = commerceModule({
   FieldValue,
   findUserDocByAnyId,
   expandFieldPaths,
+  sendMail,
+  companyBrandedEmail,
+  loadCompanyMailBrand,
+  escapeHtml,
+  brandHome: BRAND_HOME,
 });
 exports.saveOrganizerPayoutIban = _commerce.saveOrganizerPayoutIban;
 exports.adminSetOrganizerCommerce = _commerce.adminSetOrganizerCommerce;
@@ -9722,6 +9728,7 @@ exports.trackAdEvent = _commerce.trackAdEvent;
 exports.adminReviewAdCampaign = _commerce.adminReviewAdCampaign;
 exports.getActiveAds = _commerce.getActiveAds;
 exports.getMyTickets = _commerce.getMyTickets;
+exports.checkInTicket = _commerce.checkInTicket;
 
 const { orgGrowthModule } = require('./org_growth');
 const _orgGrowth = orgGrowthModule({

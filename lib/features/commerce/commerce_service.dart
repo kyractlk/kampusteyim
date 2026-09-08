@@ -188,4 +188,11 @@ class CommerceService {
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
   }
+
+  static Future<Map<String, dynamic>> checkInTicket(String payload) async {
+    final res = await _fn.httpsCallable('checkInTicket').call({
+      'payload': payload,
+    });
+    return _map(res.data);
+  }
 }

@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/breakpoints.dart';
 import 'payment_webview_screen.dart';
 import 'payments_service.dart';
 
@@ -23,25 +26,72 @@ Future<void> openPaymentCheckout(
   String? shipDistrict,
   String? shipPhone,
 }) async {
+  final sheet = _CheckoutSheet(
+    product: product,
+    provider: provider,
+    amount: amount,
+    months: months,
+    eventId: eventId,
+    tierLabel: tierLabel,
+    discountCode: discountCode,
+    sku: sku,
+    size: size,
+    city: city,
+    shipName: shipName,
+    shipAddress: shipAddress,
+    shipDistrict: shipDistrict,
+    shipPhone: shipPhone,
+  );
+  if (kIsWeb || AppBreakpoints.isWide(context)) {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480, maxHeight: 720),
+          child: sheet,
+        ),
+      ),
+    );
+    return;
+  }
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (ctx) => _CheckoutSheet(
-      product: product,
-      provider: provider,
-      amount: amount,
-      months: months,
-      eventId: eventId,
-      tierLabel: tierLabel,
-      discountCode: discountCode,
-      sku: sku,
-      size: size,
-      city: city,
-      shipName: shipName,
-      shipAddress: shipAddress,
-      shipDistrict: shipDistrict,
-      shipPhone: shipPhone,
+    builder: (ctx) => sheet,
+  );
+}
+
+Future<void> openPaymentLink(
+  BuildContext context, {
+  required String payUrl,
+  String? orderId,
+  String? product,
+}) async {
+  if (kIsWeb) {
+    final uri = Uri.tryParse(payUrl);
+    if (uri == null) return;
+    await launchUrl(uri, webOnlyWindowName: '_blank');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Ödeme yeni sekmede açıldı. Kartı girdikten sonra bu sekmeye dön.',
+          ),
+        ),
+      );
+    }
+    return;
+  }
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => PaymentWebViewScreen(
+        payUrl: payUrl,
+        orderId: orderId,
+        product: product,
+      ),
     ),
   );
 }
@@ -213,18 +263,13 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
       if ((order.provider == 'paytr' || order.provider == 'shopier') &&
           payLink != null) {
         if (!mounted) return;
-        // Sheet'i kapatıp uygulama içi WebView'da kart / 3D Secure.
         final nav = Navigator.of(context);
         nav.pop();
-        await nav.push<void>(
-          MaterialPageRoute(
-            fullscreenDialog: true,
-            builder: (_) => PaymentWebViewScreen(
-              payUrl: payLink,
-              orderId: order.orderId,
-              product: widget.product,
-            ),
-          ),
+        await openPaymentLink(
+          context,
+          payUrl: payLink,
+          orderId: order.orderId,
+          product: widget.product,
         );
         return;
       }
@@ -254,14 +299,18 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + bottom),
-      child: _loading
-          ? const SizedBox(
-              height: 160,
-              child: Center(child: CircularProgressIndicator()),
-            )
-          : SingleChildScrollView(
+    final maxH = MediaQuery.sizeOf(context).height * 0.92;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + bottom),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: _loading
+              ? const SizedBox(
+                  height: 160,
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
@@ -493,8 +542,12 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                     const SizedBox(height: 16),
                     Text(
                       _order!.provider == 'paytr'
-                          ? 'Ödeme ekranı uygulamada açılır; kart bilgisini güvenle girebilirsin.'
-                          : 'Shopier ödeme ekranı uygulamada açılır.',
+                          ? (kIsWeb
+                              ? 'Ödeme tarayıcıda yeni sekmede açılır.'
+                              : 'Ödeme ekranı uygulamada açılır; kart bilgisini güvenle girebilirsin.')
+                          : (kIsWeb
+                              ? 'Shopier ödeme ekranı yeni sekmede açılır.'
+                              : 'Shopier ödeme ekranı uygulamada açılır.'),
                     ),
                     const SizedBox(height: 12),
                     FilledButton(
@@ -503,15 +556,11 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                         if (url == null) return;
                         final nav = Navigator.of(context);
                         nav.pop();
-                        await nav.push<void>(
-                          MaterialPageRoute(
-                            fullscreenDialog: true,
-                            builder: (_) => PaymentWebViewScreen(
-                              payUrl: url,
-                              orderId: _order!.orderId,
-                              product: widget.product,
-                            ),
-                          ),
+                        await openPaymentLink(
+                          context,
+                          payUrl: url,
+                          orderId: _order!.orderId,
+                          product: widget.product,
                         );
                       },
                       child: const Text('Ödeme ekranını aç'),
@@ -525,6 +574,8 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                 ],
               ),
             ),
+        ),
+      ),
     );
   }
 

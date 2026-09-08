@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
@@ -30,7 +30,7 @@ class PaymentWebViewScreen extends StatefulWidget {
 }
 
 class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
-  late final WebViewController _controller;
+  WebViewController? _controller;
   var _loading = true;
   var _handledResult = false;
   String? _error;
@@ -38,6 +38,18 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
   @override
   void initState() {
     super.initState();
+    if (kIsWeb) {
+      _loading = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final uri = Uri.tryParse(widget.payUrl);
+        if (uri != null) {
+          await launchUrl(uri, webOnlyWindowName: '_blank');
+        }
+        if (mounted) Navigator.of(context).maybePop();
+      });
+      return;
+    }
+
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
@@ -77,7 +89,7 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
       );
 
     // PayTR 3D Secure / banka iframe — üçüncü parti çerezler gerekli.
-    if (!kIsWeb && Platform.isAndroid) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
       final platform = controller.platform;
       if (platform is AndroidWebViewController) {
         unawaited(
@@ -96,7 +108,7 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
       _error = 'Geçersiz ödeme bağlantısı.';
       _loading = false;
     } else {
-      _controller.loadRequest(uri);
+      _controller?.loadRequest(uri);
     }
   }
 
@@ -227,7 +239,7 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
                             _handledResult = false;
                           });
                           final uri = Uri.tryParse(widget.payUrl);
-                          if (uri != null) _controller.loadRequest(uri);
+                          if (uri != null) _controller?.loadRequest(uri);
                         },
                         child: const Text('Tekrar dene'),
                       ),
@@ -237,7 +249,10 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
               )
             : Stack(
                 children: [
-                  WebViewWidget(controller: _controller),
+                  if (_controller != null)
+                    WebViewWidget(controller: _controller!)
+                  else
+                    const Center(child: CircularProgressIndicator()),
                   if (_loading)
                     const LinearProgressIndicator(minHeight: 2),
                 ],

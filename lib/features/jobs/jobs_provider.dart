@@ -174,14 +174,19 @@ class JobsProvider extends ChangeNotifier {
     final authUid = FirebaseAuth.instance.currentUser?.uid;
     final id = (authUid != null && authUid.isNotEmpty)
         ? authUid
-        : (userId ?? 'c_${email.hashCode.abs()}');
+        : (userId ?? '');
+    if (id.isEmpty) {
+      status = 'Oturum gerekli — firma paneline Firebase ile girin';
+      notifyListeners();
+      return;
+    }
     company = CompanyAccount(
       id: id,
       name: companyName.isEmpty ? email.split('@').first : companyName,
       email: email,
     );
     try {
-      await FirebaseFirestore.instance.collection('companies').doc(company!.id).set({
+      await FirebaseFirestore.instance.collection('companies').doc(id).set({
         'name': company!.name,
         'email': company!.email,
         'role': 'company',
@@ -189,14 +194,15 @@ class JobsProvider extends ChangeNotifier {
         'authUid': id,
         'updatedAt': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
-      // Auth uid ile users doc senkron (teklif / mail CF için)
       await FirebaseFirestore.instance.collection('users').doc(id).set({
         'role': 'company',
         'email': email,
         'fullName': company!.name,
         'updatedAt': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[jobs] companyLogin write: $e');
+    }
     await refreshCompanyProfile();
     await bindJobsFromFirestore();
     notifyListeners();
@@ -302,26 +308,50 @@ class JobsProvider extends ChangeNotifier {
 
   Future<void> saveMailSignature(CompanyMailSignature signature) async {
     if (company == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) {
+      status = 'Oturum gerekli — yeniden giriş yapın';
+      notifyListeners();
+      return;
+    }
     final ready = signature.copyWith(
       configured: signature.logoUrl.trim().isNotEmpty &&
           signature.contactName.trim().isNotEmpty &&
           signature.replyEmail.trim().contains('@'),
     );
     company = company!.copyWith(
+      id: uid,
       logoUrl: ready.logoUrl,
       mailSignature: ready,
     );
     notifyListeners();
-    await FirebaseFirestore.instance.collection('companies').doc(company!.id).set({
+    final payload = {
       'name': company!.name,
       'email': company!.email,
       'logoUrl': ready.logoUrl,
       'mailSignature': ready.toJson(),
+      'authUid': uid,
+      'role': 'company',
       'updatedAt': DateTime.now().toIso8601String(),
-    }, SetOptions(merge: true));
-    status = ready.isReady
-        ? 'Mail imzası kaydedildi'
-        : 'Eksik alanlar var — logo, yetkili adı ve e-posta zorunlu';
+    };
+    try {
+      await FirebaseFirestore.instance
+          .collection('companies')
+          .doc(uid)
+          .set(payload, SetOptions(merge: true));
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'mailSignature': ready.toJson(),
+        'companyLogoUrl': ready.logoUrl,
+        'logoUrl': ready.logoUrl,
+        'updatedAt': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+      status = ready.isReady
+          ? 'Mail imzası kaydedildi'
+          : 'Eksik alanlar var — logo, yetkili adı ve e-posta zorunlu';
+    } catch (e) {
+      debugPrint('[jobs] saveMailSignature: $e');
+      status = 'İmza kaydedilemedi: $e';
+    }
     notifyListeners();
   }
 

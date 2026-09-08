@@ -11,6 +11,7 @@ import '../../data/mock/mock_data.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../commerce/commerce_service.dart';
+import '../events/event_banner_picker.dart';
 import '../feed/feed_provider.dart';
 
 /// Organizatör firma: kampüs dışı etkinlik oluşturur → admin onayı.
@@ -87,6 +88,13 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                                 : 'Bekliyor',
                       ),
                     ),
+                    onTap: () async {
+                      final url = await pickEventBanner(context);
+                      if (url == null || url.isEmpty || !context.mounted) return;
+                      await context.read<FeedProvider>().updateEvent(
+                            e.copyWith(imageUrl: url),
+                          );
+                    },
                   ),
                 );
               },
@@ -143,6 +151,8 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
     var city = MockData.cities.first;
     var startsAt = DateTime.now().add(const Duration(days: 14));
     DateTime? deadline;
+    var bannerUrl = '';
+    var bannerBusy = false;
 
     final ok = await showModalBottomSheet<bool>(
       context: context,
@@ -178,6 +188,18 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    EventBannerPreview(
+                      url: bannerUrl,
+                      uploading: bannerBusy,
+                      onPick: () async {
+                        setLocal(() => bannerBusy = true);
+                        final url = await pickEventBanner(ctx);
+                        setLocal(() {
+                          bannerBusy = false;
+                          if (url != null && url.isNotEmpty) bannerUrl = url;
+                        });
+                      },
+                    ),
                     TextField(
                       controller: title,
                       decoration: const InputDecoration(labelText: 'Başlık *'),
@@ -392,6 +414,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
             ]
           : const [],
       paymentRequired: amount > 0,
+      imageUrl: bannerUrl.isEmpty ? null : bannerUrl,
     );
 
     await context.read<FeedProvider>().addEvent(event);

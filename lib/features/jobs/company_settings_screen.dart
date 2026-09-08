@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -76,17 +77,23 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
 
   Future<void> _pickLogo() async {
     final auth = context.read<AuthProvider>();
-    final jobs = context.read<JobsProvider>();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Logo için önce giriş yapın')),
+      );
+      return;
+    }
     final file = await MediaUpload.pickImage();
     if (file == null || !mounted) return;
     setState(() => _uploading = true);
     try {
       final url = await MediaUpload.uploadXFile(
         file: file,
-        folder: 'company_logos/${jobs.company?.id ?? 'firma'}',
+        folder: 'users/$uid/company_logo',
         firstName: auth.user?.firstName ?? 'firma',
         lastName: auth.user?.lastName ?? 'logo',
-        studentNo: jobs.company?.id ?? 'co',
+        studentNo: uid,
         isVideo: false,
       );
       if (!mounted) return;

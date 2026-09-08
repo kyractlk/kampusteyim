@@ -211,8 +211,13 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push('/firma/organizer/scan'),
+        icon: const Icon(Icons.qr_code_scanner),
+        label: const Text('QR doğrula'),
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
         children: [
           if (!hasIban)
             Container(
@@ -228,6 +233,23 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
+          Card(
+            color: AppColors.navy,
+            child: ListTile(
+              leading: const Icon(Icons.qr_code_scanner, color: Colors.white),
+              title: const Text(
+                'Kapı girişi · QR oku',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+              ),
+              subtitle: const Text(
+                'Katılımcı biletini saniyeler içinde doğrula',
+                style: TextStyle(color: Colors.white70),
+              ),
+              trailing: const Icon(Icons.chevron_right, color: Colors.white),
+              onTap: () => context.push('/firma/organizer/scan'),
+            ),
+          ),
+          const SizedBox(height: 12),
           Text(
             'Bakiye: ${balance.toStringAsFixed(2)} TL',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -336,7 +358,16 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
                         dense: true,
                         title: Text('${b['name'] ?? b['email'] ?? b['uid']}'),
                         subtitle: Text(
-                          '${b['email']} · ${b['tierLabel'] ?? ''} · ${b['amount']} TL',
+                          '${b['email']} · ${b['tierLabel'] ?? ''} · ${b['amount']} TL'
+                          '${b['status'] == 'used' || b['checkedInAt'] != null ? ' · giriş yapıldı' : ''}',
+                        ),
+                        trailing: Icon(
+                          b['status'] == 'used' || b['checkedInAt'] != null
+                              ? Icons.verified
+                              : Icons.confirmation_number_outlined,
+                          color: b['status'] == 'used' || b['checkedInAt'] != null
+                              ? AppColors.lime
+                              : AppColors.textSecondary,
                         ),
                       );
                     }),

@@ -260,6 +260,7 @@ class CompanyAccount {
           : logoUrl;
 
   CompanyAccount copyWith({
+    String? id,
     String? name,
     String? email,
     String? sector,
@@ -267,7 +268,7 @@ class CompanyAccount {
     CompanyMailSignature? mailSignature,
   }) {
     return CompanyAccount(
-      id: id,
+      id: id ?? this.id,
       name: name ?? this.name,
       email: email ?? this.email,
       sector: sector ?? this.sector,

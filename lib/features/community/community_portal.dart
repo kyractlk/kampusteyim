@@ -10,6 +10,7 @@ import '../../core/theme/app_colors.dart';
 import '../../models/models.dart';
 import '../ads/ad_campaign_form.dart';
 import '../auth/data/auth_provider.dart';
+import '../events/event_banner_picker.dart';
 import '../feed/feed_provider.dart';
 
 /// Topluluk hesabi yonetim paneli: duyuru, etkinlik, basvuru onayi, logo, reklam, kadro.
@@ -160,6 +161,8 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
   String _audience = 'followers';
   DateTime _startsAt = DateTime.now().add(const Duration(days: 7));
   DateTime _deadline = DateTime.now().add(const Duration(days: 5));
+  String _bannerUrl = '';
+  bool _bannerBusy = false;
 
   @override
   void dispose() {
@@ -237,6 +240,19 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
           onChanged: (v) => setState(() => _audience = v ?? 'followers'),
         ),
         const SizedBox(height: 8),
+        EventBannerPreview(
+          url: _bannerUrl,
+          uploading: _bannerBusy,
+          onPick: () async {
+            setState(() => _bannerBusy = true);
+            final url = await pickEventBanner(context);
+            if (!mounted) return;
+            setState(() {
+              _bannerBusy = false;
+              if (url != null && url.isNotEmpty) _bannerUrl = url;
+            });
+          },
+        ),
         ListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Etkinlik tarihi'),
@@ -287,13 +303,15 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
                 communityId: widget.me.id,
                 communityName: widget.me.fullName,
                 communityLogoUrl: widget.me.communityLogoUrl,
-                imageUrl:
-                    'https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/900/420',
+                imageUrl: _bannerUrl.isNotEmpty
+                    ? _bannerUrl
+                    : widget.me.communityLogoUrl,
               ),
               notifyAudience: true,
             );
             _title.clear();
             _desc.clear();
+            _bannerUrl = '';
             if (!context.mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Etkinlik yayinlandi')),

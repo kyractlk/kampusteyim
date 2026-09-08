@@ -102,5 +102,23 @@ service firebase.storage {
         && underSize()
         && request.resource.contentType.matches('image/.*');
     }
+
+    // Firma mail imzası logosu.
+    match /company_logos/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && underSize()
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Etkinlik banner / kapak görselleri.
+    match /events/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && underSize()
+        && request.resource.contentType.matches('image/.*');
+    }
   }
 }
