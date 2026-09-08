@@ -109,6 +109,30 @@ class AppNav {
     }
   }
 
+  static bool _isOurHost(Uri uri) {
+    final h = uri.host.toLowerCase();
+    return h.isEmpty ||
+        h == 'local' ||
+        h == 'x' ||
+        h == 'app.kampusteyim.app' ||
+        h == 'ayskampuss.web.app' ||
+        h == 'ayskampuss.firebaseapp.com' ||
+        h == 'kampusteyim.app';
+  }
+
+  /// KampüsteyimAPP içi hedef mi? (harici sponsor URL’si değil)
+  static bool isInAppDestination(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return false;
+    if (t.startsWith('/')) return true;
+    if (!(t.startsWith('http://') || t.startsWith('https://'))) return true;
+    try {
+      return _isOurHost(Uri.parse(t));
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Ham URL / path → uygulama içi rota (post, event, duyuru, reels, profil…).
   static bool openDeepLink(BuildContext context, String raw) {
     final t = raw.trim();
@@ -120,6 +144,7 @@ class AppNav {
     try {
       if (t.startsWith('http://') || t.startsWith('https://')) {
         uri = Uri.parse(t);
+        if (!_isOurHost(uri)) return false;
       } else if (t.startsWith('/')) {
         uri = Uri.parse('app://local$t');
       } else {

@@ -1416,6 +1416,16 @@ function commerceModule({
         createdAt: nowIso(),
         updatedAt: nowIso(),
       };
+      if (row.linkType === 'job' && row.linkJobId) {
+        const postId = String(row.linkJobId).startsWith('job_')
+          ? row.linkJobId
+          : `job_${row.linkJobId}`;
+        row.linkUrl = `https://app.kampusteyim.app/post/${encodeURIComponent(postId)}`;
+      } else if (row.linkType === 'event' && row.linkEventId) {
+        row.linkUrl = `https://app.kampusteyim.app/event/${encodeURIComponent(
+          row.linkEventId,
+        )}`;
+      }
       await ref.set(row);
       return { ok: true, id: ref.id, status: row.status };
     },

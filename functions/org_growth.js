@@ -32,6 +32,49 @@ function orgGrowthModule({
     return new Date().toISOString();
   }
 
+  /** Reklam tıklanınca gidilecek uygulama içi path + mutlak URL. */
+  function resolveAdDeepLink(ad) {
+    const type = String(ad?.linkType || '').trim();
+    const jobId = String(ad?.linkJobId || '').trim();
+    const eventId = String(ad?.linkEventId || '').trim();
+    const rawUrl = String(ad?.linkUrl || '').trim();
+    const feedPostId = String(ad?.feedPostId || '').trim();
+
+    if (type === 'event' && eventId) {
+      const path = `/event/${encodeURIComponent(eventId)}`;
+      return { path, url: `${BRAND_HOME}${path}` };
+    }
+    if (type === 'job' && jobId) {
+      const postId = jobId.startsWith('job_') ? jobId : `job_${jobId}`;
+      const path = `/post/${encodeURIComponent(postId)}`;
+      return { path, url: `${BRAND_HOME}${path}` };
+    }
+    if (rawUrl) {
+      if (rawUrl.startsWith('/')) {
+        return { path: rawUrl, url: `${BRAND_HOME}${rawUrl}` };
+      }
+      try {
+        const u = new URL(rawUrl);
+        const host = String(u.hostname || '').toLowerCase();
+        if (
+          host === 'app.kampusteyim.app' ||
+          host === 'ayskampuss.web.app' ||
+          host === 'ayskampuss.firebaseapp.com' ||
+          host === 'kampusteyim.app'
+        ) {
+          const path = `${u.pathname || '/'}${u.search || ''}`;
+          return { path, url: `${BRAND_HOME}${path}` };
+        }
+        return { path: null, url: rawUrl };
+      } catch (_) {}
+    }
+    if (feedPostId) {
+      const path = `/post/${encodeURIComponent(feedPostId)}`;
+      return { path, url: `${BRAND_HOME}${path}` };
+    }
+    return { path: '/home', url: `${BRAND_HOME}/home` };
+  }
+
   function citiesAreNationwide(cities) {
     return (cities || []).some((c) => {
       const s = String(c || '')
@@ -120,8 +163,8 @@ p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
       '<br/>',
     );
     const ctaLabel = escapeHtml(String(ad.ctaLabel || 'Detayları Gör'));
-    const directUrl = String(ad.linkUrl || '');
-    const hasCta = /^https:\/\//i.test(directUrl);
+    const dest = resolveAdDeepLink(ad);
+    const hasCta = Boolean(dest.url);
     const clickUrl = `${EMAIL_CLICK_URL}?ad=${encodeURIComponent(
       ad.id,
     )}&u=${encodeURIComponent(recipientId)}`;
@@ -211,13 +254,13 @@ p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
       try {
         await incrementEmailMetric(adId, 'emailClicks', userId);
         const snap = await db.collection(ADS).doc(adId).get();
-        const url = String(snap.data()?.linkUrl || '');
-        if (/^https:\/\//i.test(url)) {
-          response.redirect(302, url);
+        const dest = resolveAdDeepLink({ id: adId, ...(snap.data() || {}) });
+        if (dest.url) {
+          response.redirect(302, dest.url);
           return;
         }
       } catch (_) {}
-      response.status(404).send('Bağlantı bulunamadı');
+      response.redirect(302, `${BRAND_HOME}/home`);
     },
   );
 
@@ -560,15 +603,8 @@ p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
     const imageUrl = String(
       ad.imageVariants?.feed || ad.imageUrl || '',
     ).trim();
-    const linkType = String(ad.linkType || '');
-    let ctaUrl = String(ad.linkUrl || '').trim();
-    if (!ctaUrl && linkType === 'event' && ad.linkEventId) {
-      ctaUrl = `https://app.kampusteyim.app/event/${encodeURIComponent(
-        String(ad.linkEventId),
-      )}`;
-    } else if (!ctaUrl && linkType === 'job' && ad.linkJobId) {
-      ctaUrl = 'https://app.kampusteyim.app/jobs';
-    }
+    const dest = resolveAdDeepLink(ad);
+    const ctaUrl = dest.url;
     const title = sanitizePlainText(ad.title || 'Sponsorlu içerik', 120);
     const body = sanitizePlainText(ad.body || '', 800);
     await postRef.set(
@@ -607,6 +643,8 @@ p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
       {
         feedPostId: postId,
         feedPostPath: `/post/${encodeURIComponent(postId)}`,
+        ctaUrl,
+        linkUrl: String(ad.linkUrl || '').trim() || ctaUrl,
         updatedAt: nowIso(),
       },
       { merge: true },
@@ -693,7 +731,22 @@ p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
       120,
     );
     const linkedPostId = await ensureAdLinkedPost(adId, ad, ref);
-    const linkedPostPath = `/post/${encodeURIComponent(linkedPostId)}`;
+    const dest = resolveAdDeepLink({
+      ...ad,
+      feedPostId: linkedPostId,
+      id: adId,
+    });
+    const destPath = dest.path || `/post/${encodeURIComponent(linkedPostId)}`;
+    const destTarget =
+      (ad.linkType === 'job' && ad.linkJobId
+        ? String(ad.linkJobId).startsWith('job_')
+          ? String(ad.linkJobId)
+          : `job_${ad.linkJobId}`
+        : '') ||
+      (ad.linkType === 'event' && ad.linkEventId
+        ? String(ad.linkEventId)
+        : '') ||
+      linkedPostId;
     let pushN = 0;
     let mailN = 0;
     for (const u of targets) {
@@ -709,8 +762,9 @@ p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
               body,
               emoji: '📢',
               type: 'promo',
-              targetId: linkedPostId,
-              linkPath: linkedPostPath,
+              targetId: destTarget,
+              link: destPath,
+              linkPath: destPath,
               adCampaignId: adId,
               read: false,
               createdAt: nowIso(),
@@ -724,15 +778,17 @@ p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
                 body,
                 type: 'promo',
                 data: {
-                  targetId: linkedPostId,
-                  link: linkedPostPath,
+                  targetId: destTarget,
+                  link: destPath,
                   adId,
                 },
               }),
             );
             pushN += 1;
           }
-        } catch (_) {}
+        } catch (e) {
+          console.error('[ad-reach] push', u.id, e?.message || e);
+        }
       }
       if (wantMail) {
         const email = String(u.email || '').toLowerCase();
@@ -793,6 +849,11 @@ p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
         .get();
       for (const doc of snap.docs) {
         const ad = doc.data() || {};
+        try {
+          await ensureAdLinkedPost(doc.id, ad, doc.ref);
+        } catch (error) {
+          console.error('[ad-cta-repair]', doc.id, error?.message || error);
+        }
         if (ad.reachDispatchedAt) continue;
         try {
           await dispatchReachInternal(doc.id);

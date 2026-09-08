@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart' as fa;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:image_picker/image_picker.dart';
@@ -1508,11 +1509,17 @@ class PostCard extends StatelessWidget {
                             placement: 'push',
                           );
                         }
-                        final uri = Uri.tryParse(post.ctaUrl!);
-                        if (uri != null) {
+                        final dest = post.ctaUrl!.trim();
+                        if (dest.isEmpty) return;
+                        if (AppNav.openDeepLink(context, dest)) return;
+                        final uri = Uri.tryParse(dest);
+                        if (uri != null &&
+                            (uri.scheme == 'http' || uri.scheme == 'https')) {
                           await launchUrl(
                             uri,
-                            mode: LaunchMode.externalApplication,
+                            mode: kIsWeb
+                                ? LaunchMode.platformDefault
+                                : LaunchMode.externalApplication,
                           );
                         }
                       },

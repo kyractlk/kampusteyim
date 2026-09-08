@@ -188,6 +188,24 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
       if (!widget.allowEventLink && linkType == 'event') {
         linkType = 'none';
       }
+      final eventId = linkType == 'event'
+          ? (_linkEventId ??
+              (widget.events.isNotEmpty ? widget.events.first.id : null))
+          : _linkEventId;
+      final jobId = linkType == 'job'
+          ? (_linkJobId ??
+              (widget.jobs.isNotEmpty ? widget.jobs.first.id : null))
+          : _linkJobId;
+      var linkUrl = _linkUrl.text.trim();
+      if (linkType == 'event' && (eventId ?? '').isNotEmpty) {
+        linkUrl =
+            'https://app.kampusteyim.app/event/${Uri.encodeComponent(eventId!)}';
+      } else if (linkType == 'job' && (jobId ?? '').isNotEmpty) {
+        final postId =
+            jobId!.startsWith('job_') ? jobId : 'job_$jobId';
+        linkUrl =
+            'https://app.kampusteyim.app/post/${Uri.encodeComponent(postId)}';
+      }
       final hours = _hours.text.trim().isNotEmpty
           ? _hours.text.trim()
           : (_hourFrom != null && _hourTo != null)
@@ -203,9 +221,9 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
         'targetCities': _cities.toList(),
         'targetUniversities': const <String>[],
         'linkType': linkType,
-        'linkEventId': _linkEventId,
-        'linkJobId': _linkJobId,
-        'linkUrl': _linkUrl.text.trim(),
+        'linkEventId': eventId,
+        'linkJobId': jobId,
+        'linkUrl': linkUrl,
         'scheduleStart': _startAt?.toUtc().toIso8601String() ?? '',
         'scheduleEnd': _endAt?.toUtc().toIso8601String() ?? '',
         'preferredHours': hours,
@@ -415,7 +433,19 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
                         ),
                       const DropdownMenuItem(value: 'url', child: Text('URL')),
                     ],
-                    onChanged: (v) => setState(() => _linkType = v ?? 'none'),
+                    onChanged: (v) => setState(() {
+                      _linkType = v ?? 'none';
+                      if (_linkType == 'job' &&
+                          _linkJobId == null &&
+                          widget.jobs.isNotEmpty) {
+                        _linkJobId = widget.jobs.first.id;
+                      }
+                      if (_linkType == 'event' &&
+                          _linkEventId == null &&
+                          widget.events.isNotEmpty) {
+                        _linkEventId = widget.events.first.id;
+                      }
+                    }),
                     decoration: const InputDecoration(labelText: 'Öne çıkar'),
                   ),
                   if (widget.allowEventLink &&

@@ -1,5 +1,5 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -153,22 +153,33 @@ class _AdCardState extends State<AdCard> {
     if (!mounted) return;
     final type = '${ad['linkType'] ?? 'none'}';
     if (type == 'event') {
-      final id = '${ad['linkEventId'] ?? ''}';
+      final id = '${ad['linkEventId'] ?? ''}'.trim();
       if (id.isNotEmpty) {
-        context.push('/event/${Uri.encodeComponent(id)}');
+        AppNav.openEvent(context, id);
         return;
       }
     }
     if (type == 'job') {
-      context.push('/jobs');
-      return;
+      final id = '${ad['linkJobId'] ?? ''}'.trim();
+      if (id.isNotEmpty) {
+        final postId = id.startsWith('job_') ? id : 'job_$id';
+        AppNav.openPost(context, postId);
+        return;
+      }
     }
-    final url = '${ad['linkUrl'] ?? ''}';
-    if (url.startsWith('http')) {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      return;
+    final url = '${ad['linkUrl'] ?? ''}'.trim();
+    if (url.isNotEmpty) {
+      if (AppNav.openDeepLink(context, url)) return;
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        await launchUrl(
+          Uri.parse(url),
+          mode: kIsWeb
+              ? LaunchMode.platformDefault
+              : LaunchMode.externalApplication,
+        );
+        return;
+      }
     }
-    // Bağlantı yoksa reklam veren hesaba git.
     _openOwner();
   }
 

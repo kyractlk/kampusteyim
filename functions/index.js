@@ -569,6 +569,8 @@ function userAllowsPush(userData, type) {
       return prefs.activity !== false;
     case 'admin_broadcast':
       return prefs.admin !== false;
+    case 'promo':
+      return prefs.pushEnabled !== false;
     case 'mention':
       return prefs.mentions !== false;
     default:

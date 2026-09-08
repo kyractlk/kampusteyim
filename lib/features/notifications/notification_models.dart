@@ -58,7 +58,10 @@ class AppNotification {
       createdAt: DateTime.tryParse('${json['createdAt']}') ?? DateTime.now(),
       actorId: json['actorId'] as String?,
       targetId: json['targetId'] as String?,
-      link: json['link'] as String?,
+      link: () {
+        final raw = '${json['link'] ?? json['linkPath'] ?? ''}'.trim();
+        return raw.isEmpty ? null : raw;
+      }(),
       read: json['read'] == true,
     );
   }

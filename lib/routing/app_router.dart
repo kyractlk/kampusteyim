@@ -411,6 +411,10 @@ GoRouter createRouter(AuthProvider auth) {
         builder: (context, state) => const StajAiScreen(),
       ),
       GoRoute(
+        path: '/jobs',
+        redirect: (_, _) => '/staj-ai',
+      ),
+      GoRoute(
         path: '/firma',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (_, _) => const CompanyLoginScreen(),
