@@ -67,9 +67,13 @@ class _TicketCheckInScreenState extends State<TicketCheckInScreen> {
       setState(() {
         _flashOk = ok;
         _flash = already
-            ? 'Bu bilet daha önce okutuldu'
+            ? (result['remaining'] == 0 || result['remaining'] == '0'
+                ? 'Bu biletin giriş hakkı doldu'
+                : 'Bu okutma zaten kayıtlarda')
             : ok
-                ? 'Giriş onaylandı'
+                ? (result['entryType'] == 'multi'
+                    ? 'Giriş ${result['entriesUsed']}/${result['entryLimit']} · kalan ${result['remaining']}'
+                    : 'Giriş onaylandı')
                 : '${result['message'] ?? 'Doğrulanamadı'}';
         _recent.insert(0, {
           'ok': ok,

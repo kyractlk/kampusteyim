@@ -55,7 +55,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Kampüs dışı etkinliklerim')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openCreate(context, me),
+        onPressed: () => _openEditor(context, me),
         icon: const Icon(Icons.add),
         label: const Text('Etkinlik ekle'),
       ),
@@ -76,7 +76,8 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                     title: Text(e.title,
                         style: const TextStyle(fontWeight: FontWeight.w800)),
                     subtitle: Text(
-                      '$date\n${e.city.isEmpty ? 'Gaziantep' : e.city} · ${e.status}',
+                      '$date\n${e.city.isEmpty ? 'Gaziantep' : e.city} · ${e.status}'
+                      '${e.refundsAllowed ? ' · iade var' : ' · iade yok'}',
                     ),
                     isThreeLine: true,
                     trailing: Chip(
@@ -88,13 +89,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                                 : 'Bekliyor',
                       ),
                     ),
-                    onTap: () async {
-                      final url = await pickEventBanner(context);
-                      if (url == null || url.isEmpty || !context.mounted) return;
-                      await context.read<FeedProvider>().updateEvent(
-                            e.copyWith(imageUrl: url),
-                          );
-                    },
+                    onTap: () => _openEditor(context, me, existing: e),
                   ),
                 );
               },
@@ -102,58 +97,69 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
     );
   }
 
-  Future<void> _openCreate(BuildContext context, AppUser me) async {
-    // Etkinlik açmadan önce çekim IBAN zorunlu
-    try {
-      final data = await CommerceService.getOrganizerDashboard();
-      final s = Map<String, dynamic>.from(data['settings'] as Map? ?? {});
-      final iban = '${s['payoutIban'] ?? ''}'.trim();
-      final holder = '${s['payoutIbanHolder'] ?? ''}'.trim();
-      if (iban.isEmpty || holder.isEmpty) {
-        if (!context.mounted) return;
-        final go = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Önce IBAN kaydet'),
-            content: const Text(
-              'Etkinlik açmadan önce organizatör çekim IBAN’ını '
-              'sisteme kaydetmelisin.',
+  Future<void> _openEditor(BuildContext context, AppUser me, {CampusEvent? existing}) async {
+    final editing = existing != null;
+    if (!editing) {
+      try {
+        final data = await CommerceService.getOrganizerDashboard();
+        final s = Map<String, dynamic>.from(data['settings'] as Map? ?? {});
+        final iban = '${s['payoutIban'] ?? ''}'.trim();
+        final holder = '${s['payoutIbanHolder'] ?? ''}'.trim();
+        if (iban.isEmpty || holder.isEmpty) {
+          if (!context.mounted) return;
+          final go = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Önce IBAN kaydet'),
+              content: const Text(
+                'Etkinlik açmadan önce organizatör çekim IBAN’ını '
+                'sisteme kaydetmelisin.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Vazgeç'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Organizatör paneli'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Vazgeç'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Organizatör paneli'),
-              ),
-            ],
-          ),
-        );
-        if (go == true && context.mounted) {
-          context.push('/firma/organizer');
+          );
+          if (go == true && context.mounted) {
+            context.push('/firma/organizer');
+          }
+          return;
         }
-        return;
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
 
     if (!context.mounted) return;
-    final title = TextEditingController();
-    final desc = TextEditingController();
-    final location = TextEditingController();
-    final mapUrl = TextEditingController();
-    final rules = TextEditingController();
-    final capacity = TextEditingController(text: '100');
-    final priceLabel = TextEditingController(text: 'Erken kayıt');
-    final priceAmount = TextEditingController(text: '0');
-    final ticketStock = TextEditingController(text: '100');
-    var city = MockData.cities.first;
-    var startsAt = DateTime.now().add(const Duration(days: 14));
-    DateTime? deadline;
-    var bannerUrl = '';
+    final title = TextEditingController(text: existing?.title ?? '');
+    final desc = TextEditingController(text: existing?.description ?? '');
+    final location = TextEditingController(text: existing?.location ?? '');
+    final mapUrl = TextEditingController(text: existing?.mapUrl ?? '');
+    final rules = TextEditingController(text: existing?.rules ?? '');
+    final capacity =
+        TextEditingController(text: '${existing?.capacity ?? 100}');
+    final drafts = <_PriceTierDraft>[
+      if (existing != null && existing.priceTiers.isNotEmpty)
+        ...existing.priceTiers.map(_PriceTierDraft.fromTier)
+      else
+        _PriceTierDraft(),
+    ];
+    var city = (existing?.city.isNotEmpty == true)
+        ? existing!.city
+        : MockData.cities.first;
+    var startsAt =
+        existing?.startsAt ?? DateTime.now().add(const Duration(days: 14));
+    DateTime? deadline = existing?.applicationDeadline;
+    var bannerUrl = existing?.imageUrl ?? '';
+    var refundsAllowed = existing?.refundsAllowed == true;
     var bannerBusy = false;
 
+    try {
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -172,16 +178,18 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      'Yeni kampüs dışı etkinlik',
+                    Text(
+                      editing ? 'Etkinliği düzenle' : 'Yeni kampüs dışı etkinlik',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 18,
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      'Kaydettikten sonra admin onayına düşer. Onaylanınca listelenir.',
+                    Text(
+                      editing
+                          ? 'İade politikası ve bilet tipi sonradan da değişebilir. Satılmış biletlerin tipi değişmez.'
+                          : 'Kaydettikten sonra admin onayına düşer. Onaylanınca listelenir.',
                       style: TextStyle(
                         fontSize: 12.5,
                         color: AppColors.textSecondary,
@@ -322,45 +330,62 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                       },
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Fiyat dilimi',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 6),
                     Row(
                       children: [
-                        Expanded(
-                          child: TextField(
-                            controller: priceLabel,
-                            decoration:
-                                const InputDecoration(labelText: 'Dilimler'),
+                        const Expanded(
+                          child: Text(
+                            'Bilet dönemleri',
+                            style: TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        SizedBox(
-                          width: 110,
-                          child: TextField(
-                            controller: priceAmount,
-                            keyboardType: TextInputType.number,
-                            decoration:
-                                const InputDecoration(labelText: '₺'),
+                        TextButton.icon(
+                          onPressed: () => setLocal(
+                            () => drafts.add(_PriceTierDraft(
+                              label: 'Dönem ${drafts.length + 1}',
+                            )),
                           ),
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Dönem ekle'),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: ticketStock,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Bilet stoku',
-                        helperText: 'Market’te stok bitince “Stok bitti” görünür',
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Her dönemde fiyat, stok ve bilet tipi (tek / çoklu giriş) ayrı seçilir.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    for (var i = 0; i < drafts.length; i++)
+                      _PriceTierDraftCard(
+                        index: i,
+                        draft: drafts[i],
+                        canRemove: drafts.length > 1,
+                        onChanged: () => setLocal(() {}),
+                        onRemove: () => setLocal(() {
+                          drafts.removeAt(i).dispose();
+                        }),
+                      ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('İade yapılabilir'),
+                      subtitle: Text(
+                        refundsAllowed
+                            ? 'İade onayında bilet iptal, kontenjan açılır, bakiyeden net tutar düşer (komisyon kalır).'
+                            : 'İade yok — etkinlik sayfasında ve satış sözleşmesinde belirtilir.',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: refundsAllowed,
+                      onChanged: (v) => setLocal(() => refundsAllowed = v),
                     ),
                     const SizedBox(height: 16),
                     FilledButton(
                       onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Admin onayına gönder'),
+                      child: Text(
+                        editing ? 'Kaydet' : 'Admin onayına gönder',
+                      ),
                     ),
                   ],
                 ),
@@ -381,50 +406,49 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
       return;
     }
 
-    final amount = double.tryParse(priceAmount.text.replaceAll(',', '.')) ?? 0;
-    final stock =
-        int.tryParse(ticketStock.text.trim()) ?? int.tryParse(capacity.text) ?? 100;
+    final cap = int.tryParse(capacity.text) ?? 100;
+    final tiers = <EventPriceTier>[];
+    for (final d in drafts) {
+      final t = d.toTier(
+        fallbackStock: cap,
+        saleEndsAt: deadline ?? startsAt,
+      );
+      if (t != null) tiers.add(t);
+    }
     final event = CampusEvent(
-      id: 'evt_${const Uuid().v4().substring(0, 10)}',
+      id: existing?.id ?? 'evt_${const Uuid().v4().substring(0, 10)}',
       title: title.text.trim(),
       description: desc.text.trim(),
       location: location.text.trim(),
       startsAt: startsAt,
-      capacity: int.tryParse(capacity.text) ?? 100,
-      audience: 'campus',
+      capacity: cap,
+      audience: existing?.audience ?? 'campus',
       applicationDeadline: deadline,
       scope: 'offcampus',
       city: city,
-      university: '',
-      status: 'pending',
+      university: existing?.university ?? '',
+      status: existing?.status ?? 'pending',
       organizerCompanyId: me.id,
       organizerCompanyName: me.fullName,
       mapUrl: mapUrl.text.trim(),
       rules: rules.text.trim(),
-      priceTiers: amount > 0
-          ? [
-              EventPriceTier(
-                label: priceLabel.text.trim().isEmpty
-                    ? 'Bilet'
-                    : priceLabel.text.trim(),
-                amount: amount,
-                stock: stock,
-                saleEndsAt: deadline ?? startsAt,
-              ),
-            ]
-          : const [],
-      paymentRequired: amount > 0,
+      priceTiers: tiers,
+      paymentRequired: tiers.isNotEmpty,
+      refundsAllowed: refundsAllowed,
       imageUrl: bannerUrl.isEmpty ? null : bannerUrl,
     );
 
-    await context.read<FeedProvider>().addEvent(event);
-    // Firestore'a status alanının yazıldığından emin ol
+    if (editing) {
+      await context.read<FeedProvider>().updateEvent(event);
+    } else {
+      await context.read<FeedProvider>().addEvent(event);
+    }
     await FirebaseFirestore.instance.collection('events').doc(event.id).set(
       event.toMap(),
       SetOptions(merge: true),
     );
 
-    if (amount > 0) {
+    if (tiers.isNotEmpty) {
       try {
         await FirebaseFunctions.instanceFor(region: 'europe-west1')
             .httpsCallable('syncEventMarketTickets')
@@ -434,8 +458,195 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
 
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Etkinlik admin onayına gönderildi · bilet Market’e işlendi'),
+      SnackBar(
+        content: Text(
+          editing
+              ? 'Etkinlik güncellendi'
+              : 'Etkinlik admin onayına gönderildi · bilet Market’e işlendi',
+        ),
+      ),
+    );
+    } finally {
+      title.dispose();
+      desc.dispose();
+      location.dispose();
+      mapUrl.dispose();
+      rules.dispose();
+      capacity.dispose();
+      for (final d in drafts) {
+        d.dispose();
+      }
+    }
+  }
+}
+
+class _PriceTierDraft {
+  _PriceTierDraft({
+    String label = 'Erken kayıt',
+    String amount = '0',
+    String stock = '100',
+    this.entryType = 'single',
+    String entryLimit = '2',
+    this.soldCount = 0,
+    this.saleEndsAt,
+  })  : label = TextEditingController(text: label),
+        amount = TextEditingController(text: amount),
+        stock = TextEditingController(text: stock),
+        entryLimit = TextEditingController(text: entryLimit);
+
+  factory _PriceTierDraft.fromTier(EventPriceTier t) {
+    return _PriceTierDraft(
+      label: t.label.isNotEmpty ? t.label : 'Bilet',
+      amount: t.amount.toStringAsFixed(0),
+      stock: '${t.stock ?? 100}',
+      entryType: t.isMultiEntry ? 'multi' : 'single',
+      entryLimit: '${t.isMultiEntry ? t.entryLimit : 2}',
+      soldCount: t.soldCount,
+      saleEndsAt: t.saleEndsAt,
+    );
+  }
+
+  final TextEditingController label;
+  final TextEditingController amount;
+  final TextEditingController stock;
+  final TextEditingController entryLimit;
+  String entryType;
+  int soldCount;
+  DateTime? saleEndsAt;
+
+  EventPriceTier? toTier({required int fallbackStock, DateTime? saleEndsAt}) {
+    final n = double.tryParse(amount.text.replaceAll(',', '.')) ?? 0;
+    if (n <= 0) return null;
+    var limit = int.tryParse(entryLimit.text.trim()) ?? 2;
+    if (entryType != 'multi') limit = 1;
+    if (entryType == 'multi' && limit < 2) limit = 2;
+    if (limit > 99) limit = 99;
+    return EventPriceTier(
+      label: label.text.trim().isEmpty ? 'Bilet' : label.text.trim(),
+      amount: n,
+      stock: int.tryParse(stock.text.trim()) ?? fallbackStock,
+      saleEndsAt: this.saleEndsAt ?? saleEndsAt,
+      entryType: entryType,
+      entryLimit: limit,
+      soldCount: soldCount,
+    );
+  }
+
+  void dispose() {
+    label.dispose();
+    amount.dispose();
+    stock.dispose();
+    entryLimit.dispose();
+  }
+}
+
+class _PriceTierDraftCard extends StatelessWidget {
+  const _PriceTierDraftCard({
+    required this.index,
+    required this.draft,
+    required this.canRemove,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final int index;
+  final _PriceTierDraft draft;
+  final bool canRemove;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Dönem ${index + 1}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                if (canRemove)
+                  IconButton(
+                    tooltip: 'Dönemi sil',
+                    onPressed: onRemove,
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+              ],
+            ),
+            TextField(
+              controller: draft.label,
+              decoration: const InputDecoration(labelText: 'Dönem adı'),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: draft.amount,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Fiyat ₺'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: draft.stock,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Stok',
+                      helperText: 'Bitince “Stok bitti”',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Bilet tipi',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Tek giriş'),
+                  selected: draft.entryType == 'single',
+                  onSelected: (_) {
+                    draft.entryType = 'single';
+                    onChanged();
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Çoklu giriş'),
+                  selected: draft.entryType == 'multi',
+                  onSelected: (_) {
+                    draft.entryType = 'multi';
+                    onChanged();
+                  },
+                ),
+              ],
+            ),
+            if (draft.entryType == 'multi') ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: draft.entryLimit,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Kaç kez okutulabilir',
+                  helperText: 'Örn. 3 → üç kez giriş, sonra bilet kapanır',
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

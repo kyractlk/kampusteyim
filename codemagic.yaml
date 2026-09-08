@@ -46,9 +46,9 @@ workflows:
           pod install --repo-update
       - name: Build number
         script: |
-          # App Store’da son yüklenen cfBundleVersion 33+ — yeni build daha yüksek olmalı
-          BN="${BUILD_NUMBER:-35}"
-          if [ "$BN" -le 34 ]; then BN=35; fi
+          # App Store’da son yüklenen cfBundleVersion 35+ — yeni build daha yüksek olmalı
+          BN="${BUILD_NUMBER:-36}"
+          if [ "$BN" -le 35 ]; then BN=36; fi
           # Flutter semver 3 parça ister (1.71 geçersiz). App Store adı 1.71 --build-name ile.
           sed -i '' -E "s/^version: .*/version: 1.71.0+$BN/" pubspec.yaml
           echo "$BN" > /tmp/ios_bn
@@ -93,7 +93,7 @@ workflows:
             echo "ERROR: GoogleService-Info.plist not in Xcode Resources (Firebase launch crash)"
             exit 1
           fi
-          BN="$(cat /tmp/ios_bn 2>/dev/null || echo "${BUILD_NUMBER:-35}")"
+          BN="$(cat /tmp/ios_bn 2>/dev/null || echo "${BUILD_NUMBER:-36}")"
           flutter build ipa --release \
             --build-name=1.71 \
             --build-number="$BN" \
@@ -186,7 +186,7 @@ workflows:
       - name: Flutter Ad Hoc RELEASE IPA
         script: |
           set -e
-          BN="$(cat /tmp/ios_bn 2>/dev/null || echo "${BUILD_NUMBER:-35}")"
+          BN="$(cat /tmp/ios_bn 2>/dev/null || echo "${BUILD_NUMBER:-36}")"
           flutter build ipa --release \
             --build-name=1.71 \
             --build-number="$BN" \
@@ -264,8 +264,8 @@ workflows:
           flutter --version
       - name: Build number
         script: |
-          BN="${BUILD_NUMBER:-72}"
-          if [ "$BN" -le 71 ]; then BN=72; fi
+          BN="${BUILD_NUMBER:-73}"
+          if [ "$BN" -le 72 ]; then BN=73; fi
           sed -i '' -E "s/^version: .*/version: 1.1.0+$BN/" pubspec.yaml
           grep '^version:' pubspec.yaml
       - name: Build signed APK + AAB

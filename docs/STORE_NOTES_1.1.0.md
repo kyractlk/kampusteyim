@@ -2,7 +2,7 @@
 
 ## App Store / Play “What’s New”
 
-Hesaplar arasında çıkış yapmadan geç. Tanıtım kartı ve QR istatistikleri. Resmi hesap duyuru, firma ve bilet açabilir. Profil fotoğrafları bozulmadan sığar. Silinen hesap takipçi listesinde hayalet bırakmaz.
+Hesaplar arasında çıkış yapmadan geç. Tanıtım kartı ve QR istatistikleri. Resmi hesap duyuru, firma ve bilet açabilir. Profil fotoğrafları bozulmadan sığar. Silinen hesap takipçi listesinde hayalet bırakmaz. Etkinlik biletinde iade politikası, tek/çoklu giriş ve satış sözleşmesi onayı.
 
 ## App Review
 
@@ -14,7 +14,7 @@ Hesaplar arasında çıkış yapmadan geç. Tanıtım kartı ve QR istatistikler
 ## Android
 
 - versionName: 1.1.0
-- versionCode: 68
+- versionCode: 73
 - AAB: `release/KampusteyimAPP-1.1.0.aab`
 
 ## Sürüm rayları

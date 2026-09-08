@@ -112,6 +112,12 @@ module.exports = function createMarketProducts({
       startsAt: event.startsAt ? String(event.startsAt) : null,
       city: sanitizePlainText(event.city || '', 80),
       active: String(event.status || 'approved') === 'approved',
+      entryType: String(tier.entryType || 'single').toLowerCase() === 'multi' ? 'multi' : 'single',
+      entryLimit:
+        String(tier.entryType || '').toLowerCase() === 'multi'
+          ? Math.max(2, Math.min(99, Math.floor(Number(tier.entryLimit) || 2)))
+          : 1,
+      refundsAllowed: event.refundsAllowed === true,
       updatedAt: new Date().toISOString(),
     };
     await db.collection(COL).doc(id).set(payload, { merge: true });

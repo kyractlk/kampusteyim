@@ -9876,6 +9876,10 @@ const _payments = paymentsModule({
   listPublicMerchProducts: _marketProducts.listPublicMerchProducts,
   resolveMerchBySku: _marketProducts.resolveMerchBySku,
   sendMail,
+  brandedEmail,
+  FieldValue,
+  reverseEventFulfillment: _commerce.reverseEventFulfillment,
+  reverseMerchFulfillment: _commerce.reverseMerchFulfillment,
 });
 exports.updatePaymentsConfig = _payments.updatePaymentsConfig;
 exports.getPaymentsAdmin = _payments.getPaymentsAdmin;

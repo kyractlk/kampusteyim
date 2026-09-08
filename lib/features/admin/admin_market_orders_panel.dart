@@ -221,8 +221,13 @@ class _AdminMarketOrdersPanelState extends State<AdminMarketOrdersPanel> {
           children: [
             Text(
               'Sipariş: ${orderAmount.toStringAsFixed(2)} TL · '
-              'Kalan: ${remaining.toStringAsFixed(2)} TL'
-              '${order['product'] == 'plus' ? '\nPlus iadesinde üyelik anında kapanır.' : '\nÜrün iade sürecine alınır.'}',
+              'Kalan: ${remaining.toStringAsFixed(2)} TL\n'
+              '${switch ('${order['product']}') {
+                'plus' => 'Plus iadesinde üyelik anında kapanır.',
+                'event' => 'Bilet iadesinde kontenjan açılır; organizatör bakiyesinden net tutar (komisyon hariç) düşülür. Kullanıcıya mail gider.',
+                'merch' => 'Ürün iadesi onaylanır, stok güncellenir, kullanıcıya mail gider.',
+                _ => 'İade onayında kullanıcıya mail gider.',
+              }}',
             ),
             const SizedBox(height: 12),
             TextField(
@@ -274,7 +279,8 @@ class _AdminMarketOrdersPanelState extends State<AdminMarketOrdersPanel> {
       builder: (ctx) => AlertDialog(
         title: const Text('1. onay'),
         content: Text(
-          '${returnAmount.toStringAsFixed(2)} TL PayTR üzerinden iade edilecek. Emin misin?',
+          '${returnAmount.toStringAsFixed(2)} TL iade edilecek. '
+          'Onayda kullanıcıya e-posta gider; bilet/Plus/ürün hakları anında geri alınır.',
         ),
         actions: [
           TextButton(
@@ -294,7 +300,9 @@ class _AdminMarketOrdersPanelState extends State<AdminMarketOrdersPanel> {
       builder: (ctx) => AlertDialog(
         title: const Text('2. onay · son adım'),
         content: const Text(
-          'Bu işlem geri alınamaz. PayTR iade API çağrılacak.',
+          'Bu işlem geri alınamaz. Ödeme iadesi ile birlikte bilet iptal / '
+          'Plus kapatma / stok açma hemen uygulanır. Organizatör bakiyesinden '
+          'yalnızca net tutar düşülür (komisyon kalır).',
         ),
         actions: [
           TextButton(
@@ -319,11 +327,12 @@ class _AdminMarketOrdersPanelState extends State<AdminMarketOrdersPanel> {
       });
       final data = Map<String, dynamic>.from(res.data as Map? ?? {});
       if (!mounted) return;
+      final mail = data['mailSent'] == true ? ' · e-posta gitti' : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             'İade OK · ${data['returnAmount']} TL '
-            '(${data['refundStatus']})',
+            '(${data['refundStatus']})$mail',
           ),
         ),
       );

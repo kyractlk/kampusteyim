@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/constants/app_info.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/breakpoints.dart';
 import 'payment_webview_screen.dart';
@@ -25,6 +26,7 @@ Future<void> openPaymentCheckout(
   String? shipAddress,
   String? shipDistrict,
   String? shipPhone,
+  bool? refundsAllowed,
 }) async {
   final sheet = _CheckoutSheet(
     product: product,
@@ -41,6 +43,7 @@ Future<void> openPaymentCheckout(
     shipAddress: shipAddress,
     shipDistrict: shipDistrict,
     shipPhone: shipPhone,
+    refundsAllowed: refundsAllowed,
   );
   if (kIsWeb || AppBreakpoints.isWide(context)) {
     await showDialog<void>(
@@ -112,6 +115,7 @@ class _CheckoutSheet extends StatefulWidget {
     this.shipAddress,
     this.shipDistrict,
     this.shipPhone,
+    this.refundsAllowed,
   });
 
   final String product;
@@ -128,6 +132,7 @@ class _CheckoutSheet extends StatefulWidget {
   final String? shipAddress;
   final String? shipDistrict;
   final String? shipPhone;
+  final bool? refundsAllowed;
 
   @override
   State<_CheckoutSheet> createState() => _CheckoutSheetState();
@@ -144,6 +149,7 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
   int _months = 1;
   List<Map<String, dynamic>> _myCodes = [];
   String? _previewNote;
+  bool _salesAccepted = false;
 
   @override
   void initState() {
@@ -227,6 +233,10 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
 
   Future<void> _pay() async {
     if (_selected == null) return;
+    if (!_salesAccepted) {
+      setState(() => _error = 'Satış sözleşmesini onayla.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -249,6 +259,7 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
         shipAddress: widget.shipAddress,
         shipDistrict: widget.shipDistrict,
         shipPhone: widget.shipPhone,
+        salesTermsAccepted: _salesAccepted,
       );
       setState(() => _order = order);
       if (order.provider == 'free') {
@@ -468,14 +479,43 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                   ],
                   if (widget.product == 'event') ...[
                     const SizedBox(height: 8),
-                    const Text(
-                      'Ödeyen hesap katılımcı hesaptır. İade/iptal yoktur.',
-                      style: TextStyle(
+                    Text(
+                      widget.refundsAllowed == true
+                          ? 'Ödeyen hesap katılımcı hesaptır. Bu etkinlikte iade yapılabilir; onaylanan iadede organizatör bakiyesinden net tutar düşülür, platform komisyonu iade edilmez.'
+                          : 'Ödeyen hesap katılımcı hesaptır. Bu etkinlikte iade / iptal yoktur.',
+                      style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       ),
                     ),
                   ],
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _salesAccepted,
+                    onChanged: (v) =>
+                        setState(() => _salesAccepted = v == true),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        const Text('Satış sözleşmesini okudum, kabul ediyorum. '),
+                        GestureDetector(
+                          onTap: () {
+                            final uri = Uri.parse(AppInfo.salesUrl);
+                            launchUrl(uri, mode: LaunchMode.externalApplication);
+                          },
+                          child: const Text(
+                            'Sözleşmeyi aç',
+                            style: TextStyle(
+                              color: AppColors.cyan,
+                              fontWeight: FontWeight.w800,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
                     Text(_error!, style: const TextStyle(color: Colors.red)),
@@ -501,7 +541,9 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                           ),
                     const SizedBox(height: 8),
                     FilledButton(
-                      onPressed: _busy || _selected == null ? null : _pay,
+                      onPressed: _busy || _selected == null || !_salesAccepted
+                          ? null
+                          : _pay,
                       child: _busy
                           ? const SizedBox(
                               width: 18,

@@ -178,6 +178,7 @@ class PaymentsService {
     String? shipDistrict,
     String? shipPhone,
     String source = 'app',
+    bool salesTermsAccepted = false,
   }) async {
     final res = await _fn.httpsCallable('createPaymentOrder').call({
       'product': product,
@@ -196,6 +197,7 @@ class PaymentsService {
       if (shipDistrict != null) 'shipDistrict': shipDistrict,
       if (shipPhone != null) 'shipPhone': shipPhone,
       'source': source,
+      'salesTermsAccepted': salesTermsAccepted,
     });
     return PaymentOrderResult(_map(res.data));
   }

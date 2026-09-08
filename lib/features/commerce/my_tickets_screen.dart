@@ -46,8 +46,9 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
         return 'Giriş yapıldı';
       case 'active':
         return 'Aktif';
+      case 'refunded':
       case 'cancelled':
-        return 'İptal';
+        return 'İade edildi';
       default:
         return raw.isEmpty ? 'Aktif' : raw;
     }
@@ -73,7 +74,7 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                         child: Text(
                           'Henüz biletin yok.\n'
                           'Ücretli etkinliklerde ödeme hesabın ile katılım aynıdır.\n'
-                          'İade / iptal talebi yoktur.',
+                          'İade, etkinliğin satış şartına bağlıdır.',
                           textAlign: TextAlign.center,
                           style: TextStyle(height: 1.45),
                         ),
@@ -112,6 +113,14 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
   }
 
   Future<void> _showTicketQr(Map<String, dynamic> t) async {
+    final st = '${t['status'] ?? 'active'}';
+    if (st == 'refunded' || st == 'cancelled') {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bu bilet iade edildi, QR geçersiz.')),
+      );
+      return;
+    }
     final payload = '${t['qrPayload'] ?? t['id'] ?? ''}'.trim();
     final starts = DateTime.tryParse('${t['startsAt'] ?? ''}');
     final date = starts == null
@@ -209,6 +218,7 @@ class _TicketCard extends StatelessWidget {
         ? ''
         : DateFormat('d MMM yyyy · HH:mm', 'tr').format(starts);
     final used = statusLabel == 'Giriş yapıldı';
+    final refunded = statusLabel == 'İade edildi';
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -221,12 +231,22 @@ class _TicketCard extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: AppColors.navy.withValues(alpha: 0.08),
+                  color: refunded
+                      ? AppColors.crimson.withValues(alpha: 0.12)
+                      : AppColors.navy.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
-                  used ? Icons.verified : Icons.qr_code_2_rounded,
-                  color: used ? AppColors.lime : AppColors.navy,
+                  refunded
+                      ? Icons.money_off_outlined
+                      : used
+                          ? Icons.verified
+                          : Icons.qr_code_2_rounded,
+                  color: refunded
+                      ? AppColors.crimson
+                      : used
+                          ? AppColors.lime
+                          : AppColors.navy,
                   size: 28,
                 ),
               ),
@@ -245,6 +265,8 @@ class _TicketCard extends StatelessWidget {
                         if (date.isNotEmpty) date,
                         if ('${ticket['tierLabel'] ?? ''}'.isNotEmpty)
                           '${ticket['tierLabel']}',
+                        if ('${ticket['entryType'] ?? ''}' == 'multi')
+                          'Giriş ${ticket['entriesUsed'] ?? 0}/${ticket['entryLimit'] ?? 0}',
                         '${ticket['amountPaid'] ?? 0} TL',
                         statusLabel,
                       ].join(' · '),

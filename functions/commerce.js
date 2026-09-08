@@ -30,6 +30,21 @@ function commerceModule({
     return new Date().toISOString();
   }
 
+  function normalizeTicketEntry(tierOrTicket) {
+    const type =
+      String(tierOrTicket?.entryType || '').toLowerCase() === 'multi'
+        ? 'multi'
+        : 'single';
+    let limit = Number(tierOrTicket?.entryLimit);
+    if (type === 'single' || !Number.isFinite(limit) || limit < 1) limit = 1;
+    if (type === 'multi' && limit < 2) limit = 2;
+    if (limit > 99) limit = 99;
+    return {
+      entryType: type,
+      entryLimit: type === 'multi' ? Math.floor(limit) : 1,
+    };
+  }
+
   function signTicketId(id) {
     return crypto
       .createHmac('sha256', QR_SECRET)
@@ -111,8 +126,17 @@ function commerceModule({
       <p><strong>${esc(ticket.eventTitle || 'Etkinlik')}</strong></p>
       ${starts ? `<p>Tarih: ${starts}</p>` : ''}
       ${ticket.tierLabel ? `<p>Bilet: ${esc(ticket.tierLabel)}</p>` : ''}
+      <p>Giriş: ${
+        String(ticket.entryType || '') === 'multi'
+          ? `çoklu · ${Number(ticket.entryLimit) || 2} kez okutulabilir`
+          : 'tek giriş'
+      }</p>
       <p>Kod: <code>${esc(qr)}</code></p>
-      <p style="color:#64748B;font-size:13px;">Bilet kişiye özeldir. İade / iptal yoktur.</p>
+      <p style="color:#64748B;font-size:13px;">Bilet kişiye özeldir. ${
+        event && event.refundsAllowed === true
+          ? 'Bu etkinlikte iade, organizatör bakiyesinden net tutar düşülerek yapılabilir (platform komisyonu iade edilmez).'
+          : 'Bu etkinlikte iade / iptal yoktur.'
+      }</p>
     `;
     const html =
       typeof companyBrandedEmail === 'function'
@@ -305,6 +329,14 @@ function commerceModule({
     const commission = Math.round(amount * (commissionPct / 100) * 100) / 100;
     const net = Math.round((amount - commission) * 100) / 100;
 
+    const label = String(tierLabel || 'Bilet');
+    const tiersPreview = Array.isArray(event.priceTiers) ? event.priceTiers : [];
+    const sourceTier =
+      tiersPreview.find((t) => String(t.label || '') === label) ||
+      tiersPreview[0] ||
+      {};
+    const entry = normalizeTicketEntry(sourceTier);
+
     const ticketRef = db.collection(TICKETS).doc();
     const ticket = {
       id: ticketRef.id,
@@ -325,6 +357,11 @@ function commerceModule({
       createdAt: nowIso(),
       ibanReference: order.ibanReference || null,
       qrPayload: buildQrPayload(ticketRef.id),
+      refundsAllowed: event.refundsAllowed === true,
+      entryType: entry.entryType,
+      entryLimit: entry.entryLimit,
+      entriesUsed: 0,
+      entries: [],
     };
     await ticketRef.set(ticket);
 
@@ -343,7 +380,6 @@ function commerceModule({
     if (existingIdx >= 0) apps[existingIdx] = { ...apps[existingIdx], ...appRow };
     else apps.push(appRow);
 
-    const label = tierLabel || 'Bilet';
     const tiers = Array.isArray(event.priceTiers)
       ? event.priceTiers.map((t) => ({ ...t }))
       : [];
@@ -462,6 +498,190 @@ function commerceModule({
     }
 
     return { ok: true, ticketId: ticketRef.id, net, commission };
+  }
+
+  /**
+   * Tam iade: bilet iptal, kontenjan aç, organizatörden NET tutarı geri al
+   * (komisyon platformda kalır — 10 TL bilet, %20 komisyon → işletmeciden 8 TL).
+   */
+  async function reverseEventFulfillment(order) {
+    if (!order || String(order.product || '') !== 'event') {
+      return { ok: false, skipped: true };
+    }
+    if (order.eventFulfillmentReversedAt) {
+      return { ok: true, already: true };
+    }
+    const ticketId = String(order.ticketId || '').trim();
+    const eventId = String(order.meta?.eventId || order.eventId || '').trim();
+    const organizerId = String(order.organizerId || '').trim();
+    const uid = String(order.uid || '').trim();
+    const gross = Number(order.amount) || 0;
+    const storedNet = Number(order.netToOrganizer);
+    const commission = Number(order.commission);
+    const clawback = Number.isFinite(storedNet)
+      ? storedNet
+      : Math.round(
+          (gross -
+            (Number.isFinite(commission)
+              ? commission
+              : 0)) *
+            100,
+        ) / 100;
+
+    if (ticketId) {
+      const tref = db.collection(TICKETS).doc(ticketId);
+      const tsnap = await tref.get();
+      if (tsnap.exists) {
+        const t = tsnap.data() || {};
+        if (t.status !== 'refunded' && t.status !== 'cancelled') {
+          await tref.set(
+            {
+              status: 'refunded',
+              refundedAt: nowIso(),
+              previousStatus: t.status || 'active',
+              updatedAt: nowIso(),
+            },
+            { merge: true },
+          );
+        }
+      }
+    }
+
+    if (eventId) {
+      const eventRef = db.collection('events').doc(eventId);
+      const eventSnap = await eventRef.get();
+      if (eventSnap.exists) {
+        const event = eventSnap.data() || {};
+        const label = String(order.meta?.tierLabel || order.tierLabel || 'Bilet');
+        const apps = Array.isArray(event.applications)
+          ? event.applications.map((a) => ({ ...a }))
+          : [];
+        const nextApps = apps.filter((a) => {
+          if (ticketId && String(a.ticketId || '') === ticketId) return false;
+          if (!ticketId && uid && String(a.userId || '') === uid && a.paid === true) {
+            return false;
+          }
+          return true;
+        });
+        const tiers = Array.isArray(event.priceTiers)
+          ? event.priceTiers.map((t) => ({ ...t }))
+          : [];
+        const ti = tiers.findIndex((t) => String(t.label || '') === label);
+        if (ti >= 0) {
+          tiers[ti].soldCount = Math.max(0, (Number(tiers[ti].soldCount) || 0) - 1);
+        }
+        await eventRef.set(
+          {
+            applications: nextApps,
+            applicantCount: nextApps.length,
+            priceTiers: tiers.length ? tiers : event.priceTiers || [],
+            updatedAt: nowIso(),
+          },
+          { merge: true },
+        );
+        try {
+          const slug =
+            String(label)
+              .toLowerCase()
+              .replace(/[^a-z0-9ğüşıöç]+/gi, '-')
+              .replace(/^-|-$/g, '')
+              .slice(0, 32) || 'bilet';
+          const pref = db.collection('market_products').doc(`evt_${eventId}_${slug}`);
+          const psnap = await pref.get();
+          if (psnap.exists) {
+            const sold = Math.max(0, (Number(psnap.data()?.soldCount) || 0) - 1);
+            await pref.set({ soldCount: sold, updatedAt: nowIso() }, { merge: true });
+          }
+        } catch (e) {
+          console.warn('[reverseEvent] market stock', e?.message || e);
+        }
+      }
+    }
+
+    if (organizerId && clawback > 0) {
+      const orgRef = db.collection('users').doc(organizerId);
+      const orgSnap = await orgRef.get();
+      if (orgSnap.exists) {
+        await orgRef.set(
+          expandFieldPaths({
+            'organizerWallet.balance': FieldValue.increment(-clawback),
+            'organizerWallet.currency': 'TRY',
+            'organizerWallet.updatedAt': nowIso(),
+            updatedAt: nowIso(),
+          }),
+          { merge: true },
+        );
+      }
+      await db.collection(LEDGER).add({
+        organizerId,
+        type: 'refund',
+        eventId: eventId || null,
+        ticketId: ticketId || null,
+        orderId: order.id,
+        gross,
+        commission: Number.isFinite(commission) ? commission : 0,
+        net: -clawback,
+        buyerUid: uid || null,
+        createdAt: nowIso(),
+      });
+    }
+
+    if (order.id) {
+      await db.collection('payment_orders').doc(order.id).set(
+        {
+          eventFulfillmentReversedAt: nowIso(),
+          updatedAt: nowIso(),
+        },
+        { merge: true },
+      );
+    }
+    return { ok: true, clawback };
+  }
+
+  async function reverseMerchFulfillment(order) {
+    if (!order || String(order.product || '') !== 'merch') {
+      return { ok: false, skipped: true };
+    }
+    if (order.merchFulfillmentReversedAt) {
+      return { ok: true, already: true };
+    }
+    const sku = String(order.meta?.sku || order.sku || '').trim();
+    if (!sku) return { ok: true, skipped: true };
+    try {
+      let ref = db.collection('market_products').doc(sku);
+      let snap = await ref.get();
+      if (!snap.exists) {
+        const q = await db
+          .collection('market_products')
+          .where('sku', '==', sku)
+          .limit(1)
+          .get();
+        if (!q.empty) {
+          ref = q.docs[0].ref;
+          snap = q.docs[0];
+        }
+      }
+      if (!snap.exists) return { ok: true, skipped: true };
+      const d = snap.data() || {};
+      const sold = Math.max(0, (Number(d.soldCount) || 0) - 1);
+      const stockRaw = Number(d.stock);
+      const patch = { soldCount: sold, updatedAt: nowIso() };
+      if (Number.isFinite(stockRaw)) patch.stock = stockRaw + 1;
+      await ref.set(patch, { merge: true });
+      if (order.id) {
+        await db.collection('payment_orders').doc(order.id).set(
+          {
+            merchFulfillmentReversedAt: nowIso(),
+            updatedAt: nowIso(),
+          },
+          { merge: true },
+        );
+      }
+      return { ok: true };
+    } catch (e) {
+      console.warn('[reverseMerch]', e?.message || e);
+      return { ok: false, error: e?.message || String(e) };
+    }
   }
 
   const saveOrganizerPayoutIban = onCall(
@@ -1613,14 +1833,34 @@ function commerceModule({
           'Bu bilet sizin etkinliğinize ait değil',
         );
       }
-      const already =
-        ticket.status === 'used' ||
-        ticket.status === 'checked_in' ||
-        Boolean(ticket.checkedInAt);
+      const st = String(ticket.status || 'active');
+      if (st === 'refunded' || st === 'cancelled') {
+        throw new HttpsError('failed-precondition', 'Bu bilet iade edilmiş');
+      }
+      const entry = normalizeTicketEntry(ticket);
+      const usedNow = Number(ticket.entriesUsed);
+      const used = Number.isFinite(usedNow)
+        ? usedNow
+        : st === 'used' || st === 'checked_in' || Boolean(ticket.checkedInAt)
+          ? entry.entryLimit
+          : 0;
+      const already = used >= entry.entryLimit;
+      const nextUsed = already ? used : used + 1;
+      const depleted = nextUsed >= entry.entryLimit;
       if (!already) {
+        const entries = Array.isArray(ticket.entries) ? [...ticket.entries] : [];
+        entries.push({
+          at: nowIso(),
+          by: request.auth.uid,
+          n: nextUsed,
+        });
         await snap.ref.set(
           {
-            status: 'used',
+            status: depleted ? 'used' : 'active',
+            entriesUsed: nextUsed,
+            entryType: entry.entryType,
+            entryLimit: entry.entryLimit,
+            entries,
             checkedInAt: nowIso(),
             checkedInBy: request.auth.uid,
             updatedAt: nowIso(),
@@ -1637,7 +1877,11 @@ function commerceModule({
         userName: ticket.userName || '',
         userEmail: ticket.userEmail || '',
         tierLabel: ticket.tierLabel || '',
-        status: 'used',
+        status: already || depleted ? 'used' : 'active',
+        entryType: entry.entryType,
+        entryLimit: entry.entryLimit,
+        entriesUsed: already ? used : nextUsed,
+        remaining: Math.max(0, entry.entryLimit - (already ? used : nextUsed)),
         checkedInAt: already ? ticket.checkedInAt : nowIso(),
       };
     },
@@ -1666,6 +1910,8 @@ function commerceModule({
     getActiveAds,
     getMyTickets,
     checkInTicket,
+    reverseEventFulfillment,
+    reverseMerchFulfillment,
   };
 }
 

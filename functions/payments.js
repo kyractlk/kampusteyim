@@ -35,6 +35,10 @@ function paymentsModule({
   listPublicMerchProducts,
   resolveMerchBySku,
   sendMail,
+  brandedEmail,
+  FieldValue,
+  reverseEventFulfillment,
+  reverseMerchFulfillment,
 }) {
   const PAYMENTS_DOC = 'app_config/payments';
   const SECRETS_DOC = 'app_secrets/payments';
@@ -530,6 +534,12 @@ function paymentsModule({
       if (!email || !email.includes('@')) {
         throw new HttpsError('failed-precondition', 'Hesap e-postası gerekli');
       }
+      if (request.data?.salesTermsAccepted !== true) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Satış sözleşmesini onaylaman gerekli',
+        );
+      }
 
       let amount =
         Number.isFinite(amountIn) && amountIn > 0 ? amountIn : cfg.plusAmount;
@@ -578,6 +588,9 @@ function paymentsModule({
           '',
         80,
       );
+      let eventRefundsAllowed = false;
+      let eventEntryType = 'single';
+      let eventEntryLimit = 1;
 
       let merchItem = null;
       let installmentProductFlags = {
@@ -702,6 +715,17 @@ function paymentsModule({
         if (!(amount > 0)) {
           throw new HttpsError('invalid-argument', 'Ödenecek tutar 0');
         }
+        eventRefundsAllowed = ev.refundsAllowed === true;
+        const srcTier = tier || {};
+        const et =
+          String(srcTier.entryType || '').toLowerCase() === 'multi'
+            ? 'multi'
+            : 'single';
+        let el = Number(srcTier.entryLimit);
+        if (et === 'single' || !Number.isFinite(el) || el < 1) el = 1;
+        if (et === 'multi' && el < 2) el = 2;
+        eventEntryType = et;
+        eventEntryLimit = et === 'multi' ? Math.min(99, Math.floor(el)) : 1;
       } else if (!(amount > 0) && !campaignMeta) {
         throw new HttpsError(
           'invalid-argument',
@@ -738,6 +762,10 @@ function paymentsModule({
           shipPhone: product === 'merch' ? shipPhone || null : null,
           discountCode: discountCode || null,
           ...(campaignMeta || {}),
+          salesTermsAcceptedAt: new Date().toISOString(),
+          refundsAllowed: product === 'event' ? eventRefundsAllowed : product !== 'plus',
+          entryType: product === 'event' ? eventEntryType : null,
+          entryLimit: product === 'event' ? eventEntryLimit : null,
         },
       });
 
@@ -1614,9 +1642,6 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
         throw new HttpsError('failed-precondition', 'Yalnızca ödenmiş sipariş iade edilir');
       }
       const merchantOid = String(order.merchantOid || '').trim();
-      if (!merchantOid) {
-        throw new HttpsError('failed-precondition', 'PayTR merchant_oid yok');
-      }
       const orderAmount = Number(order.amount) || 0;
       const already = Number(order.refundedAmount) || 0;
       const remaining = Math.round((orderAmount - already) * 100) / 100;
@@ -1630,43 +1655,46 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
         throw new HttpsError('invalid-argument', 'İade tutarı kalan tutarı aşıyor');
       }
       const cfg = await readPaymentsConfig();
-      if (!cfg.paytrMerchantId || !cfg.paytrMerchantKey || !cfg.paytrMerchantSalt) {
-        throw new HttpsError('failed-precondition', 'PayTR yapılandırılmamış');
-      }
-      const returnAmountStr = returnAmount.toFixed(2);
-      const paytrToken = crypto
-        .createHmac('sha256', cfg.paytrMerchantKey)
-        .update(
-          cfg.paytrMerchantId + merchantOid + returnAmountStr + cfg.paytrMerchantSalt,
-        )
-        .digest('base64');
-      const refRaw = sanitizePlainText(
-        request.data?.referenceNo || `RF${orderId}`.replace(/[^a-zA-Z0-9]/g, ''),
-        64,
-      );
-      const referenceNo = (refRaw.replace(/[^a-zA-Z0-9]/g, '') || `RF${Date.now()}`).slice(
-        0,
-        64,
-      );
-      const body = new URLSearchParams({
-        merchant_id: cfg.paytrMerchantId,
-        merchant_oid: merchantOid,
-        return_amount: returnAmountStr,
-        paytr_token: paytrToken,
-        reference_no: referenceNo,
-      });
-      const res = await fetch('https://www.paytr.com/odeme/iade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
-      });
-      const json = await res.json().catch(() => ({}));
-      if (String(json.status || '') !== 'success') {
-        console.error('[paytrRefund]', json);
-        throw new HttpsError(
-          'internal',
-          json.err_msg || json.error || 'PayTR iade başarısız',
+      let json = { status: 'success', channel: 'manual' };
+      if (merchantOid) {
+        if (!cfg.paytrMerchantId || !cfg.paytrMerchantKey || !cfg.paytrMerchantSalt) {
+          throw new HttpsError('failed-precondition', 'PayTR yapılandırılmamış');
+        }
+        const returnAmountStr = returnAmount.toFixed(2);
+        const paytrToken = crypto
+          .createHmac('sha256', cfg.paytrMerchantKey)
+          .update(
+            cfg.paytrMerchantId + merchantOid + returnAmountStr + cfg.paytrMerchantSalt,
+          )
+          .digest('base64');
+        const refRaw = sanitizePlainText(
+          request.data?.referenceNo || `RF${orderId}`.replace(/[^a-zA-Z0-9]/g, ''),
+          64,
         );
+        const referenceNo = (refRaw.replace(/[^a-zA-Z0-9]/g, '') || `RF${Date.now()}`).slice(
+          0,
+          64,
+        );
+        const body = new URLSearchParams({
+          merchant_id: cfg.paytrMerchantId,
+          merchant_oid: merchantOid,
+          return_amount: returnAmountStr,
+          paytr_token: paytrToken,
+          reference_no: referenceNo,
+        });
+        const res = await fetch('https://www.paytr.com/odeme/iade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body,
+        });
+        json = await res.json().catch(() => ({}));
+        if (String(json.status || '') !== 'success') {
+          console.error('[paytrRefund]', json);
+          throw new HttpsError(
+            'internal',
+            json.err_msg || json.error || 'PayTR iade başarısız',
+          );
+        }
       }
       const newRefunded = Math.round((already + returnAmount) * 100) / 100;
       const full = newRefunded >= orderAmount - 0.001;
@@ -1691,20 +1719,117 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
       }
       await ref.set(patch, { merge: true });
 
-      // Plus: iade anında üyeliği kapat
-      if (product === 'plus' && order.uid) {
-        const uref = db.collection('users').doc(order.uid);
-        const usnap = await uref.get();
-        if (usnap.exists) {
-          await uref.set(
-            {
+      const sideEffects = {};
+      try {
+        if (product === 'plus' && order.uid) {
+          const uref = db.collection('users').doc(order.uid);
+          const usnap = await uref.get();
+          if (usnap.exists) {
+            const plusPatch = {
               plusActive: false,
               plusExpiresAt: now,
               plusSource: 'refund',
               updatedAt: now,
-            },
+            };
+            if (FieldValue) {
+              plusPatch.plusStartsAt = FieldValue.delete();
+            }
+            await uref.set(plusPatch, { merge: true });
+            sideEffects.plusRevoked = true;
+          }
+        }
+        if (product === 'event' && full && typeof reverseEventFulfillment === 'function') {
+          sideEffects.event = await reverseEventFulfillment({
+            ...order,
+            ...patch,
+            id: orderId,
+          });
+        }
+        if (product === 'merch' && full && typeof reverseMerchFulfillment === 'function') {
+          sideEffects.merch = await reverseMerchFulfillment({
+            ...order,
+            ...patch,
+            id: orderId,
+          });
+        }
+      } catch (e) {
+        console.error('[adminRefund] reverse', e);
+        sideEffects.error = e?.message || String(e);
+      }
+
+      let mailSent = false;
+      let email = String(order.email || '').toLowerCase();
+      if (
+        (!email.includes('@') || email.includes('@invalid.local')) &&
+        order.uid
+      ) {
+        try {
+          const us = await db.collection('users').doc(String(order.uid)).get();
+          email = String(us.data()?.email || '').toLowerCase();
+        } catch (_) {}
+      }
+      if (
+        email.includes('@') &&
+        !email.includes('@invalid.local') &&
+        typeof sendMail === 'function'
+      ) {
+        const meta = order.meta || {};
+        const productLabel =
+          product === 'event'
+            ? `Etkinlik bileti${meta.tierLabel ? ` · ${meta.tierLabel}` : ''}`
+            : product === 'plus'
+              ? meta.plusProductName ||
+                (meta.months
+                  ? `KampüsteyimPlus · ${meta.months} ay`
+                  : 'KampüsteyimPlus')
+              : meta.merchName
+                ? `${meta.merchName}${meta.size ? ` (${meta.size})` : ''}`
+                : 'Sipariş';
+        const extra =
+          product === 'plus'
+            ? 'KampüsteyimPlus hakların iade anında kapatıldı.'
+            : product === 'event'
+              ? full
+                ? 'Biletin iptal edildi, kontenjan açıldı. Organizatör bakiyesinden net tutar düşüldü.'
+                : 'Kısmi iade uygulandı; bilet henüz iptal edilmedi.'
+              : product === 'merch'
+                ? full
+                  ? 'Ürün iadesi onaylandı, stok güncellendi.'
+                  : 'Kısmi iade uygulandı.'
+                : 'İaden işleme alındı.';
+        const html =
+          typeof brandedEmail === 'function'
+            ? brandedEmail({
+                title: 'İaden onaylandı',
+                greeting: 'Merhaba,',
+                bodyHtml: `
+                  <p style="margin:0 0 12px;font-size:15px;color:#1a2332;line-height:1.55;">
+                    <strong>${String(productLabel).replace(/</g, '')}</strong> siparişin için iade onaylandı.
+                  </p>
+                  <p style="margin:0;padding:14px 16px;background:#F0F7FF;border-radius:12px;font-size:16px;font-weight:800;color:#0B1F3A;">
+                    ${returnAmount.toFixed(2)} TL iade
+                  </p>
+                  <p style="margin:12px 0 0;font-size:14px;color:#4b5563;">${extra}</p>
+                  <p style="margin:8px 0 0;font-size:13px;color:#6b7280;">Sipariş no: ${orderId}</p>
+                `,
+                ctaLabel: 'Siparişlerime git',
+                ctaUrl: 'https://app.kampusteyim.app/market',
+                footerNote: 'Bu mail iaden onaylandığı için otomatik gönderildi.',
+              })
+            : `<p>İaden onaylandı: ${returnAmount.toFixed(2)} TL</p>`;
+        try {
+          await sendMail({
+            to: email,
+            subject: `İaden onaylandı · ${returnAmount.toFixed(2)} TL · KampüsteyimAPP`,
+            html,
+          });
+          mailSent = true;
+          await ref.set(
+            { lastRefundMailAt: now, lastRefundMailAmount: returnAmount },
             { merge: true },
           );
+        } catch (e) {
+          console.error('[adminRefund] mail', e);
         }
       }
 
@@ -1714,6 +1839,8 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
         refundedAmount: newRefunded,
         refundStatus: patch.refundStatus,
         paytr: json,
+        mailSent,
+        sideEffects,
       };
     },
   );

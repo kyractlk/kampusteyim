@@ -1174,6 +1174,7 @@ class CampusEvent {
     this.rules = '',
     this.priceTiers = const [],
     this.paymentRequired = false,
+    this.refundsAllowed = false,
   });
 
   final String id;
@@ -1210,6 +1211,9 @@ class CampusEvent {
   final String rules;
   final List<EventPriceTier> priceTiers;
   final bool paymentRequired;
+
+  /// Organizatör seçer: iade yapılabilir mi. Eski etkinlikler varsayılan kapalı.
+  final bool refundsAllowed;
 
   bool get isCampusScoped => scope != 'offcampus';
   bool get isApproved => status == 'approved' || status.isEmpty;
@@ -1350,6 +1354,7 @@ class CampusEvent {
     String? rules,
     List<EventPriceTier>? priceTiers,
     bool? paymentRequired,
+    bool? refundsAllowed,
   }) {
     return CampusEvent(
       id: id,
@@ -1380,6 +1385,7 @@ class CampusEvent {
       rules: rules ?? this.rules,
       priceTiers: priceTiers ?? this.priceTiers,
       paymentRequired: paymentRequired ?? this.paymentRequired,
+      refundsAllowed: refundsAllowed ?? this.refundsAllowed,
     );
   }
 
@@ -1408,6 +1414,7 @@ class CampusEvent {
     'rules': rules,
     'priceTiers': priceTiers.map((e) => e.toMap()).toList(),
     'paymentRequired': paymentRequired,
+    'refundsAllowed': refundsAllowed,
   };
 
   factory CampusEvent.fromMap(String id, Map<String, dynamic> m) {
@@ -1458,6 +1465,7 @@ class CampusEvent {
       rules: '${m['rules'] ?? ''}',
       priceTiers: tiers,
       paymentRequired: m['paymentRequired'] == true,
+      refundsAllowed: m['refundsAllowed'] == true,
     );
   }
 }
@@ -1470,6 +1478,8 @@ class EventPriceTier {
     this.stock,
     this.soldCount = 0,
     this.saleEndsAt,
+    this.entryType = 'single',
+    this.entryLimit = 1,
   });
 
   final String label;
@@ -1478,6 +1488,16 @@ class EventPriceTier {
   final int? stock;
   final int soldCount;
   final DateTime? saleEndsAt;
+
+  /// single = tek giriş, multi = çoklu giriş
+  final String entryType;
+  final int entryLimit;
+
+  bool get isMultiEntry => entryType == 'multi' && entryLimit > 1;
+
+  String get entryLabel => isMultiEntry
+      ? 'Çoklu giriş · $entryLimit kez'
+      : 'Tek giriş';
 
   bool get isSoldOut {
     if (saleEndsAt != null && saleEndsAt!.isBefore(DateTime.now())) {
@@ -1500,14 +1520,25 @@ class EventPriceTier {
         if (stock != null) 'stock': stock,
         'soldCount': soldCount,
         if (saleEndsAt != null) 'saleEndsAt': saleEndsAt!.toIso8601String(),
+        'entryType': isMultiEntry ? 'multi' : 'single',
+        'entryLimit': isMultiEntry ? entryLimit : 1,
       };
 
-  factory EventPriceTier.fromMap(Map<String, dynamic> m) => EventPriceTier(
-        label: '${m['label'] ?? ''}',
-        amount: (m['amount'] as num?)?.toDouble() ?? 0,
-        currency: '${m['currency'] ?? 'TRY'}',
-        stock: (m['stock'] as num?)?.toInt(),
-        soldCount: (m['soldCount'] as num?)?.toInt() ?? 0,
-        saleEndsAt: DateTime.tryParse('${m['saleEndsAt'] ?? ''}'),
-      );
+  factory EventPriceTier.fromMap(Map<String, dynamic> m) {
+    final type = '${m['entryType'] ?? 'single'}'.trim().toLowerCase();
+    var limit = (m['entryLimit'] as num?)?.toInt() ?? 1;
+    if (type != 'multi') limit = 1;
+    if (limit < 1) limit = 1;
+    if (limit > 99) limit = 99;
+    return EventPriceTier(
+      label: '${m['label'] ?? ''}',
+      amount: (m['amount'] as num?)?.toDouble() ?? 0,
+      currency: '${m['currency'] ?? 'TRY'}',
+      stock: (m['stock'] as num?)?.toInt(),
+      soldCount: (m['soldCount'] as num?)?.toInt() ?? 0,
+      saleEndsAt: DateTime.tryParse('${m['saleEndsAt'] ?? ''}'),
+      entryType: type == 'multi' ? 'multi' : 'single',
+      entryLimit: type == 'multi' ? (limit < 2 ? 2 : limit) : 1,
+    );
+  }
 }

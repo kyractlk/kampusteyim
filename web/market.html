@@ -390,8 +390,8 @@
         <div style="padding:1rem;border:1px solid var(--line);border-radius:14px;background:rgba(11,31,58,.03)">
           <strong style="display:block;margin-bottom:.35rem">İptal ve iade</strong>
           <div style="color:var(--muted);font-size:.9rem;line-height:1.55">
-            Plus / dijital ürünlerde ifaya derhal başlandığı için rutin iade yoktur.
-            Merch ürünlerde kullanılmamış hallerde 14 gün cayma hakkı.
+            Plus’ta rutin cayma yoktur; admin iadeyi onaylarsa üyelik anında kapanır.
+            Etkinlik biletinde iade, organizatörün seçimine bağlıdır.
             <a href="./returns.html">İade koşulları →</a>
           </div>
         </div>
@@ -412,6 +412,10 @@
         <div class="plans" id="plans" role="listbox" aria-label="Plus süreleri"></div>
         <p style="margin:.25rem 0 0;font-size:.82rem;color:var(--muted)">Kaydırarak seç · fiyat admin panelindeki aylık tutardan hesaplanır.</p>
         <button class="btn cyan" id="buyBtn" type="button">Kart ile güvenle öde</button>
+        <label style="display:flex;gap:.55rem;align-items:flex-start;margin:.85rem 0 0;font-size:.85rem;line-height:1.4">
+          <input id="plusSalesAccept" type="checkbox" style="margin-top:.2rem" />
+          <span><a href="./sales.html" target="_blank" rel="noopener">Satış sözleşmesini</a> okudum, kabul ediyorum.</span>
+        </label>
         <label for="plusCode" style="margin-top:.75rem">Kampanya kodu</label>
         <input id="plusCode" type="text" placeholder="Varsa kodunu yaz" autocomplete="off" style="text-transform:uppercase" />
         <div id="shopMsg" class="msg hidden"></div>
@@ -472,6 +476,10 @@
         <input id="dCity" type="text" placeholder="Gaziantep" />
         <label for="dCode">Kampanya kodu</label>
         <input id="dCode" type="text" placeholder="Opsiyonel" style="text-transform:uppercase" />
+        <label style="display:flex;gap:.55rem;align-items:flex-start;margin:1rem 0 .4rem;font-size:.85rem;line-height:1.4">
+          <input id="dSalesAccept" type="checkbox" style="margin-top:.2rem" />
+          <span><a href="./sales.html" target="_blank" rel="noopener">Satış sözleşmesini</a> okudum, kabul ediyorum.</span>
+        </label>
         <button class="btn cyan" id="dBuy" type="button">Kart ile güvenle öde</button>
         <div id="dMsg" class="msg hidden"></div>
       </div>
@@ -780,6 +788,10 @@
       show($('dMsg'), 'err', 'Beden seç');
       return;
     }
+    if (!$('dSalesAccept') || !$('dSalesAccept').checked) {
+      show($('dMsg'), 'err', 'Satış sözleşmesini onayla.');
+      return;
+    }
     if (!state.idToken) {
       closeDetail();
       showAuth(true);
@@ -802,6 +814,7 @@
           source: 'market_web',
           provider: 'paytr',
           discountCode: ($('dCode').value || '').trim().toUpperCase() || undefined,
+          salesTermsAccepted: $('dSalesAccept') && $('dSalesAccept').checked,
         },
         state.idToken,
       );
@@ -914,6 +927,10 @@
       show($('shopMsg'), 'err', 'Plus tutarı tanımlı değil');
       return;
     }
+    if (!$('plusSalesAccept') || !$('plusSalesAccept').checked) {
+      show($('shopMsg'), 'err', 'Satış sözleşmesini onayla.');
+      return;
+    }
     if (!state.idToken) { showAuth(false); return; }
     var btn = $('buyBtn');
     btn.disabled = true;
@@ -922,7 +939,7 @@
     try {
       var order = await callFn(
         'createPaymentOrder',
-        { product: 'plus', months: state.selected.months, source: 'market_web', discountCode: ($('plusCode').value || '').trim().toUpperCase() || undefined },
+        { product: 'plus', months: state.selected.months, source: 'market_web', discountCode: ($('plusCode').value || '').trim().toUpperCase() || undefined, salesTermsAccepted: $('plusSalesAccept') && $('plusSalesAccept').checked },
         state.idToken,
       );
       hideAuth();

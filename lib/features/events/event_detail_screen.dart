@@ -197,6 +197,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       ? '${t.label} · Ücretsiz'
                       : '${t.label} · ${t.amount.toStringAsFixed(2)} TL',
                 ),
+                subtitle: Text(
+                  '${t.entryLabel}'
+                  '${t.remaining != null ? ' · kalan ${t.remaining}' : ''}',
+                ),
                 contentPadding: EdgeInsets.zero,
               ),
             ),
@@ -216,11 +220,21 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 6),
-            const Text(
-              'Ödeme yapan hesap = katılımcı hesap. Bilet devredilemez. '
-              'İade / iptal talebi yoktur.',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            const SizedBox(height: 10),
+            Material(
+              color: event.refundsAllowed
+                  ? AppColors.cyan.withValues(alpha: 0.08)
+                  : AppColors.crimson.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  event.refundsAllowed
+                      ? 'Bu etkinlikte iade yapılabilir. Onaylanan iadede bilet iptal edilir, kontenjan açılır; organizatör bakiyesinden net tutar (komisyon düşülmüş hali) geri alınır.'
+                      : 'Bu etkinlikte iade / iptal yoktur. Satın almadan önce satış sözleşmesini onaylaman gerekir.',
+                  style: const TextStyle(fontSize: 13, height: 1.4),
+                ),
+              ),
             ),
           ],
           const SizedBox(height: 20),
@@ -278,6 +292,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       amount: amount,
                       eventId: event.id,
                       tierLabel: tier?.label,
+                      refundsAllowed: event.refundsAllowed,
                       discountCode: _discount.text.trim().isEmpty
                           ? null
                           : _discount.text.trim(),
