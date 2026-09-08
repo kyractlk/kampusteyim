@@ -32,7 +32,7 @@ extension RegVerificationModeX on RegVerificationMode {
 
   String get subtitle => switch (this) {
         RegVerificationMode.off =>
-          'Doğrulama adımı yok; kayıtlar otomatik onaylanır',
+          'Doğrulama yok; kayıtlar onaylanır, doğrulanmamış öğrenciler girer',
         RegVerificationMode.edevletOnly =>
           'Barkod + TC zorunlu; kart/PDF kapalı',
         RegVerificationMode.edevletPlusDoc =>
@@ -61,6 +61,9 @@ extension RegVerificationModeX on RegVerificationMode {
       this == RegVerificationMode.defer;
 
   bool get allowSkip => this == RegVerificationMode.defer;
+
+  /// Kayıt sonrası kilit: off dışında doğrulanmamış öğrenci giremez.
+  bool get locksUnverifiedStudents => this != RegVerificationMode.off;
 
   static RegVerificationMode parse(String? raw) {
     final s = (raw ?? '').trim();
@@ -96,6 +99,9 @@ class RegistrationSecurityConfig {
       verificationMode.allowEdevletPdfFallback;
   bool get allowSkipVerification => verificationMode.allowSkip;
   bool get requireDocsNow => verificationMode.requireDocsNow;
+
+  bool get locksUnverifiedStudents =>
+      verificationMode.locksUnverifiedStudents;
 
   /// Açıkken öğrenci no zorunlu; kapalıyken alan gizlenir.
   final bool requireStudentNo;

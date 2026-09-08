@@ -9,6 +9,7 @@ class AppInfo {
   static const supportEmail = 'info@kampusteyim.app';
   static const officialUsername = 'kampusteyim';
   static const officialEmail = 'app@kampusteyim.app';
+  static const appleReviewEmail = 'apple.review@kampusteyim.app';
   static const versionLabel = '1.1.0';
 
   /// Tanıtım sitesi

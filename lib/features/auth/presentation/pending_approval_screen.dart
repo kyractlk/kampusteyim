@@ -10,8 +10,7 @@ import '../../../core/widgets/brand_widgets.dart';
 import '../data/auth_provider.dart';
 import '../registration_security_config.dart';
 
-/// Öğrenci belgesi onay bekleyen / reddedilen kullanıcı ekranı.
-/// Reddedilenler burada özel olarak belgeyi yeniden yükleyebilir.
+/// Öğrenci belgesi onay bekleyen / reddedilen / henüz doğrulanmamış kilit ekranı.
 class PendingApprovalScreen extends StatefulWidget {
   const PendingApprovalScreen({super.key});
 
@@ -20,8 +19,11 @@ class PendingApprovalScreen extends StatefulWidget {
 }
 
 class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
+  final _tckn = TextEditingController();
+  final _barkod = TextEditingController();
+
   RegistrationSecurityConfig _security = RegistrationSecurityConfig.defaults;
-  bool _showResubmit = false;
+  bool _showForm = false;
   String? _verifyType;
   String? _frontUrl;
   String? _backUrl;
@@ -30,15 +32,50 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
   String? _busySide;
   bool _submitting = false;
 
+  String? _edevletTicket;
+  bool _edevletBusy = false;
+  String? _edevletError;
+  bool _edevletFallbackUpload = false;
+  bool? _edevletUserConfirmed;
+  String? _edevletUniversity;
+  String? _edevletFaculty;
+  String? _edevletDepartment;
+  String? _edevletStatus;
+
   @override
   void initState() {
     super.initState();
     RegistrationSecurityConfig.load().then((s) {
-      if (mounted) setState(() => _security = s);
+      if (!mounted) return;
+      setState(() {
+        _security = s;
+        _syncDefaultType();
+      });
     });
   }
 
+  @override
+  void dispose() {
+    _tckn.dispose();
+    _barkod.dispose();
+    super.dispose();
+  }
+
+  void _syncDefaultType() {
+    if (_security.allowStudentCard) {
+      _verifyType = 'card';
+    } else if (_security.allowStudentDocumentPdf) {
+      _verifyType = 'document';
+    } else {
+      _verifyType = 'document';
+    }
+  }
+
+  bool get _edevletParsed => (_edevletTicket ?? '').length >= 20;
+  bool get _edevletOk => _edevletParsed && _edevletUserConfirmed == true;
+
   bool get _docsOk {
+    if (_edevletOk) return true;
     if (_verifyType == 'card') {
       final needBack = _security.requireCardBothSides;
       return _frontUrl != null && (!needBack || _backUrl != null);
@@ -90,10 +127,86 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
     }
   }
 
-  Future<void> _submitResubmit() async {
+  Future<void> _verifyEdevlet() async {
+    final barkod = _barkod.text.trim();
+    final tckn = _tckn.text.trim();
+    if (barkod.isEmpty || tckn.length != 11) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Barkod ve 11 haneli T.C. kimlik no gerekli.')),
+      );
+      return;
+    }
+    setState(() {
+      _edevletBusy = true;
+      _edevletError = null;
+      _edevletUserConfirmed = null;
+    });
+    final auth = context.read<AuthProvider>();
+    final res = await auth.verifyEdevletBelge(barkod: barkod, tckn: tckn);
+    if (!mounted) return;
+    setState(() {
+      _edevletBusy = false;
+      if (res.ok && (res.ticket ?? '').length >= 20) {
+        _edevletTicket = res.ticket;
+        _edevletFallbackUpload = false;
+        _edevletError = null;
+        _edevletUniversity = res.university;
+        _edevletFaculty = res.faculty;
+        _edevletDepartment = res.department;
+        _edevletStatus = res.studentStatus;
+      } else {
+        _edevletTicket = null;
+        _edevletFallbackUpload = _security.allowEdevletPdfFallback;
+        _edevletError = res.messages.isNotEmpty
+            ? res.messages.join('\n')
+            : 'Belge doğrulanamadı.';
+        _edevletUniversity = null;
+        _edevletFaculty = null;
+        _edevletDepartment = null;
+        _edevletStatus = null;
+      }
+    });
+  }
+
+  Future<void> _confirmEdevlet(bool yes) async {
+    if (!yes) {
+      setState(() {
+        _edevletUserConfirmed = false;
+        _edevletTicket = null;
+        _edevletFallbackUpload = _security.allowEdevletPdfFallback;
+      });
+      return;
+    }
+    final ticket = _edevletTicket;
+    if (ticket == null) return;
+    setState(() {
+      _edevletUserConfirmed = true;
+      _submitting = true;
+    });
+    final ok = await context.read<AuthProvider>().completeEdevletVerification(ticket);
+    if (!mounted) return;
+    setState(() => _submitting = false);
+    if (ok) {
+      context.go(context.read<AuthProvider>().homeRoute);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          context.read<AuthProvider>().error ?? 'e-Devlet kayda işlenemedi',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _submitDocs() async {
+    if (_edevletOk) {
+      await _confirmEdevlet(true);
+      return;
+    }
     if (!_docsOk || _verifyType == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Belgeleri tamamla.')),
+        const SnackBar(content: Text('Doğrulama adımlarını tamamla.')),
       );
       return;
     }
@@ -107,13 +220,13 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
     if (!mounted) return;
     setState(() {
       _submitting = false;
-      if (ok) _showResubmit = false;
+      if (ok) _showForm = false;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           ok
-              ? 'Yeni belgen gönderildi. Tekrar inceleme kuyruğuna alındı.'
+              ? 'Belgen gönderildi. İnceleme kuyruğuna alındı.'
               : (context.read<AuthProvider>().error ?? 'Gönderilemedi'),
         ),
       ),
@@ -124,15 +237,37 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
+    _security = auth.registrationSecurity;
 
-    if (user != null && user.isAccountApproved) {
+    if (user != null && !auth.mustCompleteStudentVerification) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) context.go('/home');
+        if (context.mounted) context.go(auth.homeRoute);
       });
     }
 
     final rejected = user?.isAccountRejected == true;
+    final pending = user?.isAccountPending == true;
+    final neverVerified = user != null &&
+        !user.isStudentIdentityVerified &&
+        !pending &&
+        !rejected;
     final reason = user?.registrationRejectReason.trim() ?? '';
+    final showForm = rejected || neverVerified || _showForm;
+
+    final title = rejected
+        ? 'Başvurun reddedildi'
+        : pending
+            ? 'Onay bekleniyor'
+            : 'Öğrenci doğrulaması gerekli';
+    final body = rejected
+        ? (reason.isNotEmpty
+            ? 'Sebep: $reason\n\nSistemdeki güncel doğrulama adımlarını tamamla; çıkış yapmana gerek yok.'
+            : 'Öğrenci belgen veya bilgiler eşleşmedi. Güncel doğrulama prosedürünü uygula.')
+        : pending
+            ? 'Öğrenci belgen incelenirken ${AppInfo.appName}’e erişimin kilitli. '
+                'Onay veya red kararı e-posta ve cihaz bildirimiyle iletilir.'
+            : 'Hesabın doğrulanmamış. Sistemde öğrenci doğrulaması açık; '
+                'ilgili prosedürü tamamlamadan uygulamaya devam edemezsin.';
 
     return GradientScaffold(
       child: SafeArea(
@@ -142,13 +277,17 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
             const BrandHeader(compact: true, showAys: false),
             const SizedBox(height: 36),
             Icon(
-              rejected ? Icons.cancel_outlined : Icons.hourglass_top_rounded,
+              rejected
+                  ? Icons.cancel_outlined
+                  : pending
+                      ? Icons.hourglass_top_rounded
+                      : Icons.verified_user_outlined,
               size: 56,
               color: rejected ? AppColors.crimson : AppColors.cyan,
             ),
             const SizedBox(height: 16),
             Text(
-              rejected ? 'Başvurun reddedildi' : 'Onay bekleniyor',
+              title,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -156,57 +295,70 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              rejected
-                  ? (reason.isNotEmpty
-                      ? 'Sebep: $reason\n\nYeni belge yükleyip tekrar başvurabilirsin; çıkış yapmana gerek yok.'
-                      : 'Öğrenci belgen veya bilgiler eşleşmedi. Yeni belge yükleyip tekrar başvurabilirsin.')
-                  : 'Öğrenci belgen incelenirken ${AppInfo.appName}’e sınırlı erişimin var. '
-                      'Onay veya red kararı e-posta ve cihaz bildirimiyle iletilir.',
+              body,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 height: 1.45,
                 color: AppColors.textSecondary,
               ),
             ),
-            if (rejected || _showResubmit) ...[
+            const SizedBox(height: 8),
+            Text(
+              _security.verificationMode.subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12.5,
+                height: 1.4,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (showForm) ...[
               const SizedBox(height: 24),
-              if (!_showResubmit)
-                FilledButton.icon(
-                  onPressed: () => setState(() {
-                    _showResubmit = true;
-                    _verifyType = user?.studentVerificationType;
-                  }),
-                  icon: const Icon(Icons.upload_file_outlined),
-                  label: const Text('Belgeyi yeniden yükle'),
-                )
-              else
-                _ResubmitPanel(
-                  security: _security,
-                  verifyType: _verifyType,
-                  frontUrl: _frontUrl,
-                  backUrl: _backUrl,
-                  pdfUrl: _pdfUrl,
-                  uploading: _uploading,
-                  busySide: _busySide,
-                  submitting: _submitting,
-                  onType: (t) => setState(() {
-                    _verifyType = t;
-                    _frontUrl = null;
-                    _backUrl = null;
-                    _pdfUrl = null;
-                  }),
-                  onUpload: _runUpload,
-                  onSubmit: _submitResubmit,
-                  onCancel: () => setState(() => _showResubmit = false),
-                ),
+              _VerificationPanel(
+                security: _security,
+                tckn: _tckn,
+                barkod: _barkod,
+                verifyType: _verifyType,
+                frontUrl: _frontUrl,
+                backUrl: _backUrl,
+                pdfUrl: _pdfUrl,
+                uploading: _uploading,
+                busySide: _busySide,
+                submitting: _submitting,
+                edevletBusy: _edevletBusy,
+                edevletError: _edevletError,
+                edevletFallback: _edevletFallbackUpload,
+                edevletParsed: _edevletParsed,
+                edevletOk: _edevletOk,
+                edevletConfirmed: _edevletUserConfirmed,
+                edevletUniversity: _edevletUniversity,
+                edevletFaculty: _edevletFaculty,
+                edevletDepartment: _edevletDepartment,
+                edevletStatus: _edevletStatus,
+                onType: (t) => setState(() {
+                  _verifyType = t;
+                  _frontUrl = null;
+                  _backUrl = null;
+                  _pdfUrl = null;
+                }),
+                onUpload: _runUpload,
+                onVerifyEdevlet: _verifyEdevlet,
+                onConfirmEdevlet: _confirmEdevlet,
+                onSubmit: _submitDocs,
+                onCancel: neverVerified || rejected
+                    ? null
+                    : () => setState(() => _showForm = false),
+              ),
             ] else ...[
               const SizedBox(height: 20),
-              TextButton(
+              FilledButton.icon(
                 onPressed: () => setState(() {
-                  _showResubmit = true;
-                  _verifyType = user?.studentVerificationType;
+                  _showForm = true;
+                  _syncDefaultType();
                 }),
-                child: const Text('Belgeyi değiştir / yeniden gönder'),
+                icon: const Icon(Icons.verified_outlined),
+                label: const Text('Doğrulamayı tamamla'),
               ),
             ],
             const SizedBox(height: 16),
@@ -224,9 +376,11 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
   }
 }
 
-class _ResubmitPanel extends StatelessWidget {
-  const _ResubmitPanel({
+class _VerificationPanel extends StatelessWidget {
+  const _VerificationPanel({
     required this.security,
+    required this.tckn,
+    required this.barkod,
     required this.verifyType,
     required this.frontUrl,
     required this.backUrl,
@@ -234,13 +388,27 @@ class _ResubmitPanel extends StatelessWidget {
     required this.uploading,
     required this.busySide,
     required this.submitting,
+    required this.edevletBusy,
+    required this.edevletError,
+    required this.edevletFallback,
+    required this.edevletParsed,
+    required this.edevletOk,
+    required this.edevletConfirmed,
+    required this.edevletUniversity,
+    required this.edevletFaculty,
+    required this.edevletDepartment,
+    required this.edevletStatus,
     required this.onType,
     required this.onUpload,
+    required this.onVerifyEdevlet,
+    required this.onConfirmEdevlet,
     required this.onSubmit,
-    required this.onCancel,
+    this.onCancel,
   });
 
   final RegistrationSecurityConfig security;
+  final TextEditingController tckn;
+  final TextEditingController barkod;
   final String? verifyType;
   final String? frontUrl;
   final String? backUrl;
@@ -248,19 +416,36 @@ class _ResubmitPanel extends StatelessWidget {
   final bool uploading;
   final String? busySide;
   final bool submitting;
+  final bool edevletBusy;
+  final String? edevletError;
+  final bool edevletFallback;
+  final bool edevletParsed;
+  final bool edevletOk;
+  final bool? edevletConfirmed;
+  final String? edevletUniversity;
+  final String? edevletFaculty;
+  final String? edevletDepartment;
+  final String? edevletStatus;
   final ValueChanged<String> onType;
   final Future<void> Function({
     required String side,
     required Future<XFile?> Function() pick,
     required bool expectPdf,
   }) onUpload;
+  final VoidCallback onVerifyEdevlet;
+  final ValueChanged<bool> onConfirmEdevlet;
   final VoidCallback onSubmit;
-  final VoidCallback onCancel;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
     final cardOk = security.allowStudentCard;
     final pdfOk = security.allowStudentDocumentPdf;
+    final edevletOkFlag = security.allowEdevlet;
+    final showDocs = security.verificationMode == RegVerificationMode.documentOnly ||
+        edevletFallback ||
+        (!edevletOkFlag && (cardOk || pdfOk));
+    final showTypePicker = showDocs && !edevletOkFlag && cardOk && pdfOk;
 
     return Material(
       color: AppColors.surface,
@@ -274,24 +459,97 @@ class _ResubmitPanel extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Yeni belge yükle',
+              'Doğrulama prosedürü',
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
             ),
-            const SizedBox(height: 12),
-            if (cardOk)
+            if (edevletOkFlag) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: barkod,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'e-Devlet barkod',
+                  hintText: 'YOKOG…',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: tckn,
+                keyboardType: TextInputType.number,
+                maxLength: 11,
+                decoration: const InputDecoration(
+                  labelText: 'T.C. kimlik no',
+                  counterText: '',
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                onPressed: edevletBusy || submitting ? null : onVerifyEdevlet,
+                icon: edevletBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.policy_outlined),
+                label: Text(
+                  edevletBusy ? 'Doğrulanıyor…' : 'e-Devlet ile doğrula',
+                ),
+              ),
+              if (edevletError != null) ...[
+                const SizedBox(height: 8),
+                Text(edevletError!, style: const TextStyle(color: AppColors.crimson)),
+              ],
+              if (edevletParsed) ...[
+                const SizedBox(height: 12),
+                Text(
+                  [
+                    if (edevletStatus != null) edevletStatus,
+                    if (edevletUniversity != null) edevletUniversity,
+                    if (edevletFaculty != null) edevletFaculty,
+                    if (edevletDepartment != null) edevletDepartment,
+                  ].whereType<String>().join('\n'),
+                  style: const TextStyle(height: 1.4, fontWeight: FontWeight.w600),
+                ),
+                if (edevletConfirmed != true) ...[
+                  const SizedBox(height: 8),
+                  const Text('Bu bilgiler sana mı ait?'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: submitting ? null : () => onConfirmEdevlet(true),
+                          child: const Text('Evet, onayla'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: submitting ? null : () => onConfirmEdevlet(false),
+                          child: const Text('Hayır'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ],
+            if (showTypePicker) ...[
+              const SizedBox(height: 12),
               _Choice(
                 selected: verifyType == 'card',
                 label: 'Öğrenci kartı',
                 onTap: () => onType('card'),
               ),
-            if (cardOk && pdfOk) const SizedBox(height: 8),
-            if (pdfOk)
+              const SizedBox(height: 8),
               _Choice(
                 selected: verifyType == 'document',
                 label: 'PDF belge',
                 onTap: () => onType('document'),
               ),
-            if (verifyType == 'card') ...[
+            ],
+            if (showDocs && verifyType == 'card' && cardOk) ...[
               const SizedBox(height: 12),
               _UploadRow(
                 label: 'Ön yüz',
@@ -327,7 +585,9 @@ class _ResubmitPanel extends StatelessWidget {
                 ),
               ],
             ],
-            if (verifyType == 'document') ...[
+            if (showDocs &&
+                (verifyType == 'document' || edevletFallback) &&
+                pdfOk) ...[
               const SizedBox(height: 12),
               _UploadRow(
                 label: 'PDF',
@@ -341,18 +601,21 @@ class _ResubmitPanel extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 14),
-            FilledButton(
-              onPressed: submitting || uploading ? null : onSubmit,
-              child: submitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('İncelemeye gönder'),
-            ),
-            TextButton(onPressed: onCancel, child: const Text('Vazgeç')),
+            if (!edevletOk && showDocs) ...[
+              const SizedBox(height: 14),
+              FilledButton(
+                onPressed: submitting || uploading ? null : onSubmit,
+                child: submitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('İncelemeye gönder'),
+              ),
+            ],
+            if (onCancel != null)
+              TextButton(onPressed: onCancel, child: const Text('Vazgeç')),
           ],
         ),
       ),
@@ -386,9 +649,7 @@ class _Choice extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                selected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_off,
+                selected ? Icons.radio_button_checked : Icons.radio_button_off,
                 size: 20,
                 color: selected ? AppColors.cyan : AppColors.textSecondary,
               ),

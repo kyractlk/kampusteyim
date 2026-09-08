@@ -285,6 +285,19 @@ class AppUser {
         .isNotEmpty;
   }
 
+  /// e-Devlet veya admin onaylı belge ile gerçekten doğrulanmış mı?
+  /// Doğrulama kapalıyken auto-approve olan hesaplar burada false kalır.
+  bool get isStudentIdentityVerified {
+    if (hasStudentCredential) return true;
+    final t = (studentVerificationType ?? '').trim().toLowerCase();
+    if (t == 'edevlet') return true;
+    if (!isAccountApproved) return false;
+    if (t != 'card' && t != 'document') return false;
+    final doc = (studentIdDocUrl ?? '').trim();
+    final front = (studentIdFrontUrl ?? '').trim();
+    return doc.isNotEmpty || front.isNotEmpty;
+  }
+
   /// Aramada görünmez.
   final bool hideFromSearch;
 

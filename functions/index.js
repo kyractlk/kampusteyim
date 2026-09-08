@@ -4434,13 +4434,20 @@ async function releaseOrphanAuthForReregistration(emailRaw) {
 /**
  * Belge doğrulaması kapalıysa pending öğrenci hesaplarını onayla.
  */
+function verificationIsOff(cfg) {
+  const mode = String(cfg?.verificationMode || '').trim();
+  if (mode === 'off') return true;
+  if (mode) return false;
+  return cfg?.requireStudentVerification === false;
+}
+
 async function approvePendingWhenVerificationDisabled() {
   const cfgSnap = await db
     .collection('app_config')
     .doc('registration_security')
     .get();
   const cfg = cfgSnap.exists ? cfgSnap.data() || {} : {};
-  if (cfg.requireStudentVerification !== false) {
+  if (!verificationIsOff(cfg)) {
     return { skipped: true, reason: 'verification_required', approved: 0 };
   }
 
@@ -8025,16 +8032,12 @@ exports.onRegistrationSecurityWritten = onDocumentWritten(
   async (event) => {
     const after = event.data?.after?.data() || {};
     const before = event.data?.before?.data() || {};
-    // Yalnızca zorunluluk true→false (veya false iken kaydet) iken flush
-    if (after.requireStudentVerification === false) {
+    if (verificationIsOff(after)) {
       const res = await approvePendingWhenVerificationDisabled();
       console.log('[onRegistrationSecurityWritten]', res);
       return res;
     }
-    if (
-      before.requireStudentVerification === false &&
-      after.requireStudentVerification === true
-    ) {
+    if (verificationIsOff(before) && !verificationIsOff(after)) {
       return { skipped: true, reason: 'verification_reenabled' };
     }
     return null;

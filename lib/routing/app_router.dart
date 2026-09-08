@@ -94,17 +94,8 @@ GoRouter createRouter(AuthProvider auth) {
       }
       final loggedIn = auth.isAuthenticated;
       final loc = state.matchedLocation;
-      final user = auth.user;
-      final pendingGate = loggedIn &&
-          user != null &&
-          !user.canAccessAdmin &&
-          !user.isCompany &&
-          !user.isCommunity &&
-          (user.isAccountPending || user.isAccountRejected);
-      if (pendingGate &&
-          loc != '/pending-approval' &&
-          loc != '/login' &&
-          loc != '/tanitimkarti') {
+      final pendingGate = loggedIn && auth.mustCompleteStudentVerification;
+      if (pendingGate && loc != '/pending-approval' && loc != '/login') {
         return '/pending-approval';
       }
       if (loggedIn &&
@@ -114,12 +105,12 @@ GoRouter createRouter(AuthProvider auth) {
               loc == '/pending-approval')) {
         final next = state.uri.queryParameters['next'] ?? '';
         if (next == '/tanitimkarti') return next;
-        return AuthProvider.homeRouteFor(user);
+        return auth.homeRoute;
       }
       if (loggedIn && (loc == '/login' || loc == '/register')) {
         final next = state.uri.queryParameters['next'] ?? '';
         if (next == '/tanitimkarti') return next;
-        return AuthProvider.homeRouteFor(user);
+        return auth.homeRoute;
       }
       return null;
     },

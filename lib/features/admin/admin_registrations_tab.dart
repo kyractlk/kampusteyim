@@ -170,7 +170,8 @@ class _SecurityPanel extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Değişiklikler anında kayıt ekranına yansır. Kullanıcıya gerekçe gösterilmez.',
+              'Değişiklikler anında kayıt ve girişe yansır. Kapalıyken doğrulanmamış öğrenciler serbest girer. '
+              'Açıkken hiç doğrulanmamış öğrenci ilgili prosedürü bitirmeden uygulamaya geçemez.',
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 10),

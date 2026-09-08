@@ -11,6 +11,7 @@ import '../../../core/constants/app_info.dart';
 import '../../../models/models.dart';
 import '../../promo/promo_attribution.dart';
 import '../../notifications/notification_prefs.dart';
+import '../registration_security_config.dart';
 
 /// Firebase Auth + Firestore profil (canlı dizin).
 class AuthProvider extends ChangeNotifier {
@@ -19,9 +20,11 @@ class AuthProvider extends ChangeNotifier {
     unawaited(restorePersistedSession());
     unawaited(syncDirectoryFromFirestore());
     unawaited(PromoAttribution.ensureLoaded());
+    _listenRegistrationSecurity();
   }
 
   StreamSubscription<fa.User?>? _authSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _regSecuritySub;
   Timer? _refreshTimer;
   bool _restoring = false;
   Future<int>? _directorySyncFuture;
@@ -32,6 +35,8 @@ class AuthProvider extends ChangeNotifier {
   AppUser? _user;
   bool _busy = false;
   String? _error;
+  RegistrationSecurityConfig _regSecurity = RegistrationSecurityConfig.defaults;
+  bool _regSecurityLoaded = false;
   final List<AppUser> _directory = [];
   /// Eski mock id → Firebase uid (paylaşım / feed tutarlılığı).
   final Map<String, String> _idAliases = {};
@@ -44,6 +49,30 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
   bool get isBusy => _busy;
   String? get error => _error;
+  RegistrationSecurityConfig get registrationSecurity => _regSecurity;
+
+  /// Sistemde doğrulama açık + öğrenci hiç doğrulanmamış → kilit.
+  bool get mustCompleteStudentVerification {
+    final u = _user;
+    if (u == null) return false;
+    if (u.canAccessAdmin || u.isCompany || u.isCommunity || u.isBot) {
+      return false;
+    }
+    if (u.email.trim().toLowerCase() == AppInfo.appleReviewEmail) {
+      return false;
+    }
+    if (!_regSecurityLoaded) {
+      return u.isAccountPending || u.isAccountRejected;
+    }
+    if (!_regSecurity.locksUnverifiedStudents) return false;
+    if (u.isAccountRejected || u.isAccountPending) return true;
+    return !u.isStudentIdentityVerified;
+  }
+
+  String get homeRoute => homeRouteFor(
+        _user,
+        mustCompleteVerification: mustCompleteStudentVerification,
+      );
   List<AppUser> get directory => List.unmodifiable(_directory);
   Set<String> get dismissedSuggestions =>
       Set.unmodifiable(_dismissedSuggestions);
@@ -267,13 +296,33 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Rol bazlı giriş sonrası rota.
-  static String homeRouteFor(AppUser? user) {
+  static String homeRouteFor(
+    AppUser? user, {
+    bool mustCompleteVerification = false,
+  }) {
     if (user == null) return '/home';
-    if (user.isAccountPending || user.isAccountRejected) {
-      return '/pending-approval';
-    }
+    if (mustCompleteVerification) return '/pending-approval';
     if (user.isCompany && !user.isBot) return '/firma/dashboard';
     return '/home';
+  }
+
+  void _listenRegistrationSecurity() {
+    _regSecuritySub?.cancel();
+    _regSecuritySub = FirebaseFirestore.instance
+        .doc(RegistrationSecurityConfig.docPath)
+        .snapshots()
+        .listen((snap) {
+      final next = snap.exists
+          ? RegistrationSecurityConfig.fromMap(snap.data())
+          : RegistrationSecurityConfig.defaults;
+      _regSecurity = next;
+      _regSecurityLoaded = true;
+      notifyListeners();
+    }, onError: (e) {
+      debugPrint('[auth] registration_security: $e');
+      _regSecurityLoaded = true;
+      notifyListeners();
+    });
   }
 
   /// Firebase Auth UID (stableId değil) — push / oturum kilidi için.
@@ -495,6 +544,7 @@ class AuthProvider extends ChangeNotifier {
   @override
   void dispose() {
     _authSub?.cancel();
+    _regSecuritySub?.cancel();
     _refreshTimer?.cancel();
     super.dispose();
   }
@@ -1729,6 +1779,63 @@ class AuthProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _error = 'Belge güncellenemedi: $e';
+      _busy = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Bekleyen / doğrulanmamış öğrenci e-Devlet biletini hesabına işler.
+  Future<bool> completeEdevletVerification(String ticket) async {
+    final me = _user;
+    if (me == null || ticket.trim().length < 20) {
+      _error = 'e-Devlet doğrulaması bulunamadı.';
+      notifyListeners();
+      return false;
+    }
+    _busy = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final consumeEd = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('consumeEdevletTicket');
+      final res = await consumeEd.call({'ticket': ticket.trim()});
+      final map = Map<String, dynamic>.from(res.data as Map? ?? {});
+      String pick(String key, String fallback) {
+        final v = '${map[key] ?? ''}'.trim();
+        return v.isNotEmpty ? v : fallback;
+      }
+
+      final credRaw = map['studentCredential'];
+      final cred = credRaw is Map
+          ? Map<String, dynamic>.from(credRaw)
+          : <String, dynamic>{
+              'source': 'edevlet',
+              'university': map['university'],
+              'faculty': map['faculty'],
+              'department': map['department'],
+              'studentStatus': map['studentStatus'],
+              'grade': map['grade'],
+              'linkedEmail': me.email,
+              'linkedStudentNo': me.studentNo,
+              'verifiedAt': DateTime.now().toIso8601String(),
+            };
+      _user = me.copyWith(
+        accountStatus: 'approved',
+        studentVerificationType: 'edevlet',
+        university: pick('university', me.university),
+        faculty: pick('faculty', me.faculty),
+        department: pick('department', me.department),
+        studentCredential: cred,
+        registrationRejectReason: '',
+      );
+      _upsert(_user!);
+      _busy = false;
+      notifyListeners();
+      unawaited(refreshCurrentUser());
+      return true;
+    } catch (e) {
+      _error = 'e-Devlet doğrulaması kayda işlenemedi: $e';
       _busy = false;
       notifyListeners();
       return false;

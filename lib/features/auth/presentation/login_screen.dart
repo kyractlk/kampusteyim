@@ -57,7 +57,11 @@ class _LoginScreenState extends State<LoginScreen> {
         context.go('/home');
       } else {
         final next = GoRouterState.of(context).uri.queryParameters['next'] ?? '';
-        context.go(next == '/tanitimkarti' ? next : AuthProvider.homeRouteFor(user));
+        if (next == '/tanitimkarti' && !auth.mustCompleteStudentVerification) {
+          context.go(next);
+        } else {
+          context.go(auth.homeRoute);
+        }
       }
     } else if (auth.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
