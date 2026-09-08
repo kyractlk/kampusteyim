@@ -512,21 +512,27 @@ class AuthProvider extends ChangeNotifier {
         return;
       }
       final docId = targetDocId;
-      // Silinmiş hesabı merge ile canlandırma.
       try {
         final existing = await FirebaseFirestore.instance
             .collection('users')
             .doc(docId)
             .get();
-        if (existing.exists) {
-          final em = existing.data() ?? {};
-          if (em['deleted'] == true ||
-              '${em['usernameStatus'] ?? ''}' == 'deleted') {
-            debugPrint('[auth] sync skipped — deleted profile $docId');
-            return;
-          }
+        if (!existing.exists) {
+          debugPrint(
+            '[auth] sync skipped — profil yok $docId (silinmiş hesap canlanmasın)',
+          );
+          return;
         }
-      } catch (_) {}
+        final em = existing.data() ?? {};
+        if (em['deleted'] == true ||
+            em['accountDeleted'] == true ||
+            '${em['usernameStatus'] ?? ''}' == 'deleted') {
+          debugPrint('[auth] sync skipped — deleted profile $docId');
+          return;
+        }
+      } catch (_) {
+        return;
+      }
       final data = <String, dynamic>{
         'email': user.email,
         'firstName': user.firstName,
@@ -1349,6 +1355,8 @@ class AuthProvider extends ChangeNotifier {
 
   Future<int> _syncDirectoryImpl({required int maxDocs}) async {
     var loaded = 0;
+    var complete = false;
+    final seenIds = <String>{};
     try {
       DocumentSnapshot? last;
       while (loaded < maxDocs) {
@@ -1358,7 +1366,10 @@ class AuthProvider extends ChangeNotifier {
             .limit(100);
         if (last != null) q = q.startAfterDocument(last);
         final snap = await q.get();
-        if (snap.docs.isEmpty) break;
+        if (snap.docs.isEmpty) {
+          complete = true;
+          break;
+        }
         for (final doc in snap.docs) {
           final m = doc.data();
           final email = '${m['email'] ?? ''}'.trim();
@@ -1407,6 +1418,8 @@ class AuthProvider extends ChangeNotifier {
             }
           }
           final user = _appUserFromFirestore(id, patched);
+          seenIds.add(id);
+          if (stable.isNotEmpty) seenIds.add(stable);
           _upsert(user);
           final me = _user;
           if (me != null &&
@@ -1436,7 +1449,18 @@ class AuthProvider extends ChangeNotifier {
           loaded += 1;
         }
         last = snap.docs.last;
-        if (snap.docs.length < 100) break;
+        if (snap.docs.length < 100) {
+          complete = true;
+          break;
+        }
+      }
+      if (complete) {
+        _directory.removeWhere((u) {
+          if (_user != null && (u.id == _user!.id || u.email == _user!.email)) {
+            return false;
+          }
+          return !seenIds.contains(u.id);
+        });
       }
       notifyListeners();
       if (kDebugMode) {

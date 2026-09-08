@@ -400,15 +400,19 @@ function commerceModule({
 
     // Organizatör bakiyesi + ledger
     if (net > 0) {
-      await db.collection('users').doc(organizerId).set(
-        expandFieldPaths({
-          'organizerWallet.balance': FieldValue.increment(net),
-          'organizerWallet.currency': 'TRY',
-          'organizerWallet.updatedAt': nowIso(),
-          updatedAt: nowIso(),
-        }),
-        { merge: true },
-      );
+      const orgRef = db.collection('users').doc(organizerId);
+      const orgSnap = await orgRef.get();
+      if (orgSnap.exists) {
+        await orgRef.set(
+          expandFieldPaths({
+            'organizerWallet.balance': FieldValue.increment(net),
+            'organizerWallet.currency': 'TRY',
+            'organizerWallet.updatedAt': nowIso(),
+            updatedAt: nowIso(),
+          }),
+          { merge: true },
+        );
+      }
       await db.collection(LEDGER).add({
         organizerId,
         type: 'sale',

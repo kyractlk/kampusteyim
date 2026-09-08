@@ -215,7 +215,10 @@ function paymentsModule({
     if (!order?.uid) return;
     const exp = new Date();
     exp.setDate(exp.getDate() + (Number(days) > 0 ? Number(days) : 30));
-    await db.collection('users').doc(order.uid).set(
+    const uref = db.collection('users').doc(order.uid);
+    const usnap = await uref.get();
+    if (!usnap.exists) return;
+    await uref.set(
       {
         plusActive: true,
         plusSource: order.provider || 'store',
@@ -1690,15 +1693,19 @@ Ayrıcalıklarını kesintisiz sürdürmek için markette yenileyebilirsin.</p>
 
       // Plus: iade anında üyeliği kapat
       if (product === 'plus' && order.uid) {
-        await db.collection('users').doc(order.uid).set(
-          {
-            plusActive: false,
-            plusExpiresAt: now,
-            plusSource: 'refund',
-            updatedAt: now,
-          },
-          { merge: true },
-        );
+        const uref = db.collection('users').doc(order.uid);
+        const usnap = await uref.get();
+        if (usnap.exists) {
+          await uref.set(
+            {
+              plusActive: false,
+              plusExpiresAt: now,
+              plusSource: 'refund',
+              updatedAt: now,
+            },
+            { merge: true },
+          );
+        }
       }
 
       return {

@@ -731,12 +731,17 @@ class JobsProvider extends ChangeNotifier {
       }
     } else {
       try {
-        await FirebaseFirestore.instance.collection('users').doc(studentId).set({
-          'affiliatedCommunityId': company!.id,
-          'affiliatedCommunityName': company!.name,
-          'affiliatedOrgLogoUrl': ?logo,
-          'updatedAt': DateTime.now().toIso8601String(),
-        }, SetOptions(merge: true));
+        final ref =
+            FirebaseFirestore.instance.collection('users').doc(studentId);
+        final existing = await ref.get();
+        if (existing.exists) {
+          await ref.set({
+            'affiliatedCommunityId': company!.id,
+            'affiliatedCommunityName': company!.name,
+            'affiliatedOrgLogoUrl': ?logo,
+            'updatedAt': DateTime.now().toIso8601String(),
+          }, SetOptions(merge: true));
+        }
       } catch (_) {}
     }
     return true;

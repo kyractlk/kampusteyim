@@ -39,19 +39,13 @@ class NotificationProvider extends ChangeNotifier {
     // İzin yoksa (web/iOS) token deneme + retry yok.
     if (!await PushService.instance.canRequestToken()) {
       try {
-        await FirebaseFirestore.instance.collection('users').doc(docId).set({
-          'updatedAt': DateTime.now().toIso8601String(),
-          if (profile != null) ...{
-            'email': profile.email,
-            'firstName': profile.firstName,
-            'lastName': profile.lastName,
-            'fullName': profile.fullName,
-            'role': profile.role.name,
-            'studentNo': profile.studentNo,
-            'notificationPrefs': profile.notificationPrefs.toJson(),
-            'stableId': profile.id,
-          },
-        }, SetOptions(merge: true));
+        final ref = FirebaseFirestore.instance.collection('users').doc(docId);
+        final existing = await ref.get();
+        if (existing.exists) {
+          await ref.set({
+            'updatedAt': DateTime.now().toIso8601String(),
+          }, SetOptions(merge: true));
+        }
       } catch (e) {
         debugPrint('[push] bindUser profile sync: $e');
       }
@@ -101,20 +95,13 @@ class NotificationProvider extends ChangeNotifier {
     AppUser? profile,
   }) async {
     try {
-      await FirebaseFirestore.instance.collection('users').doc(docId).set({
+      final ref = FirebaseFirestore.instance.collection('users').doc(docId);
+      final existing = await ref.get();
+      if (!existing.exists) return;
+      await ref.set({
         'fcmTokens': FieldValue.arrayUnion([token]),
         'updatedAt': DateTime.now().toIso8601String(),
         'lastFcmAt': DateTime.now().toIso8601String(),
-        if (profile != null) ...{
-          'email': profile.email,
-          'firstName': profile.firstName,
-          'lastName': profile.lastName,
-          'fullName': profile.fullName,
-          'role': profile.role.name,
-          'studentNo': profile.studentNo,
-          'notificationPrefs': profile.notificationPrefs.toJson(),
-          'stableId': profile.id,
-        },
       }, SetOptions(merge: true));
       if (kDebugMode) {
         debugPrint('[push] token saved → users/$docId');
