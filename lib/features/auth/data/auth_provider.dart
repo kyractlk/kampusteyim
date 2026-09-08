@@ -357,6 +357,10 @@ class AuthProvider extends ChangeNotifier {
     // Firestore profili kaynak doğruluk — silinmiş / yoksa hesabı YENİDEN YARATMA.
     final remote = await ensureUserLoaded(fb.uid, forceRemote: true);
     if (remote == null) {
+      if (_intentionalAuth) {
+        // Yeni kayıt: Auth oluştu, profil henüz yazılmamış.
+        return;
+      }
       await _forceSignOutDeleted(
         'Bu hesap silinmiş veya profil bulunamadı. Lütfen yeniden kayıt olun.',
       );
@@ -632,7 +636,10 @@ class AuthProvider extends ChangeNotifier {
                 .trim();
       }
       if (officialId.isEmpty || officialId == myUid) return;
-      await FirebaseFirestore.instance.collection('users').doc(myUid).set({
+      final meRef = FirebaseFirestore.instance.collection('users').doc(myUid);
+      final meSnap = await meRef.get();
+      if (!meSnap.exists) return;
+      await meRef.set({
         'following': FieldValue.arrayUnion([officialId]),
         'updatedAt': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
@@ -827,6 +834,7 @@ class AuthProvider extends ChangeNotifier {
         'updatedAt': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
 
+      _boundAuthUid = cred.user!.uid;
       _user = AppUser(
         id: cred.user!.uid,
         email: email.trim(),

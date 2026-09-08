@@ -312,14 +312,6 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    /// Silinen hesap e-posta / uid — istemci yazamaz, CF yazar.
-    match /purged_emails/{id} {
-      allow read, write: if false;
-    }
-    match /purged_uids/{id} {
-      allow read, write: if false;
-    }
-
     /// İş ortakları — herkes okur; yazma yalnızca admin.
     match /partners/{id} {
       allow read: if true;

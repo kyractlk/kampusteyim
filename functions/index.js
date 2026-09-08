@@ -2644,13 +2644,6 @@ exports.claimUsername = onCall(
       throw new HttpsError('unauthenticated', 'Giriş gerekli');
     }
     const uid = request.auth.uid;
-    try {
-      const { getAuth } = require('firebase-admin/auth');
-      const rec = await getAuth().getUser(uid);
-      await assertEmailNotPurged(rec.email);
-    } catch (e) {
-      if (e instanceof HttpsError) throw e;
-    }
     let {
       username = '',
       firstName = '',
@@ -2660,13 +2653,11 @@ exports.claimUsername = onCall(
     username = String(username).trim().replace(/^@/, '').toLowerCase();
 
     const existingUser = await db.collection('users').doc(uid).get();
-    if (existingUser.exists) {
-      const ed = existingUser.data() || {};
-      if (ed.deleted === true || ed.usernameStatus === 'deleted') {
-        throw new HttpsError(
-          'failed-precondition',
-          'Bu hesap silinmiş. Kullanıcı adı atanamaz.',
-        );
+    if (existingUser.exists && isDeletedUserData(existingUser.data() || {})) {
+      try {
+        await existingUser.ref.delete();
+      } catch (_) {
+        /* ignore */
       }
     }
 
@@ -4379,6 +4370,67 @@ async function findAccountByEmail(emailRaw) {
   return null;
 }
 
+async function hasLiveUserProfile({ uid, email }) {
+  if (uid) {
+    const snap = await db.collection('users').doc(uid).get();
+    if (snap.exists && !isDeletedUserData(snap.data() || {})) return true;
+  }
+  const mail = String(email || '').trim().toLowerCase();
+  if (mail.includes('@')) {
+    const q = await db
+      .collection('users')
+      .where('email', '==', mail)
+      .limit(5)
+      .get();
+    for (const doc of q.docs) {
+      if (!isDeletedUserData(doc.data() || {})) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Silinmiş hesabın Auth / hayalet profili kalmışsa e-postayı serbest bırak.
+ * Kara liste yok: aynı e-posta sıfırdan yeni UID ile kayıt olabilir.
+ */
+async function releaseOrphanAuthForReregistration(emailRaw) {
+  const email = String(emailRaw || '').trim().toLowerCase();
+  if (!isValidEmail(email)) return false;
+  const { getAuth } = require('firebase-admin/auth');
+  const auth = getAuth();
+  let rec = null;
+  try {
+    rec = await auth.getUserByEmail(email);
+  } catch (e) {
+    if (e?.code !== 'auth/user-not-found') throw e;
+  }
+  const live = await hasLiveUserProfile({ uid: rec?.uid, email });
+  if (live) return false;
+  if (rec?.uid) {
+    try {
+      await auth.deleteUser(rec.uid);
+      console.log('[auth] orphan Auth silindi (yeniden kayıt)', rec.uid, email);
+    } catch (e) {
+      console.warn('[auth] orphan delete', rec.uid, e?.message || e);
+    }
+  }
+  const q = await db
+    .collection('users')
+    .where('email', '==', email)
+    .limit(20)
+    .get();
+  for (const doc of q.docs) {
+    if (isDeletedUserData(doc.data() || {}) || !live) {
+      try {
+        await doc.ref.delete();
+      } catch (e) {
+        console.warn('[auth] ghost profile delete', doc.id, e?.message || e);
+      }
+    }
+  }
+  return true;
+}
+
 /**
  * Belge doğrulaması kapalıysa pending öğrenci hesaplarını onayla.
  */
@@ -4785,10 +4837,8 @@ async function purgeNonAdminUsers(actorId) {
         if (keepIds.has(id)) continue;
         try {
           await auth.deleteUser(id);
-        } catch (_) {
-          try {
-            await auth.updateUser(id, { disabled: true });
-          } catch (_) {}
+        } catch (e) {
+          console.warn('[testModePurge] auth delete', id, e?.message || e);
         }
       }
 
@@ -4799,10 +4849,8 @@ async function purgeNonAdminUsers(actorId) {
           if (byEmail?.uid && !keepIds.has(byEmail.uid)) {
             try {
               await auth.deleteUser(byEmail.uid);
-            } catch (_) {
-              try {
-                await auth.updateUser(byEmail.uid, { disabled: true });
-              } catch (_) {}
+            } catch (e) {
+              console.warn('[testModePurge] auth delete-by-email', byEmail.uid, e?.message || e);
             }
           }
         } catch (_) {
@@ -5253,9 +5301,13 @@ exports.sendRegistrationEmailCode = onCall(
     if (!isValidEmail(email)) {
       throw new HttpsError('invalid-argument', 'Geçerli e-posta gir');
     }
-    await assertEmailNotPurged(email);
 
     const { getAuth } = require('firebase-admin/auth');
+    try {
+      await releaseOrphanAuthForReregistration(email);
+    } catch (e) {
+      console.warn('[sendRegistrationEmailCode] orphan release', e?.message || e);
+    }
     try {
       await getAuth().getUserByEmail(email);
       throw new HttpsError(
@@ -6124,67 +6176,6 @@ function isDeletedUserData(d) {
   );
 }
 
-async function isPurgedEmail(emailRaw) {
-  const email = String(emailRaw || '').trim().toLowerCase();
-  if (!isValidEmail(email)) return false;
-  try {
-    const snap = await db.collection('purged_emails').doc(emailDocId(email)).get();
-    return snap.exists;
-  } catch (_) {
-    return false;
-  }
-}
-
-async function rememberPurgedAccount({ uid, email, username, reason }) {
-  const mail = String(email || '').trim().toLowerCase();
-  const at = new Date().toISOString();
-  const payload = {
-    lastUid: uid || null,
-    username: username || null,
-    reason: reason || 'purge',
-    at,
-  };
-  if (isValidEmail(mail)) {
-    await db.collection('purged_emails').doc(emailDocId(mail)).set(
-      {
-        email: mail,
-        ...payload,
-        count: FieldValue.increment(1),
-      },
-      { merge: true },
-    );
-  }
-  const ids = [...new Set([uid].filter(Boolean).map(String))];
-  for (const id of ids) {
-    try {
-      await db.collection('purged_uids').doc(id).set(
-        { email: mail || null, ...payload },
-        { merge: true },
-      );
-    } catch (_) {}
-  }
-}
-
-async function assertEmailNotPurged(emailRaw) {
-  const email = String(emailRaw || '').trim().toLowerCase();
-  if (await isPurgedEmail(email)) {
-    throw new HttpsError(
-      'failed-precondition',
-      'Bu e-posta silinmiş bir hesaba aitti. Yeniden açılamaz.',
-    );
-  }
-}
-
-async function patchExistingUser(uid, patch) {
-  const id = String(uid || '').trim();
-  if (!id || !patch || typeof patch !== 'object') return false;
-  const ref = db.collection('users').doc(id);
-  const snap = await ref.get();
-  if (!snap.exists || isDeletedUserData(snap.data())) return false;
-  await ref.set(patch, { merge: true });
-  return true;
-}
-
 async function sweepUserIdsFromFollowGraphs(ids) {
   const idSet = new Set([...ids].filter(Boolean).map(String));
   if (idSet.size === 0) return 0;
@@ -6478,41 +6469,27 @@ async function purgeUserAccount({
       await auth.deleteUser(id);
     } catch (e) {
       console.warn('[purgeUser] auth delete', id, e?.message || e);
-      try {
-        await auth.updateUser(id, { disabled: true });
-      } catch (e2) {
-        console.warn('[purgeUser] auth disable', id, e2?.message || e2);
-      }
     }
   }
 
-  // E-posta ile Auth kaydı kalmış olabilir
+  // E-posta ile Auth kaydı kalmış olabilir — disable etme (e-postayı kilitler).
   const mail = String(email || data.email || '')
     .trim()
     .toLowerCase();
   if (mail.includes('@') && !mail.includes('@invalid.local')) {
     try {
       const byEmail = await auth.getUserByEmail(mail);
-      if (byEmail?.uid && !authIds.has(byEmail.uid)) {
+      if (byEmail?.uid) {
         try {
           await auth.deleteUser(byEmail.uid);
-        } catch (_) {
-          try {
-            await auth.updateUser(byEmail.uid, { disabled: true });
-          } catch (_) {}
+        } catch (e) {
+          console.warn('[purgeUser] auth delete-by-email', byEmail.uid, e?.message || e);
         }
       }
     } catch (_) {
       /* ignore */
     }
   }
-
-  await rememberPurgedAccount({
-    uid: authUid,
-    email: mail,
-    username,
-    reason: reason || 'self',
-  });
 
   await db.collection('account_deletion_logs').add({
     uid: authUid,
@@ -6824,42 +6801,6 @@ exports.adminDeleteAccount = onCall(
   },
 );
 
-exports.backfillPurgedEmails = onCall(
-  { region: 'europe-west1', timeoutSeconds: 120 },
-  async (request) => {
-    if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
-    await assertPlatformAdmin(request.auth.uid);
-    let scanned = 0;
-    let written = 0;
-    let last = null;
-    for (let page = 0; page < 40; page += 1) {
-      let q = db
-        .collection('account_deletion_logs')
-        .orderBy(FieldPath.documentId())
-        .limit(200);
-      if (last) q = q.startAfter(last);
-      const snap = await q.get();
-      if (snap.empty) break;
-      for (const doc of snap.docs) {
-        scanned += 1;
-        const d = doc.data() || {};
-        const email = String(d.email || '').trim().toLowerCase();
-        if (!isValidEmail(email)) continue;
-        await rememberPurgedAccount({
-          uid: d.uid || d.docId,
-          email,
-          username: d.username,
-          reason: d.reason || 'backfill',
-        });
-        written += 1;
-      }
-      last = snap.docs[snap.docs.length - 1];
-      if (snap.size < 200) break;
-    }
-    return { ok: true, scanned, written };
-  },
-);
-
 /**
  * Admin: firma / topluluk hesabı — Auth user + Firestore profil
  */
@@ -6905,8 +6846,13 @@ exports.adminCreateManagedAccount = onCall(
       throw new HttpsError('invalid-argument', 'Kullanıcı adı 3–24 karakter olmalı');
     }
 
+    try {
+      await releaseOrphanAuthForReregistration(email);
+    } catch (e) {
+      console.warn('[adminCreateManagedAccount] orphan release', e?.message || e);
+    }
+
     // Aynı e-posta ile öğrenci / firma / topluluk — ikinci hesap yok
-    await assertEmailNotPurged(email);
     const existing = await findAccountByEmail(email);
     if (existing) {
       throw new HttpsError(
