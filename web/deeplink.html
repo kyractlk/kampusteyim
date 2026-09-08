@@ -43,12 +43,26 @@
   var ua = navigator.userAgent || '';
   var isIOS = /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && 'ontouchend' in document);
   var isAndroid = /android/i.test(ua);
+  var preferWeb = false;
+  try {
+    preferWeb =
+      sessionStorage.getItem('kt_web_continue') === '1' ||
+      localStorage.getItem('kt_prefer_web') === '1';
+  } catch (e) {}
+  var nav = (performance.getEntriesByType &&
+    performance.getEntriesByType('navigation')[0]) || {};
+  var stayWeb =
+    preferWeb ||
+    nav.type === 'reload' ||
+    nav.type === 'back_forward' ||
+    (!isIOS && !isAndroid);
   if (path.indexOf('via=web') < 0) {
     path += (path.indexOf('?') >= 0 ? '&' : '?') + 'via=web';
   }
   window.__ktPath = path;
   window.__ktIOS = isIOS;
   window.__ktAndroid = isAndroid;
+  window.__ktStayWeb = stayWeb;
   window.__ktStore = isIOS ? IOS_STORE : (isAndroid ? PLAY : DOWNLOAD);
 
   var TRACK_URL = 'https://europe-west1-ayskampuss.cloudfunctions.net/trackPromoScan';
@@ -60,7 +74,7 @@
     try { new Image().src = src; } catch (e) {}
   }
 
-  if (!isIOS && !isAndroid) return;
+  if (stayWeb || (!isIOS && !isAndroid)) return;
 
   // Uygulamayı aç — tarama sayacı yukarıda tetiklendi.
   location.href = 'kampusteyim://open' + path;
@@ -144,7 +158,10 @@
   storeBtn.textContent = isIOS ? 'App Store’dan indir' : (isAndroid ? 'Google Play’den indir' : 'İndirme sayfasına git');
   webBtn.href = path + (location.hash || '');
   webBtn.addEventListener('click', function () {
-    try { sessionStorage.setItem('kt_web_continue', '1'); } catch (e) {}
+    try {
+      sessionStorage.setItem('kt_web_continue', '1');
+      localStorage.setItem('kt_prefer_web', '1');
+    } catch (e) {}
   });
 
   window.addEventListener('pagehide', function () { gone = true; });
@@ -172,7 +189,8 @@
     })
     .catch(function () {});
 
-  if (!isIOS && !isAndroid) {
+  if (window.__ktStayWeb || (!isIOS && !isAndroid)) {
+    try { sessionStorage.setItem('kt_web_continue', '1'); } catch (e) {}
     location.replace(path);
     return;
   }
