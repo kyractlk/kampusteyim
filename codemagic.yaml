@@ -46,11 +46,12 @@ workflows:
           pod install --repo-update
       - name: Build number
         script: |
-          # App Store’da son yüklenen cfBundleVersion 35+ — yeni build daha yüksek olmalı
-          BN="${BUILD_NUMBER:-36}"
-          if [ "$BN" -le 35 ]; then BN=36; fi
-          # Flutter semver 3 parça ister (1.71 geçersiz). App Store adı 1.71 --build-name ile.
-          sed -i '' -E "s/^version: .*/version: 1.71.0+$BN/" pubspec.yaml
+          # App Store’da son yüklenen cfBundleVersion 36+ — yeni build daha yüksek olmalı
+          BN="${BUILD_NUMBER:-37}"
+          if [ "$BN" -le 36 ]; then BN=37; fi
+          # Flutter semver 3 parça ister (1.72 geçersiz). App Store adı 1.72 --build-name ile.
+          # 1.71.0 App Store’da onaylı; aynı marketing version tekrar yüklenemez (90062).
+          sed -i '' -E "s/^version: .*/version: 1.72.0+$BN/" pubspec.yaml
           echo "$BN" > /tmp/ios_bn
           grep '^version:' pubspec.yaml
       - name: Flutter IPA RELEASE only
@@ -93,9 +94,9 @@ workflows:
             echo "ERROR: GoogleService-Info.plist not in Xcode Resources (Firebase launch crash)"
             exit 1
           fi
-          BN="$(cat /tmp/ios_bn 2>/dev/null || echo "${BUILD_NUMBER:-36}")"
+          BN="$(cat /tmp/ios_bn 2>/dev/null || echo "${BUILD_NUMBER:-37}")"
           flutter build ipa --release \
-            --build-name=1.71 \
+            --build-name=1.72 \
             --build-number="$BN" \
             --no-tree-shake-icons \
             --export-options-plist=/Users/builder/export_options.plist
@@ -180,15 +181,15 @@ workflows:
         script: |
           BN="${BUILD_NUMBER:-14}"
           if [ "$BN" -le 13 ]; then BN=14; fi
-          sed -i '' -E "s/^version: .*/version: 1.71.0+$BN/" pubspec.yaml
+          sed -i '' -E "s/^version: .*/version: 1.72.0+$BN/" pubspec.yaml
           echo "$BN" > /tmp/ios_bn
           grep '^version:' pubspec.yaml
       - name: Flutter Ad Hoc RELEASE IPA
         script: |
           set -e
-          BN="$(cat /tmp/ios_bn 2>/dev/null || echo "${BUILD_NUMBER:-36}")"
+          BN="$(cat /tmp/ios_bn 2>/dev/null || echo "${BUILD_NUMBER:-37}")"
           flutter build ipa --release \
-            --build-name=1.71 \
+            --build-name=1.72 \
             --build-number="$BN" \
             --no-tree-shake-icons \
             --export-options-plist=/Users/builder/export_options.plist

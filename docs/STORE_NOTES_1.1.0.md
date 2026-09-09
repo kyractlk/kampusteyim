@@ -14,14 +14,14 @@ Hesaplar arasında çıkış yapmadan geç. Tanıtım kartı ve QR istatistikler
 ## Android
 
 - versionName: 1.1.0
-- versionCode: 74
-- AAB: `release/KampusteyimAPP-1.1.0.aab`
+- versionCode: 75
+- AAB: `release/KampusteyimAPP-1.1.0+75.aab`
 
 ## Sürüm rayları
 
 | Platform | Mağaza sürümü | Zorunlu min (şimdilik boş) |
 |----------|----------------|----------------------------|
-| iOS | 1.71 | boş → kimse kilitlenmez |
+| iOS | 1.72 | boş → kimse kilitlenmez |
 | Android | 1.1.0 | boş → kimse kilitlenmez |
 
 Soft uyarı: kullanıcı o platformda mağazadan gerideyse “Sonra” ile kapatılabilir. iOS ile Android asla kıyaslanmaz.
