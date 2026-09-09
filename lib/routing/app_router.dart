@@ -24,7 +24,9 @@ import '../features/jobs/company_portal.dart';
 import '../features/jobs/company_ads_screen.dart';
 import '../features/jobs/company_events_screen.dart';
 import '../features/jobs/company_settings_screen.dart';
+import '../features/jobs/student_browse_screen.dart';
 import '../features/commerce/company_organizer_hub.dart';
+import '../features/commerce/company_staff_screen.dart';
 import '../features/commerce/my_tickets_screen.dart';
 import '../features/commerce/org_invite_screen.dart';
 import '../features/commerce/ticket_checkin_screen.dart';
@@ -436,6 +438,22 @@ GoRouter createRouter(AuthProvider auth) {
         builder: (_, _) => const CompanyStudentsScreen(),
       ),
       GoRoute(
+        path: '/community/students',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (_, _) => const StudentBrowseScreen(
+          mode: StudentBrowseMode.community,
+          wrapCompanyShell: false,
+        ),
+      ),
+      GoRoute(
+        path: '/admin/students',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (_, _) => const StudentBrowseScreen(
+          mode: StudentBrowseMode.admin,
+          wrapCompanyShell: false,
+        ),
+      ),
+      GoRoute(
         path: '/firma/settings',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (_, _) => const CompanySettingsScreen(),
@@ -454,6 +472,11 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/firma/organizer',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (_, _) => const CompanyOrganizerHubScreen(),
+      ),
+      GoRoute(
+        path: '/firma/staff',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (_, _) => const CompanyStaffScreen(),
       ),
       GoRoute(
         path: '/firma/organizer/scan',

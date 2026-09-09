@@ -8,6 +8,7 @@ import '../../core/constants/app_info.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/breakpoints.dart';
 import '../../core/widgets/app_circle_logo.dart';
+import '../../core/widgets/panel_chrome.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
@@ -15,6 +16,7 @@ import 'company_applicant_widgets.dart';
 import 'company_mail_gate.dart';
 import 'job_models.dart';
 import 'jobs_provider.dart';
+import 'student_browse_screen.dart';
 
 /// Firma Online — temiz kurumsal işveren paneli (kullanım odaklı).
 class CompanyPortalShell extends StatelessWidget {
@@ -344,6 +346,8 @@ class CompanyDashboardScreen extends StatelessWidget {
                         context.push('/firma/events');
                       case 'organizer':
                         context.push('/firma/organizer');
+                      case 'staff':
+                        context.push('/firma/staff');
                       case 'students':
                         context.push('/firma/students');
                       case 'settings':
@@ -367,6 +371,10 @@ class CompanyDashboardScreen extends StatelessWidget {
                         child: Text('Organizatör'),
                       ),
                     ],
+                    const PopupMenuItem(
+                      value: 'staff',
+                      child: Text('Yönetim kadrosu'),
+                    ),
                     const PopupMenuItem(
                       value: 'students',
                       child: Text('Öğrenci tara'),
@@ -431,6 +439,12 @@ class CompanyDashboardScreen extends StatelessWidget {
                             onPressed: () => context.push('/firma/organizer'),
                           ),
                         ],
+                        ActionChip(
+                          avatar:
+                              const Icon(Icons.group_add_outlined, size: 18),
+                          label: const Text('Kadro'),
+                          onPressed: () => context.push('/firma/staff'),
+                        ),
                       ],
                     ),
                   ),
@@ -655,6 +669,12 @@ class _SideNav extends StatelessWidget {
             onTap: () => context.push('/firma/organizer'),
           ),
         ],
+        ListTile(
+          leading: const Icon(Icons.group_add_outlined),
+          title: const Text('Yönetim kadrosu'),
+          subtitle: const Text('Davet · yetki'),
+          onTap: () => context.push('/firma/staff'),
+        ),
         ListTile(
           leading: const Icon(Icons.people_outline),
           title: const Text('Öğrenci tara'),
@@ -928,6 +948,9 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
   late final TextEditingController _loc;
   late final TextEditingController _dept;
   late final TextEditingController _tags;
+  int _step = 0;
+
+  static const _stepLabels = ['Temel', 'Detay', 'Yayın'];
 
   @override
   void initState() {
@@ -971,6 +994,45 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
     if (picked != null) setState(() => job.deadline = picked);
   }
 
+  Future<void> _publish() async {
+    job.title = _title.text.trim();
+    job.description = _desc.text.trim();
+    job.requirements = _req.text.trim();
+    job.location = _loc.text.trim();
+    job.department = _dept.text.trim();
+    job.tags = _tags.text
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (job.title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('İlan başlığı gerekli')),
+      );
+      setState(() => _step = 0);
+      return;
+    }
+    final jobsProv = context.read<JobsProvider>();
+    final notif = context.read<NotificationProvider>();
+    final auth = context.read<AuthProvider>();
+    final canNotify = await ensureCompanyMailSignature(context);
+    if (!mounted) return;
+    await jobsProv.saveJob(
+      job,
+      notifications: notif,
+      students: auth.directory,
+      notifyStudents: canNotify,
+    );
+    if (!mounted) return;
+    final msg = jobsProv.status == 'MAIL_SIGNATURE_REQUIRED'
+        ? 'İlan kaydedildi. Bildirim için önce mail imzasını ayarlayın.'
+        : (jobsProv.status ?? 'İlan kaydedildi');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
+    );
+    context.go('/firma/dashboard');
+  }
+
   @override
   Widget build(BuildContext context) {
     return CompanyPortalShell(
@@ -984,150 +1046,188 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                TextField(
-                  controller: _title,
-                  decoration: const InputDecoration(labelText: 'Başlık'),
+                const PanelWelcomeHeader(
+                  title: 'Yeni ilan',
+                  subtitle: 'Temel bilgiler, detaylar ve yayın',
                 ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<JobType>(
-                  // ignore: deprecated_member_use
-                  value: job.type,
-                  items: JobType.values
-                      .map(
-                        (t) => DropdownMenuItem(
-                          value: t,
-                          child: Text(switch (t) {
-                            JobType.internship => 'Staj',
-                            JobType.fulltime => 'Tam zamanlı',
-                            JobType.parttime => 'Part-time',
-                          }),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) => setState(() => job.type = v ?? job.type),
-                  decoration: const InputDecoration(labelText: 'Tür'),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<JobWorkMode>(
-                  // ignore: deprecated_member_use
-                  value: job.workMode,
-                  items: JobWorkMode.values
-                      .map(
-                        (m) => DropdownMenuItem(
-                          value: m,
-                          child: Text(switch (m) {
-                            JobWorkMode.onsite => 'Ofis',
-                            JobWorkMode.hybrid => 'Hibrit',
-                            JobWorkMode.remote => 'Uzaktan',
-                          }),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) =>
-                      setState(() => job.workMode = v ?? job.workMode),
-                  decoration: const InputDecoration(labelText: 'Çalışma modeli'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _dept,
-                  decoration: const InputDecoration(
-                    labelText: 'Birim / departman',
-                    hintText: 'ör. Yazılım, Pazarlama',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _loc,
-                  decoration: const InputDecoration(labelText: 'Konum'),
-                ),
-                const SizedBox(height: 10),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    job.deadline == null
-                        ? 'Son başvuru tarihi (opsiyonel)'
-                        : 'Son başvuru: '
-                            '${job.deadline!.day.toString().padLeft(2, '0')}.'
-                            '${job.deadline!.month.toString().padLeft(2, '0')}.'
-                            '${job.deadline!.year}',
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (job.deadline != null)
-                        IconButton(
-                          tooltip: 'Temizle',
-                          onPressed: () => setState(() => job.deadline = null),
-                          icon: const Icon(Icons.clear),
-                        ),
-                      IconButton(
-                        onPressed: _pickDeadline,
-                        icon: const Icon(Icons.event),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: _tags,
-                  decoration: const InputDecoration(
-                    labelText: 'Etiketler',
-                    hintText: 'virgülle ayır: Flutter, SQL, İngilizce',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _desc,
-                  maxLines: 5,
-                  decoration: const InputDecoration(labelText: 'Açıklama'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _req,
-                  maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'Gereksinimler'),
-                ),
+                const SizedBox(height: 12),
+                PanelStepBar(labels: _stepLabels, step: _step),
                 const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () async {
-                    job.title = _title.text.trim();
-                    job.description = _desc.text.trim();
-                    job.requirements = _req.text.trim();
-                    job.location = _loc.text.trim();
-                    job.department = _dept.text.trim();
-                    job.tags = _tags.text
-                        .split(',')
-                        .map((e) => e.trim())
-                        .where((e) => e.isNotEmpty)
-                        .toList();
-                    if (job.title.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('İlan başlığı gerekli')),
-                      );
-                      return;
-                    }
-                    final jobsProv = context.read<JobsProvider>();
-                    final notif = context.read<NotificationProvider>();
-                    final auth = context.read<AuthProvider>();
-                    final canNotify =
-                        await ensureCompanyMailSignature(context);
-                    if (!context.mounted) return;
-                    await jobsProv.saveJob(
-                      job,
-                      notifications: notif,
-                      students: auth.directory,
-                      notifyStudents: canNotify,
-                    );
-                    if (!context.mounted) return;
-                    final msg = jobsProv.status == 'MAIL_SIGNATURE_REQUIRED'
-                        ? 'İlan kaydedildi. Bildirim için önce mail imzasını ayarlayın.'
-                        : (jobsProv.status ?? 'İlan kaydedildi');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(msg)),
-                    );
-                    context.go('/firma/dashboard');
-                  },
-                  child: const Text('Yayınla & bildir'),
+                if (_step == 0) ...[
+                  TextField(
+                    controller: _title,
+                    decoration: const InputDecoration(labelText: 'Başlık'),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<JobType>(
+                    // ignore: deprecated_member_use
+                    value: job.type,
+                    items: JobType.values
+                        .map(
+                          (t) => DropdownMenuItem(
+                            value: t,
+                            child: Text(switch (t) {
+                              JobType.internship => 'Staj',
+                              JobType.fulltime => 'Tam zamanlı',
+                              JobType.parttime => 'Part-time',
+                            }),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setState(() => job.type = v ?? job.type),
+                    decoration: const InputDecoration(labelText: 'Tür'),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<JobWorkMode>(
+                    // ignore: deprecated_member_use
+                    value: job.workMode,
+                    items: JobWorkMode.values
+                        .map(
+                          (m) => DropdownMenuItem(
+                            value: m,
+                            child: Text(switch (m) {
+                              JobWorkMode.onsite => 'Ofis',
+                              JobWorkMode.hybrid => 'Hibrit',
+                              JobWorkMode.remote => 'Uzaktan',
+                            }),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => job.workMode = v ?? job.workMode),
+                    decoration:
+                        const InputDecoration(labelText: 'Çalışma modeli'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _dept,
+                    decoration: const InputDecoration(
+                      labelText: 'Birim / departman',
+                      hintText: 'ör. Yazılım, Pazarlama',
+                    ),
+                  ),
+                ] else if (_step == 1) ...[
+                  TextField(
+                    controller: _loc,
+                    decoration: const InputDecoration(labelText: 'Konum'),
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      job.deadline == null
+                          ? 'Son başvuru tarihi (opsiyonel)'
+                          : 'Son başvuru: '
+                              '${job.deadline!.day.toString().padLeft(2, '0')}.'
+                              '${job.deadline!.month.toString().padLeft(2, '0')}.'
+                              '${job.deadline!.year}',
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (job.deadline != null)
+                          IconButton(
+                            tooltip: 'Temizle',
+                            onPressed: () =>
+                                setState(() => job.deadline = null),
+                            icon: const Icon(Icons.clear),
+                          ),
+                        IconButton(
+                          onPressed: _pickDeadline,
+                          icon: const Icon(Icons.event),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _tags,
+                    decoration: const InputDecoration(
+                      labelText: 'Etiketler',
+                      hintText: 'virgülle ayır: Flutter, SQL, İngilizce',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _desc,
+                    maxLines: 5,
+                    decoration: const InputDecoration(labelText: 'Açıklama'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _req,
+                    maxLines: 3,
+                    decoration:
+                        const InputDecoration(labelText: 'Gereksinimler'),
+                  ),
+                ] else ...[
+                  PanelCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _title.text.trim().isEmpty
+                              ? 'Başlık girilmedi'
+                              : _title.text.trim(),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _desc.text.trim().isEmpty
+                              ? 'Açıklama henüz yok'
+                              : _desc.text.trim(),
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Yayınla ile ilan kaydedilir; mail imzanız varsa öğrencilere bildirim gider.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    if (_step > 0)
+                      OutlinedButton(
+                        onPressed: () => setState(() => _step -= 1),
+                        child: const Text('Geri'),
+                      ),
+                    const Spacer(),
+                    if (_step < _stepLabels.length - 1)
+                      FilledButton(
+                        onPressed: () {
+                          if (_step == 0 && _title.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Önce başlık girin'),
+                              ),
+                            );
+                            return;
+                          }
+                          setState(() => _step += 1);
+                        },
+                        child: const Text('İleri'),
+                      )
+                    else
+                      FilledButton(
+                        onPressed: _publish,
+                        child: const Text('Yayınla & bildir'),
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -1138,188 +1238,15 @@ class _CompanyJobEditorScreenState extends State<CompanyJobEditorScreen> {
   }
 }
 
-class CompanyStudentsScreen extends StatefulWidget {
+/// Firma paneli → öğrenci tarama (geniş filtre + mini foto).
+class CompanyStudentsScreen extends StatelessWidget {
   const CompanyStudentsScreen({super.key});
 
   @override
-  State<CompanyStudentsScreen> createState() => _CompanyStudentsScreenState();
-}
-
-class _CompanyStudentsScreenState extends State<CompanyStudentsScreen> {
-  final _q = TextEditingController();
-  final _mail = TextEditingController();
-  final _offer = TextEditingController();
-
-  @override
-  void dispose() {
-    _q.dispose();
-    _mail.dispose();
-    _offer.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    final jobs = context.watch<JobsProvider>();
-    final students = auth.searchUsers(_q.text).where((u) => !u.isCommunity).toList();
-
-    return CompanyPortalShell(
-      child: Scaffold(
-        appBar: AppBar(title: const Text('Öğrenci tarama')),
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: TextField(
-                controller: _q,
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search),
-                  hintText: 'İsim / handle ara',
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: students.length,
-                itemBuilder: (context, i) {
-                  final s = students[i];
-                  return ListTile(
-                    title: Text(s.fullName),
-                    subtitle: Text('${s.handle} · ${s.bio}'),
-                    onTap: () => openCompanyStudentCv(
-                      context,
-                      s.id,
-                      fallbackName: s.fullName,
-                    ),
-                    trailing: Wrap(
-                      spacing: 4,
-                      children: [
-                        IconButton(
-                          tooltip: 'CV görüntüle',
-                          onPressed: () => openCompanyStudentCv(
-                            context,
-                            s.id,
-                            fallbackName: s.fullName,
-                          ),
-                          icon: const Icon(Icons.description_outlined),
-                        ),
-                        IconButton(
-                          tooltip: 'Mail gönder',
-                          onPressed: () async {
-                            _mail.text =
-                                'Merhaba ${s.firstName}, firmamız sizi değerlendirmek istiyor.';
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: Text('Mail · ${s.email}'),
-                                content: TextField(
-                                  controller: _mail,
-                                  maxLines: 5,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Mesaj',
-                                  ),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, false),
-                                    child: const Text('İptal'),
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: () => Navigator.pop(ctx, true),
-                                    child: const Text('Gönder'),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (ok == true && context.mounted) {
-                              if (!await ensureCompanyMailSignature(context)) {
-                                return;
-                              }
-                              if (!context.mounted) return;
-                              await jobs.emailStudent(
-                                toEmail: s.email,
-                                subject: '${jobs.company?.name} · KampüsteyimAPP',
-                                html: '<p>${_mail.text}</p>',
-                                bodyText: _mail.text,
-                                studentName: s.firstName,
-                              );
-                              if (context.mounted) {
-                                final msg = jobs.status ==
-                                        'MAIL_SIGNATURE_REQUIRED'
-                                    ? 'Önce mail imzasını ayarlayın'
-                                    : (jobs.status ?? 'Gönderildi');
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(msg)),
-                                );
-                              }
-                            }
-                          },
-                          icon: const Icon(Icons.mail_outline),
-                        ),
-                        IconButton(
-                          tooltip: 'Teklif gönder',
-                          onPressed: () async {
-                            _offer.text =
-                                'Sizi staj / iş görüşmesine davet ediyoruz.';
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text('Direkt teklif'),
-                                content: TextField(
-                                  controller: _offer,
-                                  maxLines: 4,
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, false),
-                                    child: const Text('İptal'),
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: () => Navigator.pop(ctx, true),
-                                    child: const Text('Gönder'),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (ok == true && context.mounted) {
-                              if (!await ensureCompanyMailSignature(context)) {
-                                return;
-                              }
-                              if (!context.mounted) return;
-                              await jobs.sendOffer(
-                                studentId: s.id,
-                                message: _offer.text,
-                                notifications:
-                                    context.read<NotificationProvider>(),
-                                auth: context.read<AuthProvider>(),
-                                studentEmail: s.email,
-                                studentName: s.firstName,
-                              );
-                              if (context.mounted &&
-                                  jobs.status == 'MAIL_SIGNATURE_REQUIRED') {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Önce mail imzasını ayarlayın',
-                                    ),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                          icon: const Icon(Icons.handshake_outlined),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+    return const StudentBrowseScreen(
+      mode: StudentBrowseMode.company,
+      wrapCompanyShell: true,
     );
   }
 }

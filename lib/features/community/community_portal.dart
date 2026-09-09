@@ -7,6 +7,8 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/icons/mt_icons.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/breakpoints.dart';
+import '../../core/widgets/panel_chrome.dart';
 import '../../models/models.dart';
 import '../ads/ad_campaign_form.dart';
 import '../auth/data/auth_provider.dart';
@@ -23,7 +25,16 @@ class CommunityPortalScreen extends StatefulWidget {
 }
 
 class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
-  int _tab = 0;
+  /// null = hosgeldin dashboard; aksi halde acik bolum.
+  int? _section;
+
+  static const _titles = [
+    'Etkinlik',
+    'Duyuru',
+    'Basvuru',
+    'Reklam',
+    'Kadro',
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -93,6 +104,10 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
       _CommunityStaffTab(orgId: effectiveOrgId),
     ];
 
+    final wide = AppBreakpoints.isWide(context);
+    final sectionTitle =
+        _section == null ? me.fullName : _titles[_section!];
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -100,14 +115,27 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
           children: [
             const VerifiedBadge(gold: true, size: 18),
             const SizedBox(width: 8),
-            Flexible(child: Text(me.fullName, overflow: TextOverflow.ellipsis)),
+            Flexible(
+              child: Text(sectionTitle, overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
+        leading: _section == null
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () => setState(() => _section = null),
+              ),
         actions: [
           IconButton(
             tooltip: 'Kapı girişi',
             onPressed: () => context.push('/community/scan'),
             icon: const Icon(Icons.qr_code_scanner_rounded),
+          ),
+          IconButton(
+            tooltip: 'Öğrenci tara',
+            onPressed: () => context.push('/community/students'),
+            icon: const Icon(Icons.school_outlined),
           ),
           IconButton(
             tooltip: 'Tanıtım kartı',
@@ -120,32 +148,123 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
           ),
         ],
       ),
-      body: pages[_tab],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.event_outlined),
-            label: 'Etkinlik',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.campaign_outlined),
-            label: 'Duyuru',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.how_to_reg_outlined),
-            label: 'Basvuru',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.ads_click_outlined),
-            label: 'Reklam',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.group_add_outlined),
-            label: 'Kadro',
-          ),
-        ],
+      body: _section == null
+          ? _CommunityWelcome(
+              orgName: me.fullName,
+              onSelect: (i) => setState(() => _section = i),
+            )
+          : wide
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: 280,
+                      child: Material(
+                        color: AppColors.surface,
+                        child: ListView(
+                          padding: const EdgeInsets.all(12),
+                          children: [
+                            for (var i = 0; i < _titles.length; i++)
+                              ListTile(
+                                selected: _section == i,
+                                leading: Icon(_iconFor(i)),
+                                title: Text(_titles[i]),
+                                onTap: () => setState(() => _section = i),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(child: pages[_section!]),
+                  ],
+                )
+              : pages[_section!],
+    );
+  }
+
+  IconData _iconFor(int i) => switch (i) {
+        0 => Icons.event_outlined,
+        1 => Icons.campaign_outlined,
+        2 => Icons.how_to_reg_outlined,
+        3 => Icons.ads_click_outlined,
+        _ => Icons.group_add_outlined,
+      };
+}
+
+class _CommunityWelcome extends StatelessWidget {
+  const _CommunityWelcome({
+    required this.orgName,
+    required this.onSelect,
+  });
+
+  final String orgName;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+          children: [
+            PanelWelcomeHeader(
+              title: 'Hoş geldiniz',
+              subtitle: '$orgName yönetim paneli',
+            ),
+            const SizedBox(height: 12),
+            PanelNavTile(
+              accent: true,
+              icon: Icons.qr_code_scanner_rounded,
+              title: 'Kapı girişi',
+              subtitle: 'Bilet QR doğrula',
+              onTap: () => context.push('/community/scan'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.event_outlined,
+              title: 'Etkinlik',
+              subtitle: 'Oluştur · yönet',
+              onTap: () => onSelect(0),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.campaign_outlined,
+              title: 'Duyuru',
+              subtitle: 'Takipçilere duyuru yayınla',
+              onTap: () => onSelect(1),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.how_to_reg_outlined,
+              title: 'Başvuru',
+              subtitle: 'Üyelik başvurularını onayla',
+              onTap: () => onSelect(2),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.ads_click_outlined,
+              title: 'Reklam',
+              subtitle: 'Kampanya talebi oluştur',
+              onTap: () => onSelect(3),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.group_add_outlined,
+              title: 'Yönetim kadrosu',
+              subtitle: 'Davet · yetki',
+              onTap: () => onSelect(4),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.school_outlined,
+              title: 'Öğrenci tara',
+              subtitle: 'Kampüs öğrencilerini filtrele',
+              onTap: () => context.push('/community/students'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -166,7 +285,8 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
   final _loc = TextEditingController();
   final _cap = TextEditingController(text: '40');
   final _rules = TextEditingController();
-  int _step = 0;
+  /// -1 = hicbir adim acik degil
+  int _step = -1;
   String _audience = 'followers';
   DateTime _startsAt = DateTime.now().add(const Duration(days: 7));
   DateTime _deadline = DateTime.now().add(const Duration(days: 5));
@@ -510,6 +630,7 @@ class _CommunityAnnouncementsTabState extends State<_CommunityAnnouncementsTab> 
   final _title = TextEditingController();
   final _body = TextEditingController();
   String _audience = 'followers';
+  bool _formOpen = false;
 
   @override
   void dispose() {
@@ -527,8 +648,8 @@ class _CommunityAnnouncementsTabState extends State<_CommunityAnnouncementsTab> 
         _StepCard(
           step: 1,
           title: 'Yeni duyuru',
-          expanded: true,
-          onToggle: () {},
+          expanded: _formOpen,
+          onToggle: () => setState(() => _formOpen = !_formOpen),
           child: Column(
             children: [
               TextField(

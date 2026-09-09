@@ -83,6 +83,242 @@ class PanelSectionLabel extends StatelessWidget {
   }
 }
 
+/// Panel karşılama başlığı.
+class PanelWelcomeHeader extends StatelessWidget {
+  const PanelWelcomeHeader({
+    super.key,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return PanelCard(
+      color: AppColors.navy.withValues(alpha: 0.05),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.navy,
+                ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              height: 1.4,
+              color: AppColors.textSecondary,
+              fontSize: 13.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ana menü ticker / kısayol kartı — tıklanınca ilgili bölüme gider.
+class PanelNavTile extends StatelessWidget {
+  const PanelNavTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.accent = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = accent ? Colors.white : AppColors.navy;
+    final bg = accent ? AppColors.navy : AppColors.surface;
+    return PanelCard(
+      color: bg,
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: accent
+                  ? Colors.white.withValues(alpha: 0.15)
+                  : AppColors.navy.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: fg),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: fg,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.3,
+                    color: accent ? Colors.white70 : AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: accent ? Colors.white70 : AppColors.textSecondary,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Stepli form üst çubuğu.
+class PanelStepBar extends StatelessWidget {
+  const PanelStepBar({
+    super.key,
+    required this.labels,
+    required this.step,
+  });
+
+  final List<String> labels;
+  final int step;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var i = 0; i < labels.length; i++) ...[
+          if (i > 0)
+            Expanded(
+              child: Container(
+                height: 2,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                color: i <= step
+                    ? AppColors.navy
+                    : AppColors.border,
+              ),
+            ),
+          Column(
+            children: [
+              CircleAvatar(
+                radius: 14,
+                backgroundColor:
+                    i <= step ? AppColors.navy : AppColors.border,
+                foregroundColor:
+                    i <= step ? Colors.white : AppColors.textSecondary,
+                child: Text(
+                  '${i + 1}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                labels[i],
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: i <= step
+                      ? AppColors.navy
+                      : AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Yüksek kontrastlı izin/toggle kutusu (lacivert seçilince beyaz yazı).
+class PanelToggleCard extends StatelessWidget {
+  const PanelToggleCard({
+    super.key,
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onChanged,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.navy : AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: selected ? AppColors.navy : AppColors.border,
+          width: 1.4,
+        ),
+      ),
+      child: InkWell(
+        onTap: () => onChanged(!selected),
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: selected ? Colors.white : AppColors.navy,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: selected ? Colors.white : AppColors.navy,
+                  ),
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.circle_outlined,
+                size: 20,
+                color: selected ? Colors.white : AppColors.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Türkiye illerinden çoklu seçim — katalog JSON’dan.
 class CityTargetPicker extends StatefulWidget {
   const CityTargetPicker({

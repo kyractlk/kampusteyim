@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/panel_chrome.dart';
 import '../../data/campus_catalog.dart';
 import '../../data/mock/mock_data.dart';
 import '../../models/models.dart';
@@ -175,6 +176,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
       isScrollControlled: true,
       showDragHandle: true,
       builder: (ctx) {
+        var step = 0;
         return StatefulBuilder(
           builder: (ctx, setLocal) {
             return Padding(
@@ -190,7 +192,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                   children: [
                     Text(
                       editing ? 'Etkinliği düzenle' : 'Yeni kampüs dışı etkinlik',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 18,
                       ),
@@ -200,202 +202,240 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                       editing
                           ? 'İade politikası ve bilet tipi sonradan da değişebilir. Satılmış biletlerin tipi değişmez.'
                           : 'Kaydettikten sonra KampüsteyimAPP yönetim ekibinin incelemesine iletilir. Onaylanınca listelenir.',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 12.5,
                         color: AppColors.textSecondary,
                       ),
                     ),
                     const SizedBox(height: 12),
-                    EventBannerPreview(
-                      url: bannerUrl,
-                      uploading: bannerBusy,
-                      onPick: () async {
-                        setLocal(() => bannerBusy = true);
-                        final url = await pickEventBanner(ctx);
-                        setLocal(() {
-                          bannerBusy = false;
-                          if (url != null && url.isNotEmpty) bannerUrl = url;
-                        });
-                      },
+                    PanelStepBar(
+                      labels: const ['Temel', 'Zaman', 'Bilet'],
+                      step: step,
                     ),
-                    TextField(
-                      controller: title,
-                      decoration: const InputDecoration(labelText: 'Başlık *'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: desc,
-                      maxLines: 3,
-                      decoration:
-                          const InputDecoration(labelText: 'Açıklama *'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: location,
-                      decoration:
-                          const InputDecoration(labelText: 'Yer / mekan *'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: mapUrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Harita linki (opsiyonel)',
-                        hintText: 'https://maps.google.com/...',
+                    const SizedBox(height: 12),
+                    if (step == 0) ...[
+                      EventBannerPreview(
+                        url: bannerUrl,
+                        uploading: bannerBusy,
+                        onPick: () async {
+                          setLocal(() => bannerBusy = true);
+                          final url = await pickEventBanner(ctx);
+                          setLocal(() {
+                            bannerBusy = false;
+                            if (url != null && url.isNotEmpty) bannerUrl = url;
+                          });
+                        },
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: rules,
-                      maxLines: 3,
-                      decoration:
-                          const InputDecoration(labelText: 'Kurallar'),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: city,
-                      decoration: const InputDecoration(labelText: 'Şehir'),
-                      items: [
-                        for (final c in cities)
-                          DropdownMenuItem(value: c, child: Text(c)),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) setLocal(() => city = v);
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: capacity,
-                      keyboardType: TextInputType.number,
-                      decoration:
-                          const InputDecoration(labelText: 'Kontenjan'),
-                    ),
-                    const SizedBox(height: 8),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Etkinlik tarihi'),
-                      subtitle: Text(
-                        DateFormat('d MMM yyyy · HH:mm', 'tr')
-                            .format(startsAt),
+                      TextField(
+                        controller: title,
+                        decoration: const InputDecoration(labelText: 'Başlık *'),
                       ),
-                      trailing: const Icon(Icons.event),
-                      onTap: () async {
-                        final d = await showDatePicker(
-                          context: ctx,
-                          initialDate: startsAt,
-                          firstDate: DateTime.now(),
-                          lastDate:
-                              DateTime.now().add(const Duration(days: 730)),
-                        );
-                        if (d == null || !ctx.mounted) return;
-                        final t = await showTimePicker(
-                          context: ctx,
-                          initialTime: TimeOfDay.fromDateTime(startsAt),
-                        );
-                        if (t == null) return;
-                        setLocal(() {
-                          startsAt = DateTime(
-                            d.year,
-                            d.month,
-                            d.day,
-                            t.hour,
-                            t.minute,
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: desc,
+                        maxLines: 3,
+                        decoration:
+                            const InputDecoration(labelText: 'Açıklama *'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: location,
+                        decoration:
+                            const InputDecoration(labelText: 'Yer / mekan *'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: mapUrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Harita linki (opsiyonel)',
+                          hintText: 'https://maps.google.com/...',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: rules,
+                        maxLines: 3,
+                        decoration:
+                            const InputDecoration(labelText: 'Kurallar'),
+                      ),
+                    ] else if (step == 1) ...[
+                      DropdownButtonFormField<String>(
+                        initialValue: city,
+                        decoration: const InputDecoration(labelText: 'Şehir'),
+                        items: [
+                          for (final c in cities)
+                            DropdownMenuItem(value: c, child: Text(c)),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setLocal(() => city = v);
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: capacity,
+                        keyboardType: TextInputType.number,
+                        decoration:
+                            const InputDecoration(labelText: 'Kontenjan'),
+                      ),
+                      const SizedBox(height: 8),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Etkinlik tarihi'),
+                        subtitle: Text(
+                          DateFormat('d MMM yyyy · HH:mm', 'tr')
+                              .format(startsAt),
+                        ),
+                        trailing: const Icon(Icons.event),
+                        onTap: () async {
+                          final d = await showDatePicker(
+                            context: ctx,
+                            initialDate: startsAt,
+                            firstDate: DateTime.now(),
+                            lastDate:
+                                DateTime.now().add(const Duration(days: 730)),
                           );
-                        });
-                      },
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Son başvuru (opsiyonel)'),
-                      subtitle: Text(
-                        deadline == null
-                            ? 'Yok'
-                            : DateFormat('d MMM yyyy · HH:mm', 'tr')
-                                .format(deadline!),
+                          if (d == null || !ctx.mounted) return;
+                          final t = await showTimePicker(
+                            context: ctx,
+                            initialTime: TimeOfDay.fromDateTime(startsAt),
+                          );
+                          if (t == null) return;
+                          setLocal(() {
+                            startsAt = DateTime(
+                              d.year,
+                              d.month,
+                              d.day,
+                              t.hour,
+                              t.minute,
+                            );
+                          });
+                        },
                       ),
-                      trailing: const Icon(Icons.timer_outlined),
-                      onTap: () async {
-                        final d = await showDatePicker(
-                          context: ctx,
-                          initialDate: deadline ?? startsAt,
-                          firstDate: DateTime.now(),
-                          lastDate: startsAt,
-                        );
-                        if (d == null || !ctx.mounted) return;
-                        final t = await showTimePicker(
-                          context: ctx,
-                          initialTime: TimeOfDay.fromDateTime(
-                            deadline ?? startsAt,
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Son başvuru (opsiyonel)'),
+                        subtitle: Text(
+                          deadline == null
+                              ? 'Yok'
+                              : DateFormat('d MMM yyyy · HH:mm', 'tr')
+                                  .format(deadline!),
+                        ),
+                        trailing: const Icon(Icons.timer_outlined),
+                        onTap: () async {
+                          final d = await showDatePicker(
+                            context: ctx,
+                            initialDate: deadline ?? startsAt,
+                            firstDate: DateTime.now(),
+                            lastDate: startsAt,
+                          );
+                          if (d == null || !ctx.mounted) return;
+                          final t = await showTimePicker(
+                            context: ctx,
+                            initialTime: TimeOfDay.fromDateTime(
+                              deadline ?? startsAt,
+                            ),
+                          );
+                          if (t == null) return;
+                          setLocal(() {
+                            deadline = DateTime(
+                              d.year,
+                              d.month,
+                              d.day,
+                              t.hour,
+                              t.minute,
+                            );
+                          });
+                        },
+                      ),
+                    ] else ...[
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Bilet dönemleri',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
                           ),
-                        );
-                        if (t == null) return;
-                        setLocal(() {
-                          deadline = DateTime(
-                            d.year,
-                            d.month,
-                            d.day,
-                            t.hour,
-                            t.minute,
-                          );
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: () => setLocal(
+                              () => drafts.add(_PriceTierDraft(
+                                label: 'Dönem ${drafts.length + 1}',
+                              )),
+                            ),
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Dönem ekle'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Her dönemde fiyat, stok ve bilet tipi (tek / çoklu giriş) ayrı seçilir.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      for (var i = 0; i < drafts.length; i++)
+                        _PriceTierDraftCard(
+                          index: i,
+                          draft: drafts[i],
+                          canRemove: drafts.length > 1,
+                          onChanged: () => setLocal(() {}),
+                          onRemove: () => setLocal(() {
+                            drafts.removeAt(i).dispose();
+                          }),
+                        ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('İade yapılabilir'),
+                        subtitle: Text(
+                          refundsAllowed
+                              ? 'İade onayında bilet iptal, kontenjan açılır, bakiyeden net tutar düşer (komisyon kalır).'
+                              : 'İade yok — etkinlik sayfasında ve satış sözleşmesinde belirtilir.',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        value: refundsAllowed,
+                        onChanged: (v) => setLocal(() => refundsAllowed = v),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
                     Row(
                       children: [
-                        const Expanded(
-                          child: Text(
-                            'Bilet dönemleri',
-                            style: TextStyle(fontWeight: FontWeight.w700),
+                        if (step > 0)
+                          OutlinedButton(
+                            onPressed: () => setLocal(() => step -= 1),
+                            child: const Text('Geri'),
                           ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => setLocal(
-                            () => drafts.add(_PriceTierDraft(
-                              label: 'Dönem ${drafts.length + 1}',
-                            )),
+                        const Spacer(),
+                        if (step < 2)
+                          FilledButton(
+                            onPressed: () {
+                              if (step == 0 &&
+                                  (title.text.trim().isEmpty ||
+                                      desc.text.trim().isEmpty ||
+                                      location.text.trim().isEmpty)) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Başlık, açıklama ve yer zorunlu',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+                              setLocal(() => step += 1);
+                            },
+                            child: const Text('İleri'),
+                          )
+                        else
+                          FilledButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text(
+                              editing ? 'Kaydet' : 'İncelemeye gönder',
+                            ),
                           ),
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text('Dönem ekle'),
-                        ),
                       ],
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Her dönemde fiyat, stok ve bilet tipi (tek / çoklu giriş) ayrı seçilir.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    for (var i = 0; i < drafts.length; i++)
-                      _PriceTierDraftCard(
-                        index: i,
-                        draft: drafts[i],
-                        canRemove: drafts.length > 1,
-                        onChanged: () => setLocal(() {}),
-                        onRemove: () => setLocal(() {
-                          drafts.removeAt(i).dispose();
-                        }),
-                      ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('İade yapılabilir'),
-                      subtitle: Text(
-                        refundsAllowed
-                            ? 'İade onayında bilet iptal, kontenjan açılır, bakiyeden net tutar düşer (komisyon kalır).'
-                            : 'İade yok — etkinlik sayfasında ve satış sözleşmesinde belirtilir.',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      value: refundsAllowed,
-                      onChanged: (v) => setLocal(() => refundsAllowed = v),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: Text(
-                        editing ? 'Kaydet' : 'İncelemeye gönder',
-                      ),
                     ),
                   ],
                 ),

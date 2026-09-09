@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -29,19 +32,91 @@ class _StaffInvitePanelState extends State<StaffInvitePanel> {
   bool _badge = true;
   bool _busy = false;
   bool _loadingList = true;
+  bool _searchingRemote = false;
   List<Map<String, dynamic>> _invites = const [];
   List<Map<String, dynamic>> _staff = const [];
+  /// Org’a bağlı / affiliate kişisel hesaplar (ters linked dahil).
+  final Map<String, AppUser> _related = {};
+  /// Son uzak arama sonuçları.
+  final Map<String, AppUser> _remoteHits = {};
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     _refreshRoster();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_bootstrapDirectory());
+    });
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _query.dispose();
     super.dispose();
+  }
+
+  Future<void> _bootstrapDirectory() async {
+    final auth = context.read<AuthProvider>();
+    try {
+      await auth.syncDirectoryFromFirestore();
+    } catch (_) {}
+    final org = await auth.ensureUserLoaded(widget.orgId, forceRemote: true);
+    final me = auth.user;
+    final seedIds = <String>{
+      ...?org?.linkedAccountIds,
+      ...?me?.linkedAccountIds,
+    };
+    for (final id in seedIds) {
+      final u = await auth.ensureUserLoaded(id);
+      if (u != null && _isInviteCandidate(u)) {
+        _related[u.id] = u;
+      }
+    }
+    // Ters bağ: linkedAccountIds array-contains orgId
+    await _loadRelatedFromFirestore(auth);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadRelatedFromFirestore(AuthProvider auth) async {
+    final fs = FirebaseFirestore.instance.collection('users');
+    try {
+      final queries = <Future<QuerySnapshot<Map<String, dynamic>>>>[
+        fs
+            .where('linkedAccountIds', arrayContains: widget.orgId)
+            .limit(40)
+            .get(),
+        fs.where('panelOrgId', isEqualTo: widget.orgId).limit(40).get(),
+      ];
+      if (widget.orgType == 'company') {
+        queries.add(
+          fs
+              .where('affiliatedCompanyId', isEqualTo: widget.orgId)
+              .limit(40)
+              .get(),
+        );
+      }
+      final snaps = await Future.wait(queries);
+      for (final snap in snaps) {
+        for (final doc in snap.docs) {
+          final u = await auth.ensureUserLoaded(doc.id);
+          if (u != null && _isInviteCandidate(u)) {
+            _related[u.id] = u;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[staff] related load: $e');
+    }
+  }
+
+  bool _isInviteCandidate(AppUser u) {
+    if (u.id == widget.orgId) return false;
+    // Yalnız org hesaplarını ele — admin / öğrenci / kişisel kalır.
+    if (u.isCommunity || u.role == UserRole.community) return false;
+    if (u.isCompany || u.role == UserRole.company) return false;
+    return true;
   }
 
   Future<void> _refreshRoster() async {
@@ -75,14 +150,11 @@ class _StaffInvitePanelState extends State<StaffInvitePanel> {
         grantBlueBadge: _badge,
       );
       _query.clear();
+      _remoteHits.clear();
       await _refreshRoster();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${u.fullName} davet edildi. Mailindeki bağlantı uygulamayı açar.',
-          ),
-        ),
+        SnackBar(content: Text('${u.fullName} davet edildi.')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -109,17 +181,113 @@ class _StaffInvitePanelState extends State<StaffInvitePanel> {
     }
   }
 
+  void _onQueryChanged(String _) {
+    setState(() {});
+    _debounce?.cancel();
+    final q = _query.text.trim();
+    if (q.length < 2) {
+      _remoteHits.clear();
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      unawaited(_remoteSearch(q));
+    });
+  }
+
+  Future<void> _remoteSearch(String raw) async {
+    final q = raw.trim();
+    if (q.length < 2 || !mounted) return;
+    setState(() => _searchingRemote = true);
+    final auth = context.read<AuthProvider>();
+    final fs = FirebaseFirestore.instance.collection('users');
+    final bare = q.replaceFirst(RegExp(r'^@'), '').toLowerCase();
+    try {
+      final futures = <Future<QuerySnapshot<Map<String, dynamic>>>>[
+        fs.where('username', isEqualTo: bare).limit(8).get(),
+        fs.where('email', isEqualTo: q.toLowerCase()).limit(8).get(),
+        fs.where('email', isEqualTo: q).limit(8).get(),
+      ];
+      // Tam ad / ad — eşitlik + lowercase varyant
+      if (q.length >= 3) {
+        futures.add(fs.where('firstName', isEqualTo: q).limit(8).get());
+        final titled = bare.isEmpty
+            ? q
+            : '${bare[0].toUpperCase()}${bare.substring(1)}';
+        futures.add(fs.where('firstName', isEqualTo: titled).limit(8).get());
+        futures.add(fs.where('fullName', isEqualTo: q).limit(8).get());
+      }
+      final snaps = await Future.wait(futures);
+      final found = <String, AppUser>{};
+      for (final snap in snaps) {
+        for (final doc in snap.docs) {
+          final u = await auth.ensureUserLoaded(doc.id, forceRemote: true);
+          if (u != null && _isInviteCandidate(u)) {
+            found[u.id] = u;
+            _related[u.id] = u;
+          }
+        }
+      }
+      if (!mounted || _query.text.trim() != raw.trim()) return;
+      setState(() {
+        _remoteHits
+          ..clear()
+          ..addAll(found);
+      });
+    } catch (e) {
+      debugPrint('[staff] remote search: $e');
+    } finally {
+      if (mounted) setState(() => _searchingRemote = false);
+    }
+  }
+
+  List<AppUser> _searchHits(AuthProvider auth) {
+    final q = _query.text.trim();
+    final qLower = q.toLowerCase();
+    final bare = qLower.replaceFirst(RegExp(r'^@'), '');
+    final seen = <String>{};
+    final out = <AppUser>[];
+
+    void consider(AppUser u) {
+      if (!_isInviteCandidate(u)) return;
+      if (!seen.add(u.id)) return;
+      out.add(u);
+    }
+
+    bool matches(AppUser u) {
+      if (q.isEmpty) return true;
+      final uname = (u.username ?? '').toLowerCase();
+      final blob =
+          '${u.fullName} ${u.email} ${u.handle} $uname ${u.firstName} ${u.lastName}'
+              .toLowerCase();
+      return blob.contains(qLower) ||
+          uname == bare ||
+          (q.length >= 2 && u.email.toLowerCase().startsWith(qLower));
+    }
+
+    // Bağlı / affiliate hesaplar — boş aramada da öneri olarak göster.
+    for (final u in _related.values) {
+      if (matches(u)) consider(u);
+    }
+    if (q.isEmpty) return out.take(20).toList();
+
+    for (final u in _remoteHits.values) {
+      if (matches(u)) consider(u);
+    }
+    for (final u in auth.directory) {
+      if (matches(u)) consider(u);
+    }
+    for (final u in auth.searchUsers(q)) {
+      consider(u);
+    }
+
+    return out.take(20).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final q = _query.text.trim();
-    final hits = q.isEmpty
-        ? <AppUser>[]
-        : auth
-            .searchUsers(q)
-            .where((u) => !u.isCommunity && !u.isCompany && u.id != widget.orgId)
-            .take(12)
-            .toList();
+    final hits = _searchHits(auth);
     final pending =
         _invites.where((e) => '${e['status']}' == 'pending').toList();
     final orgLabel = widget.orgType == 'company' ? 'firma' : 'topluluk';
@@ -139,11 +307,10 @@ class _StaffInvitePanelState extends State<StaffInvitePanel> {
                     ),
               ),
               const SizedBox(height: 6),
-              Text(
-                'Kişiyi ara, yetkisini seç ve davet et. Davetliye e-posta gider; '
-                'bağlantıya basınca Android veya iOS uygulaması açılır, '
-                'kabul/red içeride yapılır.',
-                style: const TextStyle(
+              const Text(
+                'Kullanıcıyı arayın, yetki seçin ve davet gönderin. '
+                'Davetliye e-posta ile onay bağlantısı iletilir.',
+                style: TextStyle(
                   height: 1.4,
                   fontSize: 13,
                   color: AppColors.textSecondary,
@@ -161,36 +328,23 @@ class _StaffInvitePanelState extends State<StaffInvitePanel> {
                 'Yetkiler',
                 subtitle: 'Davet edilen kişiye verilecek erişim',
               ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilterChip(
-                    avatar: Icon(
-                      Icons.dashboard_customize_outlined,
-                      size: 16,
-                      color: _panel ? Colors.white : AppColors.navy,
-                    ),
-                    label: const Text('Panele erişim'),
-                    selected: _panel,
-                    onSelected: (v) => setState(() => _panel = v),
-                  ),
-                  FilterChip(
-                    avatar: Icon(
-                      Icons.verified_outlined,
-                      size: 16,
-                      color: _badge ? Colors.white : AppColors.navy,
-                    ),
-                    label: const Text('Mavi tick'),
-                    selected: _badge,
-                    onSelected: (v) => setState(() => _badge = v),
-                  ),
-                ],
+              PanelToggleCard(
+                selected: _panel,
+                icon: Icons.dashboard_customize_outlined,
+                label: 'Panele erişim',
+                onChanged: (v) => setState(() => _panel = v),
+              ),
+              const SizedBox(height: 8),
+              PanelToggleCard(
+                selected: _badge,
+                icon: Icons.verified_outlined,
+                label: 'Mavi tick',
+                onChanged: (v) => setState(() => _badge = v),
               ),
               const SizedBox(height: 14),
               TextField(
                 controller: _query,
-                onChanged: (_) => setState(() {}),
+                onChanged: _onQueryChanged,
                 decoration: InputDecoration(
                   labelText: 'Kullanıcı ara',
                   hintText: 'Ad, e-posta veya @kullanıcı',
@@ -199,23 +353,44 @@ class _StaffInvitePanelState extends State<StaffInvitePanel> {
                       ? null
                       : IconButton(
                           onPressed: () {
+                            _debounce?.cancel();
                             _query.clear();
+                            _remoteHits.clear();
                             setState(() {});
                           },
                           icon: const Icon(Icons.close_rounded),
                         ),
                 ),
               ),
-              if (_busy) ...[
+              if (_busy || _searchingRemote) ...[
                 const SizedBox(height: 10),
                 const LinearProgressIndicator(minHeight: 3),
               ],
-              if (hits.isEmpty && q.isNotEmpty)
+              if (hits.isEmpty && q.isEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: 12),
                   child: Text(
-                    'Eşleşen öğrenci hesabı yok.',
+                    'Bağlı hesaplar yükleniyor veya henüz yok. Ad / @kullanıcı ara.',
                     style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+              if (hits.isEmpty && q.length >= 2 && !_searchingRemote)
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: Text(
+                    'Eşleşen kişisel hesap yok. @kullanıcı adı veya e-posta deneyin.',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+              if (hits.isNotEmpty && q.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10, bottom: 2),
+                  child: Text(
+                    'Bağlı hesaplar',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ...hits.map(
@@ -313,62 +488,64 @@ class _PersonTile extends StatelessWidget {
   const _PersonTile({
     required this.name,
     required this.subtitle,
+    required this.trailing,
     this.photoUrl,
-    this.trailing,
   });
 
   final String name;
   final String subtitle;
+  final Widget trailing;
   final String? photoUrl;
-  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final url = (photoUrl ?? '').trim();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          ClipOval(
-            child: SizedBox(
-              width: 42,
-              height: 42,
-              child: url.isNotEmpty
-                  ? SafeNetworkImage(
-                      url: url,
-                      fit: BoxFit.cover,
-                      width: 42,
-                      height: 42,
-                    )
-                  : const ColoredBox(
-                      color: Color(0xFFE8EEF5),
-                      child: Icon(Icons.person_outline, size: 22),
+    return Row(
+      children: [
+        ClipOval(
+          child: SizedBox(
+            width: 42,
+            height: 42,
+            child: url.isEmpty
+                ? ColoredBox(
+                    color: AppColors.navy.withValues(alpha: 0.08),
+                    child: Center(
+                      child: Text(
+                        name.isEmpty ? '?' : name[0].toUpperCase(),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.navy,
+                        ),
+                      ),
                     ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                if (subtitle.isNotEmpty)
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
+                  )
+                : SafeNetworkImage(
+                    url: url,
+                    fit: BoxFit.cover,
+                    width: 42,
+                    height: 42,
                   ),
-              ],
-            ),
           ),
-          if (trailing != null) trailing!,
-        ],
-      ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
+              if (subtitle.trim().isNotEmpty)
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        trailing,
+      ],
     );
   }
 }

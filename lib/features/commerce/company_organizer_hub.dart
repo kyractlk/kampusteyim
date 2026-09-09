@@ -8,7 +8,6 @@ import '../../core/widgets/panel_chrome.dart';
 import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
 import 'commerce_service.dart';
-import 'staff_invite_panel.dart';
 
 /// Firma organizatörü: bakiye, satışlar, IBAN, çekim, indirim
 class CompanyOrganizerHubScreen extends StatefulWidget {
@@ -24,6 +23,8 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
   bool _loading = true;
   String? _error;
   String? _salesEventId;
+  /// null = karşılama menüsü; aksi halde açık bölüm.
+  String? _section;
 
   final _iban = TextEditingController();
   final _holder = TextEditingController();
@@ -259,193 +260,256 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
       );
     }
 
+    final sectionTitle = switch (_section) {
+      'balance' => 'Bakiye',
+      'iban' => 'Çekim hesabı',
+      'withdraw' => 'Çekim talebi',
+      'sales' => 'Satışlar',
+      'discounts' => 'İndirim kodları',
+      _ => 'Organizatör paneli',
+    };
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Organizatör paneli'),
+        title: Text(sectionTitle),
+        leading: _section == null
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () => setState(() => _section = null),
+              ),
         actions: [
-          IconButton(
-            tooltip: 'CSV kopyala',
-            onPressed: _exportCsv,
-            icon: const Icon(Icons.download_outlined),
-          ),
+          if (_section == 'sales' || _section == null)
+            IconButton(
+              tooltip: 'CSV kopyala',
+              onPressed: _exportCsv,
+              icon: const Icon(Icons.download_outlined),
+            ),
           IconButton(
             onPressed: _load,
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/firma/organizer/scan'),
-        icon: const Icon(Icons.qr_code_scanner),
-        label: const Text('QR doğrula'),
-      ),
+      floatingActionButton: _section == null
+          ? FloatingActionButton.extended(
+              onPressed: () => context.push('/firma/organizer/scan'),
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('QR doğrula'),
+            )
+          : null,
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
         children: [
-          if (!hasIban)
-            PanelCard(
-              color: const Color(0xFFFFF4E5),
-              child: const Row(
-                children: [
-                  Icon(Icons.info_outline, color: Color(0xFFB45309)),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Etkinlik açmadan önce çekim IBAN’ını kaydet.',
-                      style: TextStyle(fontWeight: FontWeight.w600, height: 1.35),
+          if (_section == null) ...[
+            const PanelWelcomeHeader(
+              title: 'Organizatör paneli',
+              subtitle: 'Bakiye, satış, çekim ve bilet işlemleri',
+            ),
+            if (!hasIban) ...[
+              const SizedBox(height: 12),
+              PanelCard(
+                color: const Color(0xFFFFF4E5),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Color(0xFFB45309)),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Etkinlik açmadan önce çekim IBAN’ını kaydet.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                      ),
                     ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            PanelNavTile(
+              accent: true,
+              icon: Icons.qr_code_scanner_rounded,
+              title: 'Kapı girişi',
+              subtitle: 'Bilet QR doğrula',
+              onTap: () => context.push('/firma/organizer/scan'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.account_balance_wallet_outlined,
+              title: 'Bakiye',
+              subtitle: '${balance.toStringAsFixed(2)} TL',
+              onTap: () => setState(() => _section = 'balance'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.account_balance_outlined,
+              title: 'Çekim hesabı',
+              subtitle: hasIban ? 'IBAN kayıtlı' : 'IBAN ekle',
+              onTap: () => setState(() => _section = 'iban'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.payments_outlined,
+              title: 'Çekim talebi',
+              subtitle: 'Bakiyeden talep oluştur',
+              onTap: () => setState(() => _section = 'withdraw'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.receipt_long_outlined,
+              title: 'Satışlar',
+              subtitle: 'Etkinlik bazlı bilet ve iadeler',
+              onTap: () => setState(() => _section = 'sales'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.local_offer_outlined,
+              title: 'İndirim kodları',
+              subtitle: 'Kod oluştur ve takip et',
+              onTap: () => setState(() => _section = 'discounts'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.campaign_outlined,
+              title: 'Reklamlar',
+              subtitle: 'Firma reklam paneline git',
+              onTap: () => context.push('/firma/ads'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.group_add_outlined,
+              title: 'Yönetim kadrosu',
+              subtitle: 'Üye davet et ve yetki ver',
+              onTap: () => context.push('/firma/staff'),
+            ),
+          ] else if (_section == 'balance') ...[
+            PanelCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Bakiye',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${balance.toStringAsFixed(2)} TL',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Komisyon %${commission.toStringAsFixed(0)} · '
+                    'Minimum çekim ${minW.toStringAsFixed(0)} TL',
+                    style: const TextStyle(color: AppColors.textSecondary),
                   ),
                 ],
               ),
             ),
-          if (!hasIban) const SizedBox(height: 12),
-          PanelCard(
-            color: AppColors.navy,
-            onTap: () => context.push('/firma/organizer/scan'),
-            child: const Row(
-              children: [
-                Icon(Icons.qr_code_scanner, color: Colors.white, size: 28),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Kapı girişi',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Katılımcı biletini saniyeler içinde doğrula',
-                        style: TextStyle(color: Colors.white70, fontSize: 13),
-                      ),
-                    ],
+          ] else if (_section == 'iban') ...[
+            PanelCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const PanelSectionLabel(
+                    'Çekim hesabı',
+                    subtitle: 'Bilet gelirleri bu IBAN’a aktarılır',
                   ),
-                ),
-                Icon(Icons.chevron_right, color: Colors.white),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          PanelCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Bakiye',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${balance.toStringAsFixed(2)} TL',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Komisyon %${commission.toStringAsFixed(0)} · '
-                  'Minimum çekim ${minW.toStringAsFixed(0)} TL',
-                  style: const TextStyle(color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          PanelCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const PanelSectionLabel(
-                  'Çekim hesabı',
-                  subtitle: 'Bilet gelirleri bu IBAN’a aktarılır',
-                ),
-                TextField(
-                  controller: _iban,
-                  decoration: const InputDecoration(labelText: 'IBAN'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _holder,
-                  decoration: const InputDecoration(labelText: 'Hesap sahibi'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _bank,
-                  decoration: const InputDecoration(labelText: 'Banka'),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: _saveIban,
-                  child: const Text('IBAN kaydet'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          PanelCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const PanelSectionLabel(
-                  'Çekim talebi',
-                  subtitle: 'Bakiyenden yönetim onayına gönderilir',
-                ),
-                TextField(
-                  controller: _withdraw,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: 'Tutar',
-                    hintText: 'En az ${minW.toStringAsFixed(0)} TL',
-                    prefixIcon: const Icon(Icons.payments_outlined),
+                  TextField(
+                    controller: _iban,
+                    decoration: const InputDecoration(labelText: 'IBAN'),
                   ),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: balance >= minW ? _doWithdraw : null,
-                  child: const Text('Talep et'),
-                ),
-                if (withdrawals.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Son talepler',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _holder,
+                    decoration:
+                        const InputDecoration(labelText: 'Hesap sahibi'),
                   ),
-                  const SizedBox(height: 6),
-                  ...withdrawals.take(5).map((raw) {
-                    final w = Map<String, dynamic>.from(raw as Map);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '${w['amount']} TL',
-                              style: const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          Text(
-                            _statusLabel('${w['status']}'),
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 12.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _bank,
+                    decoration: const InputDecoration(labelText: 'Banka'),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: _saveIban,
+                    child: const Text('IBAN kaydet'),
+                  ),
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
+          ] else if (_section == 'withdraw') ...[
+            PanelCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const PanelSectionLabel(
+                    'Çekim talebi',
+                    subtitle: 'Bakiyenden yönetim onayına gönderilir',
+                  ),
+                  TextField(
+                    controller: _withdraw,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Tutar',
+                      hintText: 'En az ${minW.toStringAsFixed(0)} TL',
+                      prefixIcon: const Icon(Icons.payments_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: balance >= minW ? _doWithdraw : null,
+                    child: const Text('Talep et'),
+                  ),
+                  if (withdrawals.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Son talepler',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ...withdrawals.take(5).map((raw) {
+                      final w = Map<String, dynamic>.from(raw as Map);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${w['amount']} TL',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _statusLabel('${w['status']}'),
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ],
+              ),
+            ),
+          ] else if (_section == 'sales') ...[
           PanelCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -570,7 +634,7 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          ] else if (_section == 'discounts') ...[
           PanelCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -599,9 +663,8 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
                 }),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-          StaffInvitePanel(orgId: me.id, orgType: 'company'),
+          )
+          ],
         ],
       ),
     );

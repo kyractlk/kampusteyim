@@ -292,10 +292,19 @@ p{margin:0 0 1rem;color:rgba(255,255,255,.72)}
       const org = await loadUser(orgId);
       if (!org.exists) throw new HttpsError('not-found', 'Organizasyon yok');
       const role = String(org.data.role || '');
-      if (orgType === 'company' && role !== 'company') {
+      // Seed / hibrit hesaplar: role=company ama isCommunity=true (KampüsteyimAPP).
+      const isCommunityOrg =
+        role === 'community' ||
+        org.data.isCommunity === true ||
+        String(org.data.panelOrgType || '') === 'community';
+      const isCompanyOrg =
+        role === 'company' ||
+        org.data.isCompany === true ||
+        String(org.data.panelOrgType || '') === 'company';
+      if (orgType === 'company' && !isCompanyOrg) {
         throw new HttpsError('failed-precondition', 'Firma hesabı değil');
       }
-      if (orgType === 'community' && role !== 'community') {
+      if (orgType === 'community' && !isCommunityOrg) {
         throw new HttpsError('failed-precondition', 'Topluluk hesabı değil');
       }
       if (!canManageOrg({ id: actorUid, ...actor.data }, orgId) && actorUid !== orgId) {

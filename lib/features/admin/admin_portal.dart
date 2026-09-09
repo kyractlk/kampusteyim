@@ -36,6 +36,7 @@ import 'admin_commerce_tab.dart';
 import 'admin_staff_tab.dart';
 import '../plus/admin_plus_tab.dart';
 import '../plus/plus_provider.dart';
+import '../jobs/student_browse_screen.dart';
 
 class _AdminTab {
   const _AdminTab({
@@ -125,6 +126,16 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
             admin: admin,
             me: me,
             onUserAction: _handleUserAction,
+          ),
+        ),
+      if (admin.can(me, AdminPermission.manageUsers))
+        _AdminTab(
+          label: 'Öğrenciler',
+          icon: const Icon(Icons.school_outlined),
+          required: const [AdminPermission.manageUsers],
+          builder: () => const StudentBrowseScreen(
+            mode: StudentBrowseMode.admin,
+            wrapCompanyShell: false,
           ),
         ),
       if (admin.can(me, AdminPermission.manageUsers))

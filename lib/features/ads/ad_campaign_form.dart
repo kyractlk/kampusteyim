@@ -77,6 +77,9 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
   String _uploadStage = '';
   double _uploadProgress = 0;
   Map<String, String> _imageVariants = {};
+  int _step = 0;
+
+  static const _stepLabels = ['İçerik', 'Hedef', 'Bağlantı', 'Gönder'];
 
   static const _placementLabels = {
     'feed': 'Akış',
@@ -244,6 +247,41 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
     }
   }
 
+  bool _canGoNext() {
+    switch (_step) {
+      case 0:
+        if (_title.text.trim().isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Başlık gerekli')),
+          );
+          return false;
+        }
+        if (_imageUrl.text.trim().isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Önce reklam görseli yükleyin')),
+          );
+          return false;
+        }
+        return true;
+      case 1:
+        if (_placements.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('En az bir mecra seçin')),
+          );
+          return false;
+        }
+        if (_cities.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('En az bir hedef il seçin')),
+          );
+          return false;
+        }
+        return true;
+      default:
+        return true;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final kinds = widget.ownerType == 'community'
@@ -273,388 +311,420 @@ class _AdCampaignFormSheetState extends State<AdCampaignFormSheet> {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Yayın il bazlı gider. Üniversite seçimi yoktur.',
+              'Yayın il bazlıdır. Üniversite seçimi yoktur.',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
+            const SizedBox(height: 12),
+            PanelStepBar(labels: _stepLabels, step: _step),
             const SizedBox(height: 16),
-            PanelCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const PanelSectionLabel('İçerik'),
-                  DropdownButtonFormField<String>(
-                    initialValue: _adKind,
-                    items: [
-                      for (final k in kinds)
-                        DropdownMenuItem(value: k.$1, child: Text(k.$2)),
-                    ],
-                    onChanged: (v) => setState(() => _adKind = v ?? _adKind),
-                    decoration: const InputDecoration(labelText: 'Tür'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _title,
-                    decoration: const InputDecoration(labelText: 'Başlık'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _body,
-                    maxLines: 3,
-                    decoration: const InputDecoration(labelText: 'Metin'),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            PanelCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const PanelSectionLabel(
-                    'Görsel',
-                    subtitle:
-                        'Galeriden yükleyin. Feed (16:9), reels (4:5) ve hikâye (9:16) otomatik üretilir.',
-                  ),
-                  if (_imageUrl.text.trim().isNotEmpty) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: AspectRatio(
-                        aspectRatio: 16 / 9,
-                        child: SafeNetworkImage(
-                          url: _imageUrl.text.trim(),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  if (_uploading) ...[
-                    LinearProgressIndicator(value: _uploadProgress.clamp(0.05, 1)),
-                    const SizedBox(height: 4),
-                    Text(
-                      _uploadStage.isEmpty ? 'Yükleniyor…' : _uploadStage,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  OutlinedButton.icon(
-                    onPressed: (_busy || _uploading) ? null : _pickUploadImage,
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
-                    label: Text(
-                      _imageUrl.text.trim().isEmpty
-                          ? 'Görsel yükle'
-                          : 'Görseli değiştir',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            PanelCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const PanelSectionLabel('Mecralar'),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final p in _placementLabels.keys)
-                        FilterChip(
-                          label: Text(_placementLabels[p]!),
-                          selected: _placements.contains(p),
-                          onSelected: (v) => setState(() {
-                            if (v) {
-                              _placements.add(p);
-                            } else {
-                              _placements.remove(p);
-                            }
-                          }),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            PanelCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const PanelSectionLabel(
-                    'Hedef iller',
-                    subtitle:
-                        'Reklam seçilen illerdeki kullanıcılara gösterilir. '
-                        'Türkiye geneli tüm illeri kapsar.',
-                  ),
-                  CityTargetPicker(
-                    selected: _cities,
-                    onChanged: (v) => setState(() {
-                      _cities
-                        ..clear()
-                        ..addAll(v);
-                    }),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            PanelCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const PanelSectionLabel(
-                    'Bağlantı',
-                    subtitle: 'Tıklanınca nereye gideceğini seçin',
-                  ),
-                  DropdownButtonFormField<String>(
-                    initialValue: _linkType,
-                    items: [
-                      const DropdownMenuItem(
-                        value: 'none',
-                        child: Text('Bağlantı yok'),
-                      ),
-                      if (widget.allowEventLink)
-                        const DropdownMenuItem(
-                          value: 'event',
-                          child: Text('Etkinlik'),
-                        ),
-                      const DropdownMenuItem(
-                        value: 'job',
-                        child: Text('İş / staj'),
-                      ),
-                      if (widget.ownerType == 'community')
-                        const DropdownMenuItem(
-                          value: 'sponsor',
-                          child: Text('Sponsor'),
-                        ),
-                      const DropdownMenuItem(value: 'url', child: Text('URL')),
-                    ],
-                    onChanged: (v) => setState(() {
-                      _linkType = v ?? 'none';
-                      if (_linkType == 'job' &&
-                          _linkJobId == null &&
-                          widget.jobs.isNotEmpty) {
-                        _linkJobId = widget.jobs.first.id;
-                      }
-                      if (_linkType == 'event' &&
-                          _linkEventId == null &&
-                          widget.events.isNotEmpty) {
-                        _linkEventId = widget.events.first.id;
-                      }
-                    }),
-                    decoration: const InputDecoration(labelText: 'Öne çıkar'),
-                  ),
-                  if (widget.allowEventLink &&
-                      _linkType == 'event' &&
-                      widget.events.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      initialValue: _linkEventId ?? widget.events.first.id,
-                      items: [
-                        for (final e in widget.events)
-                          DropdownMenuItem(value: e.id, child: Text(e.title)),
-                      ],
-                      onChanged: (v) => setState(() => _linkEventId = v),
-                      decoration: const InputDecoration(labelText: 'Etkinlik'),
-                    ),
-                  ],
-                  if (_linkType == 'job' && widget.jobs.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      initialValue: _linkJobId ?? widget.jobs.first.id,
-                      items: [
-                        for (final j in widget.jobs)
-                          DropdownMenuItem(value: j.id, child: Text(j.title)),
-                      ],
-                      onChanged: (v) => setState(() => _linkJobId = v),
-                      decoration: const InputDecoration(labelText: 'İlan'),
-                    ),
-                  ],
-                  if (_linkType == 'url' || _linkType == 'sponsor') ...[
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _linkUrl,
-                      decoration: const InputDecoration(labelText: 'URL'),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            PanelCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const PanelSectionLabel(
-                    'Yayın takvimi',
-                    subtitle: 'Boş bırakırsanız yönetim ekibi planlar.',
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.play_circle_outline),
-                    title: const Text('Başlangıç'),
-                    subtitle: Text(_fmtDate(_startAt)),
-                    trailing: _startAt == null
-                        ? const Icon(Icons.chevron_right)
-                        : IconButton(
-                            tooltip: 'Temizle',
-                            onPressed: () => setState(() => _startAt = null),
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                    onTap: () async {
-                      final d = await pickPanelDateTime(
-                        context,
-                        initial: _startAt,
-                      );
-                      if (d != null) setState(() => _startAt = d);
-                    },
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.stop_circle_outlined),
-                    title: const Text('Bitiş'),
-                    subtitle: Text(_fmtDate(_endAt)),
-                    trailing: _endAt == null
-                        ? const Icon(Icons.chevron_right)
-                        : IconButton(
-                            tooltip: 'Temizle',
-                            onPressed: () => setState(() => _endAt = null),
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                    onTap: () async {
-                      final d = await pickPanelDateTime(
-                        context,
-                        initial: _endAt ?? _startAt,
-                        firstDate: _startAt,
-                      );
-                      if (d != null) setState(() => _endAt = d);
-                    },
-                  ),
-                  const Divider(height: 8),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Tercih edilen saat aralığı',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () async {
-                            final t = await showTimePicker(
-                              context: context,
-                              initialTime:
-                                  _hourFrom ?? const TimeOfDay(hour: 9, minute: 0),
-                            );
-                            if (t != null) setState(() => _hourFrom = t);
-                          },
-                          child: Text('Başla ${_fmtTime(_hourFrom)}'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () async {
-                            final t = await showTimePicker(
-                              context: context,
-                              initialTime:
-                                  _hourTo ?? const TimeOfDay(hour: 21, minute: 0),
-                            );
-                            if (t != null) setState(() => _hourTo = t);
-                          },
-                          child: Text('Bitir ${_fmtTime(_hourTo)}'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _hours,
-                    decoration: const InputDecoration(
-                      labelText: 'Saat notu (isteğe bağlı)',
-                      hintText: 'Örn. akşam yayınlansın',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (_placements.contains('push')) ...[
-              const SizedBox(height: 12),
+            if (_step == 0) ...[
               PanelCard(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const PanelSectionLabel('Push bildirimi'),
-                    TextField(
-                      controller: _pushTitle,
-                      decoration: const InputDecoration(labelText: 'Push başlık'),
+                    const PanelSectionLabel('İçerik'),
+                    DropdownButtonFormField<String>(
+                      initialValue: _adKind,
+                      items: [
+                        for (final k in kinds)
+                          DropdownMenuItem(value: k.$1, child: Text(k.$2)),
+                      ],
+                      onChanged: (v) => setState(() => _adKind = v ?? _adKind),
+                      decoration: const InputDecoration(labelText: 'Tür'),
                     ),
                     const SizedBox(height: 10),
                     TextField(
-                      controller: _pushBody,
-                      decoration: const InputDecoration(labelText: 'Push metin'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (_placements.contains('email')) ...[
-              const SizedBox(height: 12),
-              PanelCard(
-                child: Column(
-                  children: [
-                    const PanelSectionLabel('E-posta reklamı'),
-                    TextField(
-                      controller: _emailSubject,
-                      decoration: const InputDecoration(labelText: 'Konu'),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _emailHeadline,
+                      controller: _title,
                       decoration: const InputDecoration(labelText: 'Başlık'),
                     ),
                     const SizedBox(height: 10),
                     TextField(
-                      controller: _emailBody,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: 'Metin',
-                        helperText:
-                            'Kurumsal HTML şablona yerleştirilir; uygulama linki eklenmez.',
-                      ),
+                      controller: _body,
+                      maxLines: 3,
+                      decoration: const InputDecoration(labelText: 'Metin'),
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _ctaLabel,
-                      decoration: const InputDecoration(
-                        labelText: 'Buton metni',
-                        hintText: 'İncele / Başvur / Satın Al',
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              PanelCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const PanelSectionLabel(
+                      'Görsel',
+                      subtitle:
+                          'Feed (16:9), reels (4:5) ve hikâye (9:16) otomatik üretilir.',
+                    ),
+                    if (_imageUrl.text.trim().isNotEmpty) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: SafeNetworkImage(
+                            url: _imageUrl.text.trim(),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    if (_uploading) ...[
+                      LinearProgressIndicator(
+                        value: _uploadProgress.clamp(0.05, 1),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _uploadStage.isEmpty ? 'Yükleniyor…' : _uploadStage,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    OutlinedButton.icon(
+                      onPressed: (_busy || _uploading) ? null : _pickUploadImage,
+                      icon: const Icon(Icons.add_photo_alternate_outlined),
+                      label: Text(
+                        _imageUrl.text.trim().isEmpty
+                            ? 'Görsel yükle'
+                            : 'Görseli değiştir',
                       ),
                     ),
                   ],
                 ),
               ),
+            ] else if (_step == 1) ...[
+              PanelCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const PanelSectionLabel('Mecralar'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final p in _placementLabels.keys)
+                          FilterChip(
+                            label: Text(_placementLabels[p]!),
+                            selected: _placements.contains(p),
+                            onSelected: (v) => setState(() {
+                              if (v) {
+                                _placements.add(p);
+                              } else {
+                                _placements.remove(p);
+                              }
+                            }),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              PanelCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const PanelSectionLabel(
+                      'Hedef iller',
+                      subtitle:
+                          'Reklam seçilen illerdeki kullanıcılara gösterilir.',
+                    ),
+                    CityTargetPicker(
+                      selected: _cities,
+                      onChanged: (v) => setState(() {
+                        _cities
+                          ..clear()
+                          ..addAll(v);
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (_step == 2) ...[
+              PanelCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const PanelSectionLabel('Bağlantı'),
+                    DropdownButtonFormField<String>(
+                      initialValue: _linkType,
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'none',
+                          child: Text('Bağlantı yok'),
+                        ),
+                        if (widget.allowEventLink)
+                          const DropdownMenuItem(
+                            value: 'event',
+                            child: Text('Etkinlik'),
+                          ),
+                        const DropdownMenuItem(
+                          value: 'job',
+                          child: Text('İş / staj'),
+                        ),
+                        if (widget.ownerType == 'community')
+                          const DropdownMenuItem(
+                            value: 'sponsor',
+                            child: Text('Sponsor'),
+                          ),
+                        const DropdownMenuItem(value: 'url', child: Text('URL')),
+                      ],
+                      onChanged: (v) => setState(() {
+                        _linkType = v ?? 'none';
+                        if (_linkType == 'job' &&
+                            _linkJobId == null &&
+                            widget.jobs.isNotEmpty) {
+                          _linkJobId = widget.jobs.first.id;
+                        }
+                        if (_linkType == 'event' &&
+                            _linkEventId == null &&
+                            widget.events.isNotEmpty) {
+                          _linkEventId = widget.events.first.id;
+                        }
+                      }),
+                      decoration: const InputDecoration(labelText: 'Öne çıkar'),
+                    ),
+                    if (widget.allowEventLink &&
+                        _linkType == 'event' &&
+                        widget.events.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: _linkEventId ?? widget.events.first.id,
+                        items: [
+                          for (final e in widget.events)
+                            DropdownMenuItem(value: e.id, child: Text(e.title)),
+                        ],
+                        onChanged: (v) => setState(() => _linkEventId = v),
+                        decoration: const InputDecoration(labelText: 'Etkinlik'),
+                      ),
+                    ],
+                    if (_linkType == 'job' && widget.jobs.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: _linkJobId ?? widget.jobs.first.id,
+                        items: [
+                          for (final j in widget.jobs)
+                            DropdownMenuItem(value: j.id, child: Text(j.title)),
+                        ],
+                        onChanged: (v) => setState(() => _linkJobId = v),
+                        decoration: const InputDecoration(labelText: 'İlan'),
+                      ),
+                    ],
+                    if (_linkType == 'url' || _linkType == 'sponsor') ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _linkUrl,
+                        decoration: const InputDecoration(labelText: 'URL'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              PanelCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const PanelSectionLabel('Yayın takvimi'),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.play_circle_outline),
+                      title: const Text('Başlangıç'),
+                      subtitle: Text(_fmtDate(_startAt)),
+                      trailing: _startAt == null
+                          ? const Icon(Icons.chevron_right)
+                          : IconButton(
+                              tooltip: 'Temizle',
+                              onPressed: () => setState(() => _startAt = null),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                      onTap: () async {
+                        final d = await pickPanelDateTime(
+                          context,
+                          initial: _startAt,
+                        );
+                        if (d != null) setState(() => _startAt = d);
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.stop_circle_outlined),
+                      title: const Text('Bitiş'),
+                      subtitle: Text(_fmtDate(_endAt)),
+                      trailing: _endAt == null
+                          ? const Icon(Icons.chevron_right)
+                          : IconButton(
+                              tooltip: 'Temizle',
+                              onPressed: () => setState(() => _endAt = null),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                      onTap: () async {
+                        final d = await pickPanelDateTime(
+                          context,
+                          initial: _endAt ?? _startAt,
+                          firstDate: _startAt,
+                        );
+                        if (d != null) setState(() => _endAt = d);
+                      },
+                    ),
+                    const Divider(height: 8),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Tercih edilen saat aralığı',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final t = await showTimePicker(
+                                context: context,
+                                initialTime: _hourFrom ?? TimeOfDay.now(),
+                              );
+                              if (t != null) setState(() => _hourFrom = t);
+                            },
+                            child: Text('Başlangıç: ${_fmtTime(_hourFrom)}'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final t = await showTimePicker(
+                                context: context,
+                                initialTime: _hourTo ?? TimeOfDay.now(),
+                              );
+                              if (t != null) setState(() => _hourTo = t);
+                            },
+                            child: Text('Bitiş: ${_fmtTime(_hourTo)}'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _hours,
+                      decoration: const InputDecoration(
+                        labelText: 'Saat notu (opsiyonel)',
+                        hintText: 'Örn. akşam yayınlansın',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              if (_placements.contains('push'))
+                PanelCard(
+                  child: Column(
+                    children: [
+                      const PanelSectionLabel('Push bildirimi'),
+                      TextField(
+                        controller: _pushTitle,
+                        decoration:
+                            const InputDecoration(labelText: 'Push başlık'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _pushBody,
+                        decoration:
+                            const InputDecoration(labelText: 'Push metin'),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_placements.contains('push') && _placements.contains('email'))
+                const SizedBox(height: 12),
+              if (_placements.contains('email'))
+                PanelCard(
+                  child: Column(
+                    children: [
+                      const PanelSectionLabel('E-posta reklamı'),
+                      TextField(
+                        controller: _emailSubject,
+                        decoration: const InputDecoration(labelText: 'Konu'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _emailHeadline,
+                        decoration: const InputDecoration(labelText: 'Başlık'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _emailBody,
+                        maxLines: 4,
+                        decoration: const InputDecoration(labelText: 'Metin'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _ctaLabel,
+                        decoration: const InputDecoration(
+                          labelText: 'Buton metni',
+                          hintText: 'İncele / Başvur / Satın Al',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (!_placements.contains('push') &&
+                  !_placements.contains('email'))
+                PanelCard(
+                  child: Text(
+                    '${_title.text.trim().isEmpty ? 'Reklam' : _title.text.trim()}\n'
+                    '${_cities.length} il · ${_placements.length} mecra',
+                    style: const TextStyle(height: 1.4),
+                  ),
+                ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _busy ? null : _submit,
+                child: _busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Yönetime gönder'),
+              ),
             ],
             const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _busy ? null : _submit,
-              child: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Yönetime gönder'),
-            ),
+            if (_step < _stepLabels.length - 1)
+              Row(
+                children: [
+                  if (_step > 0)
+                    OutlinedButton(
+                      onPressed: () => setState(() => _step -= 1),
+                      child: const Text('Geri'),
+                    ),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () {
+                      if (!_canGoNext()) return;
+                      setState(() => _step += 1);
+                    },
+                    child: const Text('İleri'),
+                  ),
+                ],
+              )
+            else if (_step > 0)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton(
+                  onPressed: () => setState(() => _step -= 1),
+                  child: const Text('Geri'),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
+
 }
 
 /// IBAN ödeme kartı (reklam teklifi)
