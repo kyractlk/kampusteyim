@@ -58,7 +58,8 @@ class SilSupurSegment {
 
   final String id;
   final String label;
-  final int weight;
+  /// Çıkma yüzdesi (0–100). Örn. 0.005 gibi küçük ondalıklar desteklenir.
+  final double weight;
   final String type; // none | points | esim | gift
   final int? points;
   final String? title;
@@ -68,7 +69,7 @@ class SilSupurSegment {
   factory SilSupurSegment.fromMap(Map<String, dynamic> m) => SilSupurSegment(
         id: '${m['id'] ?? ''}',
         label: '${m['label'] ?? ''}',
-        weight: (num.tryParse('${m['weight']}') ?? 0).round(),
+        weight: parseSilPercent(m['weight'] ?? m['percent']),
         type: '${m['type'] ?? 'none'}',
         points: m['points'] == null
             ? null
@@ -82,6 +83,7 @@ class SilSupurSegment {
         'id': id,
         'label': label,
         'weight': weight,
+        'percent': weight,
         'type': type,
         if (points != null) 'points': points,
         if (title != null) 'title': title,
@@ -157,6 +159,9 @@ class PointsConfig {
     this.enabled = true,
     this.tlPerPoint = 0.1,
     this.usdTryRate = 42,
+    this.usdTrySource = 'manual',
+    this.usdTryUpdatedAt,
+    this.usdTryAuto = true,
     this.defaultMarginPercent = 35,
     this.earn = const PointsEarnRates(),
     this.silSupur = const SilSupurConfig(),
@@ -166,6 +171,9 @@ class PointsConfig {
   /// 1 KP kaç ₺ (Kampüsteyim Puan).
   final double tlPerPoint;
   final double usdTryRate;
+  final String usdTrySource;
+  final String? usdTryUpdatedAt;
+  final bool usdTryAuto;
   final double defaultMarginPercent;
   final PointsEarnRates earn;
   final SilSupurConfig silSupur;
@@ -176,6 +184,9 @@ class PointsConfig {
       enabled: d['enabled'] != false,
       tlPerPoint: (num.tryParse('${d['tlPerPoint']}') ?? 0.1).toDouble(),
       usdTryRate: (num.tryParse('${d['usdTryRate']}') ?? 42).toDouble(),
+      usdTrySource: '${d['usdTrySource'] ?? 'manual'}',
+      usdTryUpdatedAt: d['usdTryUpdatedAt']?.toString(),
+      usdTryAuto: d['usdTryAuto'] != false,
       defaultMarginPercent:
           (num.tryParse('${d['defaultMarginPercent']}') ?? 35).toDouble(),
       earn: PointsEarnRates.fromMap(
@@ -193,10 +204,36 @@ class PointsConfig {
         'enabled': enabled,
         'tlPerPoint': tlPerPoint,
         'usdTryRate': usdTryRate,
+        'usdTrySource': usdTrySource,
+        'usdTryUpdatedAt': usdTryUpdatedAt,
+        'usdTryAuto': usdTryAuto,
         'defaultMarginPercent': defaultMarginPercent,
         'earn': earn.toMap(),
         'silSupur': silSupur.toMap(),
       };
+
+  PointsConfig copyWith({
+    bool? enabled,
+    double? tlPerPoint,
+    double? usdTryRate,
+    String? usdTrySource,
+    String? usdTryUpdatedAt,
+    bool? usdTryAuto,
+    double? defaultMarginPercent,
+    PointsEarnRates? earn,
+    SilSupurConfig? silSupur,
+  }) =>
+      PointsConfig(
+        enabled: enabled ?? this.enabled,
+        tlPerPoint: tlPerPoint ?? this.tlPerPoint,
+        usdTryRate: usdTryRate ?? this.usdTryRate,
+        usdTrySource: usdTrySource ?? this.usdTrySource,
+        usdTryUpdatedAt: usdTryUpdatedAt ?? this.usdTryUpdatedAt,
+        usdTryAuto: usdTryAuto ?? this.usdTryAuto,
+        defaultMarginPercent: defaultMarginPercent ?? this.defaultMarginPercent,
+        earn: earn ?? this.earn,
+        silSupur: silSupur ?? this.silSupur,
+      );
 
   String tlLabel(int kp) {
     final tl = kp * tlPerPoint;
@@ -229,6 +266,7 @@ class PointsCatalogItem {
     this.active = true,
     this.silSupurEligible = false,
     this.silSupurWeight = 0,
+    this.silSupurPercent = 0,
     this.sort = 0,
     this.locationLabel,
     this.packageCode,
@@ -248,7 +286,10 @@ class PointsCatalogItem {
   final double? cashPriceTl;
   final bool active;
   final bool silSupurEligible;
-  final int silSupurWeight;
+  /// Sil Süpür çıkma yüzdesi (0–100). `silSupurWeight` ile aynı değer (geriye uyum).
+  /// Örn. 0.005 gibi binde/on binde basamakları destekler.
+  final double silSupurWeight;
+  final double silSupurPercent;
   final int sort;
   final String? locationLabel;
   final String? packageCode;
@@ -274,7 +315,8 @@ class PointsCatalogItem {
           : (num.tryParse('${m['cashPriceTl']}') ?? 0).toDouble(),
       active: m['active'] != false,
       silSupurEligible: m['silSupurEligible'] == true,
-      silSupurWeight: (num.tryParse('${m['silSupurWeight']}') ?? 0).round(),
+      silSupurWeight: parseSilPercent(m['silSupurPercent'] ?? m['silSupurWeight']),
+      silSupurPercent: parseSilPercent(m['silSupurPercent'] ?? m['silSupurWeight']),
       sort: (num.tryParse('${m['sort']}') ?? 0).round(),
       locationLabel: m['locationLabel']?.toString(),
       packageCode: '${esim['packageCode'] ?? m['packageCode'] ?? ''}'.nullIfEmpty,
@@ -294,6 +336,27 @@ extension on String {
     final t = trim();
     return t.isEmpty ? null : t;
   }
+}
+
+/// Sil Süpür çıkma % (0–100). En fazla 6 ondalık basamak.
+double parseSilPercent(dynamic v) {
+  final raw = '$v'.trim().replaceAll(',', '.');
+  final n = num.tryParse(raw)?.toDouble() ?? 0;
+  if (!n.isFinite || n <= 0) return 0;
+  if (n > 100) return 100;
+  return double.parse(n.toStringAsFixed(6));
+}
+
+/// Gösterim: 5 → "5", 0.005 → "0.005", 1.200000 → "1.2"
+String formatSilPercent(num value) {
+  final p = value.toDouble();
+  if (p == 0) return '0';
+  var s = p.toStringAsFixed(6);
+  if (s.contains('.')) {
+    s = s.replaceFirst(RegExp(r'0+$'), '');
+    s = s.replaceFirst(RegExp(r'\.$'), '');
+  }
+  return s;
 }
 
 class UserReward {
@@ -462,6 +525,47 @@ class PointsService {
       ((res.data as Map?)?['reward'] as Map?) ?? {},
     );
     return UserReward.fromMap('${r['id'] ?? rewardId}', r);
+  }
+
+  static Future<Map<String, dynamic>> claimPointsQr(String code) async {
+    final res = await pointsFunctions
+        .httpsCallable('claimPointsQr')
+        .call({'code': code});
+    return Map<String, dynamic>.from(res.data as Map? ?? {});
+  }
+
+  static Future<List<Map<String, dynamic>>> adminListPointsQr() async {
+    final res = await pointsFunctions.httpsCallable('adminListPointsQr').call();
+    final items = (res.data as Map?)?['items'] as List? ?? [];
+    return items
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  static Future<Map<String, dynamic>> adminUpsertPointsQr(
+    Map<String, dynamic> data,
+  ) async {
+    final res =
+        await pointsFunctions.httpsCallable('adminUpsertPointsQr').call(data);
+    return Map<String, dynamic>.from(res.data as Map? ?? {});
+  }
+
+  static Future<List<Map<String, dynamic>>> adminListPointsQrClaims(
+    String qrId,
+  ) async {
+    final res = await pointsFunctions
+        .httpsCallable('adminListPointsQrClaims')
+        .call({'qrId': qrId});
+    final items = (res.data as Map?)?['items'] as List? ?? [];
+    return items
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  static Future<void> adminDeletePointsQr(String id) async {
+    await pointsFunctions.httpsCallable('adminDeletePointsQr').call({'id': id});
   }
 
   static Future<void> applyEngagement({

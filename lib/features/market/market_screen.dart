@@ -189,8 +189,8 @@ class _MarketScreenState extends State<MarketScreen>
                           const SizedBox(height: 4),
                           Text(
                             cfg?.paytrReady == true
-                                ? 'Görsel · detay · kart ile güvenli ödeme'
-                                : 'Ödeme yakında',
+                                ? 'Güvenli ödeme · hızlı teslimat'
+                                : 'Yakında alışverişe açılacak',
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.82),
                               fontWeight: FontWeight.w600,
@@ -245,14 +245,42 @@ class _MarketScreenState extends State<MarketScreen>
                                 ? ListView(
                                     physics:
                                         const AlwaysScrollableScrollPhysics(),
-                                    children: const [
-                                      SizedBox(height: 120),
+                                    padding: const EdgeInsets.all(24),
+                                    children: [
+                                      const SizedBox(height: 64),
                                       Center(
-                                        child: Text(
-                                          'Ürün yok',
-                                          style: TextStyle(
-                                            color: AppColors.textSecondary,
+                                        child: Container(
+                                          width: 72,
+                                          height: 72,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.navy
+                                                .withValues(alpha: 0.08),
+                                            borderRadius:
+                                                BorderRadius.circular(20),
                                           ),
+                                          child: const Icon(
+                                            Icons.shopping_bag_outlined,
+                                            size: 36,
+                                            color: AppColors.navy,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      const Text(
+                                        'Ürünler yakında',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      const Text(
+                                        'Kampüs ürünleri burada listelenecek.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: AppColors.textSecondary,
+                                          height: 1.4,
                                         ),
                                       ),
                                     ],

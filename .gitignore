@@ -79,6 +79,10 @@ ios/signing/
 # Temp exports
 _tmp_*
 
+# Load test state / local overrides
+scripts/loadtest/.state.json
+scripts/loadtest/config.local.json
+
 # Üniversite ham veri (build script çıktısı universities-tr.json commit edilir)
 landing/data/raw_*.json
 

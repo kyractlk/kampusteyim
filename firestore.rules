@@ -43,7 +43,10 @@ service cloud.firestore {
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['firstName', 'lastName', 'fullName'])
       );
-      allow delete: if isAdmin();
+      // loadTest botları kendi dokümanlarını temizleyebilir (load-test cleanup)
+      allow delete: if isAdmin() || (
+        isOwner(userId) && resource.data.loadTest == true
+      );
 
       match /cv/{docId} {
         allow read, write: if isOwner(userId);

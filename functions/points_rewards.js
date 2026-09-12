@@ -11,11 +11,17 @@ const USER_POINTS = 'user_points';
 const LEDGER = 'points_ledger';
 const REWARDS = 'user_rewards';
 const SPINS = 'sil_supur_plays';
+const QR_CODES = 'points_qr_codes';
+const QR_CLAIMS = 'points_qr_claims';
+const APP_HOME = 'https://app.kampusteyim.app';
 
 const DEFAULT_CONFIG = {
   enabled: true,
   tlPerPoint: 0.1,
   usdTryRate: 42,
+  usdTrySource: 'manual',
+  usdTryUpdatedAt: null,
+  usdTryAuto: true,
   defaultMarginPercent: 35,
   earn: {
     post: 5,
@@ -54,11 +60,53 @@ function asNum(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function slugifyQr(v) {
+  return String(v || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
+
+function qrClaimDeepLink(slug) {
+  return `${APP_HOME}/deeplink.html?path=${encodeURIComponent(`/points/qr-claim/${slug}`)}`;
+}
+
+function mapQrDoc(id, d = {}) {
+  const slug = String(d.slug || id || '').trim();
+  return {
+    id,
+    slug,
+    title: String(d.title || ''),
+    points: Math.max(0, Math.floor(asNum(d.points))),
+    maxClaims: Math.max(0, Math.floor(asNum(d.maxClaims))),
+    claimCount: Math.max(0, Math.floor(asNum(d.claimCount))),
+    perUserLimit: Math.max(1, Math.floor(asNum(d.perUserLimit, 1))),
+    active: d.active !== false,
+    mysteryLine: String(d.mysteryLine || 'Gizemli bir şey buldun'),
+    deepLink: qrClaimDeepLink(slug),
+    createdAt: d.createdAt || null,
+    updatedAt: d.updatedAt || null,
+    createdBy: d.createdBy || null,
+  };
+}
+
+/** Sil Süpür çıkma % — 0–100, en fazla 6 ondalık (örn. 0.005). */
+function parseSilPercent(v) {
+  const n = asNum(String(v ?? '').replace(',', '.'));
+  if (!(n > 0) || !Number.isFinite(n)) return 0;
+  if (n > 100) return 100;
+  return Math.round(n * 1e6) / 1e6;
+}
+
 function mergeConfig(raw) {
   const d = raw && typeof raw === 'object' ? raw : {};
   return {
     ...DEFAULT_CONFIG,
     ...d,
+    usdTryAuto: d.usdTryAuto !== false,
     earn: { ...DEFAULT_CONFIG.earn, ...(d.earn || {}) },
     silSupur: {
       ...DEFAULT_CONFIG.silSupur,
@@ -69,6 +117,36 @@ function mergeConfig(raw) {
           : DEFAULT_CONFIG.silSupur.segments,
     },
   };
+}
+
+/** TCMB günlük kurları (today.xml) — USD ForexSelling. */
+async function fetchTcmbUsdTry() {
+  const res = await fetch('https://www.tcmb.gov.tr/kurlar/today.xml', {
+    headers: { Accept: 'application/xml,text/xml,*/*' },
+  });
+  if (!res.ok) throw new Error(`TCMB HTTP ${res.status}`);
+  const xml = await res.text();
+  const m = xml.match(
+    /CurrencyCode="USD"[\s\S]*?<ForexSelling>([\d.,]+)<\/ForexSelling>/,
+  );
+  if (!m) throw new Error('TCMB USD ForexSelling bulunamadı');
+  const rate = Number(String(m[1]).replace(',', '.'));
+  if (!Number.isFinite(rate) || rate < 1 || rate > 1000) {
+    throw new Error(`TCMB kur geçersiz: ${m[1]}`);
+  }
+  return rate;
+}
+
+async function applyUsdTryRate(db, FieldValue, { rate, source, by }) {
+  const patch = {
+    usdTryRate: rate,
+    usdTrySource: source || 'tcmb',
+    usdTryUpdatedAt: new Date().toISOString(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (by) patch.usdTryUpdatedBy = by;
+  await db.doc(CONFIG_PATH).set(patch, { merge: true });
+  return patch;
 }
 
 function istanbulParts(date = new Date()) {
@@ -107,7 +185,11 @@ function weekKeyIstanbul(date = new Date()) {
 }
 
 async function collectSegments(db, cfg) {
-  let segments = [...(cfg.silSupur.segments || [])];
+  let segments = [...(cfg.silSupur.segments || [])].map((s) => ({
+    ...s,
+    weight: parseSilPercent(s.weight ?? s.percent),
+    percent: parseSilPercent(s.percent ?? s.weight),
+  }));
   const cat = await db.collection(CATALOG)
     .where('silSupurEligible', '==', true)
     .where('active', '==', true)
@@ -117,13 +199,14 @@ async function collectSegments(db, cfg) {
   if (cat) {
     cat.forEach((doc) => {
       const d = doc.data() || {};
-      const w = asNum(d.silSupurWeight);
+      const w = parseSilPercent(d.silSupurPercent ?? d.silSupurWeight);
       if (w <= 0) return;
       if ((d.type || '') === 'esim' && d.esim?.packageCode) {
         segments.push({
           id: `cat_${doc.id}`,
           label: d.title || 'eSIM',
           weight: w,
+          percent: w,
           type: 'esim',
           packageCode: d.esim.packageCode,
           slug: d.esim.slug,
@@ -136,6 +219,7 @@ async function collectSegments(db, cfg) {
           id: `cat_${doc.id}`,
           label: d.title || 'Hediye',
           weight: w,
+          percent: w,
           type: d.type === 'points' ? 'points' : 'gift',
           points: d.pointsCost ? asNum(d.pointsCost) : undefined,
           title: d.title,
@@ -149,12 +233,13 @@ async function collectSegments(db, cfg) {
 }
 
 function pickWeighted(segments) {
-  const list = (segments || []).filter((s) => asNum(s.weight) > 0);
-  const total = list.reduce((a, s) => a + asNum(s.weight), 0);
-  if (!total) return { id: 'miss', label: 'Tekrar dene', type: 'none', weight: 1 };
+  // Yüzdeler göreli: toplam 100 olmak zorunda değil; oran korunur.
+  const list = (segments || []).filter((s) => asNum(s.weight ?? s.percent) > 0);
+  const total = list.reduce((a, s) => a + asNum(s.weight ?? s.percent), 0);
+  if (!total) return { id: 'miss', label: 'Tekrar dene', type: 'none', weight: 1, percent: 0 };
   let r = Math.random() * total;
   for (const s of list) {
-    r -= asNum(s.weight);
+    r -= asNum(s.weight ?? s.percent);
     if (r <= 0) return s;
   }
   return list[list.length - 1];
@@ -186,32 +271,161 @@ module.exports = function createPointsRewards({
     return marketInAppOn();
   }
 
+  function formatDataVolume(bytes) {
+    const n = asNum(bytes);
+    if (!n || n <= 0) return '';
+    const gb = n / (1024 * 1024 * 1024);
+    if (gb >= 1) return `${Math.round(gb * 100) / 100} GB`;
+    const mb = n / (1024 * 1024);
+    if (mb >= 1) return `${Math.round(mb * 10) / 10} MB`;
+    return `${Math.round(n / 1024)} KB`;
+  }
+
+  function formatEsimDuration(days) {
+    const n = Math.floor(asNum(days));
+    if (!n) return '';
+    return `${n} gün`;
+  }
+
+  const COUNTRY_TR = {
+    TR: 'Türkiye', DE: 'Almanya', FR: 'Fransa', IT: 'İtalya', ES: 'İspanya',
+    GB: 'Birleşik Krallık', UK: 'Birleşik Krallık', NL: 'Hollanda', BE: 'Belçika',
+    AT: 'Avusturya', CH: 'İsviçre', PL: 'Polonya', CZ: 'Çekya', PT: 'Portekiz',
+    GR: 'Yunanistan', SE: 'İsveç', NO: 'Norveç', DK: 'Danimarka', FI: 'Finlandiya',
+    IE: 'İrlanda', HU: 'Macaristan', RO: 'Romanya', BG: 'Bulgaristan', HR: 'Hırvatistan',
+    SK: 'Slovakya', SI: 'Slovenya', LT: 'Litvanya', LV: 'Letonya', EE: 'Estonya',
+    US: 'ABD', CA: 'Kanada', JP: 'Japonya', KR: 'Güney Kore', AE: 'BAE',
+    SA: 'Suudi Arabistan', EG: 'Mısır', AZ: 'Azerbaycan', GE: 'Gürcistan',
+    CY: 'Kıbrıs', MT: 'Malta', LU: 'Lüksemburg', IS: 'İzlanda',
+  };
+
+  function formatLocationLabels(locationCodes) {
+    const raw = String(locationCodes || '').trim();
+    if (!raw) return '';
+    const parts = raw.split(/[,;/|]+/).map((s) => s.trim()).filter(Boolean);
+    if (!parts.length) return raw;
+    return parts
+      .map((c) => {
+        const up = c.toUpperCase();
+        const name = COUNTRY_TR[up];
+        return name ? `${name} (${up})` : c;
+      })
+      .join(' · ');
+  }
+
+  function emailSolidBtn(href, label, { bg = '#0B1F3A', border = '#38BDF8', color = '#FFFFFF' } = {}) {
+    if (!href || !label) return '';
+    // Tablo tabanlı “bulletproof” buton — Gmail koyu modda soluk/görünmez olmasın diye
+    // bgcolor + border + !important beyaz metin.
+    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 10px;">
+      <tr>
+        <td align="center" bgcolor="${bg}" style="background-color:${bg};border-radius:14px;border:2px solid ${border};">
+          <a href="${escapeHtml(href)}" target="_blank"
+            style="display:block;padding:16px 18px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:800;line-height:1.25;text-align:center;text-decoration:none;color:${color} !important;-webkit-text-fill-color:${color};background-color:${bg};border-radius:14px;mso-padding-alt:0;">
+            ${escapeHtml(label)}
+          </a>
+        </td>
+      </tr>
+    </table>`;
+  }
+
+  function emailPrimaryBtn(href, label, bg = '#0B1F3A') {
+    const border = bg === '#0EA5E9' ? '#0369A1' : '#38BDF8';
+    return emailSolidBtn(href, label, { bg, border, color: '#FFFFFF' });
+  }
+
+  function emailGhostBtn(href, label) {
+    // Artık “ghost” değil — koyu/açıkta net görünen ikincil dolu buton
+    return emailSolidBtn(href, label, {
+      bg: '#12355C',
+      border: '#7DD3FC',
+      color: '#FFFFFF',
+    });
+  }
+
+  function emailInfoRow(label, value) {
+    if (!value) return '';
+    return `<tr>
+      <td style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#64748B;font-size:13px;width:38%;vertical-align:top;">${escapeHtml(label)}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#0B1F3A;font-size:13px;font-weight:700;vertical-align:top;">${value}</td>
+    </tr>`;
+  }
+
   async function sendEsimReadyMail({
-    uid, title, locationCodes, qrCodeUrl, ac, shortUrl, paidWith,
+    uid,
+    title,
+    locationCodes,
+    qrCodeUrl,
+    ac,
+    shortUrl,
+    paidWith,
+    orderNo,
+    iccid,
+    packageCode,
+    totalVolume,
+    totalDuration,
+    expiredTime,
   }) {
     const userSnap = await db.collection('users').doc(uid).get();
     const u = userSnap.exists ? userSnap.data() || {} : {};
     const email = String(u.email || '').trim();
     const name = u.firstName || u.fullName || '';
-    const countries = String(locationCodes || '').replace(/,/g, ', ');
+    const countries = formatLocationLabels(locationCodes);
     const lpa = String(ac || '').trim();
-    const apple = lpa
-      ? `https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=${encodeURIComponent(lpa)}`
-      : '';
-    const android = lpa
-      ? `https://esimsetup.android.com/esim_qrcode_provisioning?carddata=${encodeURIComponent(lpa)}`
-      : '';
     const qr = qrCodeUrl || shortUrl || '';
     const tag = paidWith === 'sil_supur' ? 'Sil Süpür hediyesi' : 'Kampüsteyim Puan (KP) ile alındı';
+    const dataLabel = formatDataVolume(totalVolume);
+    const durationLabel = formatEsimDuration(totalDuration);
+    const expireLabel = expiredTime
+      ? String(expiredTime).replace('T', ' ').slice(0, 16)
+      : '';
+    const appleInstallUrl = lpa
+      ? `https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=${encodeURIComponent(lpa)}`
+      : '';
+    const androidInstallUrl = lpa
+      ? `https://esimsetup.android.com/esim_qrcode_provisioning?carddata=${encodeURIComponent(lpa)}`
+      : '';
+    // Uygulama aç → yoksa App Store / Play Store (deeplink.html)
+    const rewardsUrl =
+      'https://app.kampusteyim.app/deeplink.html?path=' +
+      encodeURIComponent('/points/rewards');
     const bodyHtml = `
-      <p>KampüsteyimAPP eSIM’in hazır.</p>
-      <p><b>${escapeHtml(title)}</b><br/><span style="color:#64748B">${escapeHtml(tag)}</span></p>
-      ${countries ? `<p><b>Geçerli ülkeler / bölgeler:</b> ${escapeHtml(countries)}</p>` : ''}
-      ${qr ? `<p><img src="${escapeHtml(qr)}" alt="eSIM QR" style="max-width:220px;border-radius:12px"/></p>` : ''}
-      ${lpa ? `<p><b>Kurulum kodu (LPA)</b><br/><code style="font-size:12px;word-break:break-all">${escapeHtml(lpa)}</code></p>` : ''}
-      ${android ? `<p><a href="${escapeHtml(android)}">Android Quick Install</a></p>` : ''}
-      <p>iPhone: iOS 17.4+ Quick Install (aşağıdaki buton). Android: Play Services destekliyorsa sistem kurulumu açılır; değilse QR / LPA kullan.</p>
-      <p style="font-size:13px;color:#64748B">Kurulumdan sonra mobil veri için uluslararası dolaşımı aç.</p>
+      <p style="margin:0 0 8px;font-size:15px;color:#334155;">KampüsteyimAPP eSIM’in hazır. Aşağıdaki buton uygulamayı açar; yüklü değilse App Store veya Google Play’e yönlendirir.</p>
+      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:16px;padding:16px 18px;margin:16px 0;">
+        <p style="margin:0 0 4px;font-size:18px;font-weight:800;color:#0B1F3A;">${escapeHtml(title || 'eSIM')}</p>
+        <p style="margin:0;font-size:13px;color:#0284C7;font-weight:700;">${escapeHtml(tag)}</p>
+      </div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 18px;">
+        ${emailInfoRow('Veri', dataLabel ? escapeHtml(dataLabel) : '')}
+        ${emailInfoRow('Süre', durationLabel ? escapeHtml(durationLabel) : '')}
+        ${emailInfoRow('Geçerli ülkeler', countries ? escapeHtml(countries) : '')}
+        ${emailInfoRow('Son kullanım', expireLabel ? escapeHtml(expireLabel) : '')}
+      </table>
+      <div style="background-color:#0B1F3A;border-radius:18px;padding:18px 16px;margin:8px 0 12px;border:1px solid #1E3A5F;">
+        <p style="margin:0 0 6px;color:#E0F2FE;font-size:15px;font-weight:800;text-align:center;">Kurulum</p>
+        <p style="margin:0 0 14px;color:#A8C5E2;font-size:12px;text-align:center;line-height:1.45;">QR’ı tara veya tek dokunuşla kur</p>
+        ${qr ? `<p style="text-align:center;margin:0 0 6px;"><img src="${escapeHtml(qr)}" alt="eSIM QR" style="max-width:180px;width:100%;border-radius:14px;border:3px solid #FFFFFF;background:#FFFFFF;"/></p>
+        <p style="text-align:center;margin:0 0 14px;font-size:12px;color:#A8C5E2;">QR ile kur</p>` : ''}
+        ${lpa ? `<p style="margin:0 0 10px;color:#BAE6FD;font-size:12px;font-weight:700;text-align:center;">Hızlı kurulum</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 auto 8px;">
+          <tr>
+            <td align="center" style="padding:4px;">
+              <a href="${escapeHtml(appleInstallUrl)}" style="display:inline-block;background:#00D4C8;color:#0B1F3A;text-decoration:none;font-weight:800;font-size:13px;padding:12px 18px;border-radius:12px;min-width:120px;">iPhone’da kur</a>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:4px;">
+              <a href="${escapeHtml(androidInstallUrl)}" style="display:inline-block;background:transparent;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:13px;padding:11px 18px;border-radius:12px;border:1px solid rgba(255,255,255,0.35);min-width:120px;">Android’de kur</a>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:10px 0 0;color:#A8C5E2;font-size:11px;text-align:center;line-height:1.45;">LPA nedir? eSIM’i telefona yüklemek için kullanılan kurulum kodudur. Uygulamada “Kurulum kodunu kopyala” ile de alabilirsin.</p>` : ''}
+      </div>
+      <div style="background-color:#EEF6FF;border-radius:12px;padding:12px 14px;margin:8px 0 0;border:1px solid #BAE6FD;">
+        <p style="margin:0;font-size:13px;color:#0B1F3A;line-height:1.55;">
+          <b>İpucu:</b> Kurulumdan sonra <b>Uluslararası dolaşım / Data roaming</b>’i aç.
+        </p>
+      </div>
     `;
     await db.collection('users').doc(uid).collection('notifications').add({
       title: 'eSIM’in hazır',
@@ -239,8 +453,74 @@ module.exports = function createPointsRewards({
         title: 'eSIM’in hazır',
         greeting: name ? `Merhaba ${name},` : 'Merhaba,',
         bodyHtml,
-        ctaLabel: apple ? 'iPhone’da Quick Install' : 'eSIMlerime git',
-        ctaUrl: apple || 'https://app.kampusteyim.app/points/rewards',
+        ctaLabel: 'eSIMlerime git',
+        ctaUrl: rewardsUrl,
+      }),
+    });
+  }
+
+  async function sendGiftRewardMail({
+    uid, title, description, imageUrl, paidWith,
+  }) {
+    const userSnap = await db.collection('users').doc(uid).get();
+    const u = userSnap.exists ? userSnap.data() || {} : {};
+    const email = String(u.email || '').trim();
+    const name = u.firstName || u.fullName || '';
+    const fromSil = paidWith === 'sil_supur';
+    const tag = fromSil ? 'Sil Süpür hediyesi' : 'Kampüsteyim Puan (KP) ile alındı';
+    const rewardsUrl =
+      'https://app.kampusteyim.app/deeplink.html?path=' +
+      encodeURIComponent('/points/rewards');
+    const bodyHtml = `
+      <p style="margin:0 0 14px;font-size:15px;color:#334155;">
+        ${fromSil ? 'Sil Süpür çarkından bir hediye çıktı — tebrikler!' : 'KP marketinden hediyen başarıyla alındı.'}
+      </p>
+      <div style="background-color:#0B1F3A;border-radius:18px;padding:22px 20px;text-align:center;margin:0 0 16px;border:1px solid #1E3A5F;">
+        ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="" style="max-width:160px;width:100%;border-radius:14px;margin:0 0 14px;background:#fff;"/>` : ''}
+        <p style="margin:0 0 6px;color:#A8C5E2;font-size:12px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;">${escapeHtml(tag)}</p>
+        <p style="margin:0;color:#ffffff;font-size:22px;font-weight:900;line-height:1.3;">${escapeHtml(title || 'Hediye')}</p>
+      </div>
+      ${description ? `<p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#475569;">${escapeHtml(description)}</p>` : ''}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;">
+        ${emailInfoRow('Kaynak', escapeHtml(tag))}
+        ${emailInfoRow('Durum', 'Hazır · uygulamada görüntüle')}
+      </table>
+      <div style="background-color:#F0FDF4;border-radius:12px;padding:12px 14px;margin:16px 0 0;border:1px solid #86EFAC;">
+        <p style="margin:0;font-size:13px;color:#166534;line-height:1.55;">
+          Teslimat / kullanım detayları uygulamadaki <b>Hediyelerim</b> ekranında.
+        </p>
+      </div>
+    `;
+    await db.collection('users').doc(uid).collection('notifications').add({
+      title: fromSil ? 'Sil Süpür hediyesi' : 'Hediyen hazır',
+      body: String(title || ''),
+      emoji: '🎁',
+      type: 'gift_reward',
+      link: '/points/rewards',
+      read: false,
+      createdAt: new Date().toISOString(),
+    });
+    if (typeof dispatchPushToUser === 'function') {
+      await dispatchPushToUser(uid, {
+        title: fromSil ? 'Sil Süpür hediyesi' : 'Hediyen hazır',
+        body: String(title || ''),
+        type: 'gift_reward',
+        link: '/points/rewards',
+        emoji: '🎁',
+      });
+    }
+    if (!email.includes('@') || email.includes('@invalid.local')) return;
+    await sendMail({
+      to: email,
+      subject: fromSil
+        ? `KampüsteyimAPP · Sil Süpür hediyesi: ${title || 'Hediye'}`
+        : `KampüsteyimAPP · Hediyen hazır: ${title || 'Hediye'}`,
+      html: brandedEmail({
+        title: fromSil ? 'Sil Süpür hediyesi kazandın' : 'Hediyen hazır',
+        greeting: name ? `Merhaba ${name},` : 'Merhaba,',
+        bodyHtml,
+        ctaLabel: 'Hediyelerime git',
+        ctaUrl: rewardsUrl,
       }),
     });
   }
@@ -343,6 +623,12 @@ module.exports = function createPointsRewards({
         ac: patch.ac,
         shortUrl: patch.shortUrl,
         paidWith: paidWith || 'points',
+        orderNo,
+        iccid: patch.iccid,
+        packageCode,
+        totalVolume: patch.totalVolume,
+        totalDuration: patch.totalDuration,
+        expiredTime: patch.expiredTime,
       }).catch(() => {});
       return { rewardId: rewardRef.id, ...patch };
     } catch (e) {
@@ -369,12 +655,16 @@ module.exports = function createPointsRewards({
       .limit(10)
       .get();
     const segments = await collectSegments(db, cfg);
+    const segTotal = segments.reduce((a, s) => a + asNum(s.weight), 0) || 1;
     return {
       config: {
         enabled: live,
         marketInAppVisible: marketOn,
         tlPerPoint: asNum(cfg.tlPerPoint, 0.1),
         usdTryRate: asNum(cfg.usdTryRate, 42),
+        usdTrySource: cfg.usdTrySource || 'manual',
+        usdTryUpdatedAt: cfg.usdTryUpdatedAt || null,
+        usdTryAuto: cfg.usdTryAuto !== false,
         defaultMarginPercent: asNum(cfg.defaultMarginPercent, 35),
         earn: cfg.earn,
         silSupur: {
@@ -385,16 +675,22 @@ module.exports = function createPointsRewards({
           freeSpinsPerWeek: asNum(cfg.silSupur.freeSpinsPerWeek, 1),
           notifyTitle: cfg.silSupur.notifyTitle,
           notifyBody: cfg.silSupur.notifyBody,
-          segments: segments.map((s) => ({
-            id: s.id,
-            label: s.label,
-            weight: asNum(s.weight),
-            type: s.type,
-            points: s.points != null ? asNum(s.points) : null,
-            title: s.title || null,
-            packageCode: s.packageCode || null,
-            slug: s.slug || null,
-          })),
+          percentTotal: Math.round(segments.reduce((a, s) => a + asNum(s.weight), 0) * 1e6) / 1e6,
+          segments: segments.map((s) => {
+            const w = asNum(s.weight);
+            return {
+              id: s.id,
+              label: s.label,
+              weight: w,
+              percent: w,
+              chance: Math.round((w / segTotal) * 1e6) / 1e4,
+              type: s.type,
+              points: s.points != null ? asNum(s.points) : null,
+              title: s.title || null,
+              packageCode: s.packageCode || null,
+              slug: s.slug || null,
+            };
+          }),
         },
       },
       balance,
@@ -409,14 +705,40 @@ module.exports = function createPointsRewards({
     await assertPlatformAdmin(request.auth.uid);
     await assertAdminPermission(request.auth.uid, 'manage_points');
     const cfg = await readConfig();
+    const segments = await collectSegments(db, cfg);
+    const percentTotal = segments.reduce((a, s) => a + asNum(s.weight), 0);
+    const segTotal = percentTotal || 1;
     let balanceUsd = null;
+    let esimConfigured = false;
     try {
-      const b = await esim.queryBalance(db);
-      balanceUsd = asNum(b.balance) / 10000;
+      const snap = await db.doc('app_secrets/esim_access').get();
+      esimConfigured = !!(snap.exists && (snap.data()?.accessCode || snap.data()?.access_code));
+      if (esimConfigured) {
+        const b = await esim.queryBalance(db);
+        balanceUsd = asNum(b.balance) / 10000;
+      }
     } catch (_) {
       balanceUsd = null;
     }
-    return { config: cfg, esimBalanceUsd: balanceUsd };
+    return {
+      config: cfg,
+      esimBalanceUsd: balanceUsd,
+      esimConfigured,
+      silSupurWheel: {
+        percentTotal: Math.round(percentTotal * 1e6) / 1e6,
+        segments: segments.map((s) => {
+          const w = asNum(s.weight);
+          return {
+            id: s.id,
+            label: s.label,
+            percent: w,
+            chance: Math.round((w / segTotal) * 1e6) / 1e4,
+            type: s.type,
+            catalogId: s.catalogId || null,
+          };
+        }),
+      },
+    };
   });
 
   const adminSavePointsConfig = onCall({ region: 'europe-west1' }, async (request) => {
@@ -428,6 +750,16 @@ module.exports = function createPointsRewards({
       throw new HttpsError('invalid-argument', 'config gerekli');
     }
     const merged = mergeConfig(incoming);
+    if (merged.silSupur && Array.isArray(merged.silSupur.segments)) {
+      merged.silSupur.segments = merged.silSupur.segments.map((s) => {
+        const w = parseSilPercent(s?.weight ?? s?.percent);
+        return {
+          ...s,
+          weight: w,
+          percent: w,
+        };
+      });
+    }
     await db.doc(CONFIG_PATH).set({
       ...merged,
       updatedAt: FieldValue.serverTimestamp(),
@@ -461,7 +793,8 @@ module.exports = function createPointsRewards({
         cashPriceTl: d.cashPriceTl != null ? asNum(d.cashPriceTl) : null,
         active: d.active !== false,
         silSupurEligible: d.silSupurEligible === true,
-        silSupurWeight: asNum(d.silSupurWeight),
+        silSupurWeight: asNum(d.silSupurPercent ?? d.silSupurWeight),
+        silSupurPercent: asNum(d.silSupurPercent ?? d.silSupurWeight),
         sort: asNum(d.sort),
         locationLabel: d.locationLabel || null,
         locationCodes: d.locationCodes || d.esim?.location || null,
@@ -489,7 +822,8 @@ module.exports = function createPointsRewards({
       cashPriceTl: raw.cashPriceTl == null ? null : Math.max(0, asNum(raw.cashPriceTl)),
       active: raw.active !== false,
       silSupurEligible: raw.silSupurEligible === true,
-      silSupurWeight: Math.max(0, asNum(raw.silSupurWeight)),
+      silSupurWeight: parseSilPercent(raw.silSupurPercent ?? raw.silSupurWeight),
+      silSupurPercent: parseSilPercent(raw.silSupurPercent ?? raw.silSupurWeight),
       sort: asNum(raw.sort),
       locationLabel: sanitizePlainText(raw.locationLabel, 120) || null,
       locationCodes: sanitizePlainText(raw.locationCodes, 400) || null,
@@ -524,6 +858,144 @@ module.exports = function createPointsRewards({
     await db.doc(`${CATALOG}/${id}`).delete();
     return { ok: true };
   });
+
+  const deletePointsCatalogItems = onCall({ region: 'europe-west1', timeoutSeconds: 60 }, async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    await assertAdminPermission(request.auth.uid, 'manage_points');
+
+    let ids = [];
+    if (request.data?.all === true) {
+      const snap = await db.collection(CATALOG).limit(500).get();
+      ids = snap.docs.map((d) => d.id);
+    } else if (Array.isArray(request.data?.ids)) {
+      ids = request.data.ids
+        .map((x) => sanitizePlainText(x, 60))
+        .filter(Boolean)
+        .slice(0, 400);
+    }
+    if (!ids.length) throw new HttpsError('invalid-argument', 'Silinecek ürün yok');
+
+    let deleted = 0;
+    for (let i = 0; i < ids.length; i += 400) {
+      const chunk = ids.slice(i, i + 400);
+      const batch = db.batch();
+      for (const id of chunk) {
+        batch.delete(db.doc(`${CATALOG}/${id}`));
+      }
+      await batch.commit();
+      deleted += chunk.length;
+    }
+    return { ok: true, deleted };
+  });
+
+  const adminBulkUpsertPointsCatalog = onCall(
+    { region: 'europe-west1', timeoutSeconds: 120 },
+    async (request) => {
+      if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      await assertPlatformAdmin(request.auth.uid);
+      await assertAdminPermission(request.auth.uid, 'manage_points');
+      const cfg = await readConfig();
+      const rawItems = Array.isArray(request.data?.items) ? request.data.items : [];
+      if (!rawItems.length) throw new HttpsError('invalid-argument', 'Paket seçilmedi');
+      if (rawItems.length > 150) {
+        throw new HttpsError('invalid-argument', 'En fazla 150 paket');
+      }
+
+      const marginPercent = Math.max(
+        0,
+        asNum(
+          request.data?.marginPercent,
+          asNum(cfg.defaultMarginPercent, 35),
+        ),
+      );
+      const defaultSilEligible = request.data?.silSupurEligible === true;
+      const defaultSilPercent = parseSilPercent(
+        request.data?.silSupurPercent ?? request.data?.silSupurWeight,
+      );
+      const usdRate = Math.max(1, asNum(cfg.usdTryRate, 42));
+      const tlPerPoint = Math.max(0.01, asNum(cfg.tlPerPoint, 0.1));
+
+      let upserted = 0;
+      for (let i = 0; i < rawItems.length; i += 400) {
+        const chunk = rawItems.slice(i, i + 400);
+        const batch = db.batch();
+        for (const raw of chunk) {
+          const packageCode = sanitizePlainText(raw.packageCode || raw.esim?.packageCode, 40);
+          if (!packageCode) continue;
+          const usd = Math.max(0, asNum(raw.priceUsd ?? raw.costUsd));
+          const saleTry = usd * usdRate * (1 + marginPercent / 100);
+          const pointsCost = Math.max(1, Math.round(saleTry / tlPerPoint));
+          const locRaw = sanitizePlainText(raw.location || raw.locationCodes, 400) || '';
+          const id =
+            sanitizePlainText(raw.id, 60) ||
+            `esim_${packageCode}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+          const itemPercent = parseSilPercent(
+            raw.silSupurPercent ?? raw.silSupurWeight ?? defaultSilPercent,
+          );
+          const itemEligible =
+            raw.silSupurEligible === true ||
+            raw.silSupurEligible === false
+              ? raw.silSupurEligible === true
+              : defaultSilEligible || itemPercent > 0;
+          const percent = itemEligible ? itemPercent : 0;
+          const ref = db.doc(`${CATALOG}/${id}`);
+          const existingSnap = await ref.get();
+          const prev = existingSnap.exists ? existingSnap.data() || {} : {};
+          const apiTitle =
+            sanitizePlainText(raw.name || raw.title, 120) || packageCode;
+          const apiDesc = sanitizePlainText(raw.description, 800) || '';
+          const apiLoc =
+            sanitizePlainText(raw.locationLabel, 120) ||
+            (locRaw === 'TR' ? 'Türkiye' : 'Avrupa + Türkiye');
+          // Admin’de yazılmış Türkçe isim/açıklama korunur; boşsa API’den gelir
+          const title =
+            String(prev.title || '').trim() !== ''
+              ? String(prev.title).trim()
+              : apiTitle;
+          const description =
+            String(prev.description || '').trim() !== ''
+              ? String(prev.description).trim()
+              : apiDesc;
+          const locationLabel =
+            String(prev.locationLabel || '').trim() !== ''
+              ? String(prev.locationLabel).trim()
+              : apiLoc;
+          batch.set(
+            ref,
+            {
+              type: 'esim',
+              title,
+              description,
+              imageUrl: prev.imageUrl ?? null,
+              pointsCost,
+              cashPriceTl: Math.round(saleTry * 100) / 100,
+              active: true,
+              silSupurEligible: itemEligible && percent > 0,
+              silSupurWeight: percent,
+              silSupurPercent: percent,
+              sort: asNum(raw.sort, upserted),
+              locationLabel,
+              locationCodes: locRaw || null,
+              costUsd: usd || null,
+              marginPercent,
+              esim: {
+                packageCode,
+                slug: sanitizePlainText(raw.slug, 60) || null,
+              },
+              stock: prev.stock ?? null,
+              updatedAt: FieldValue.serverTimestamp(),
+              updatedBy: request.auth.uid,
+            },
+            { merge: true },
+          );
+          upserted += 1;
+        }
+        await batch.commit();
+      }
+      return { ok: true, upserted, marginPercent, usdTryRate: usdRate };
+    },
+  );
 
   const redeemPointsCatalogItem = onCall(
     { region: 'europe-west1', timeoutSeconds: 120 },
@@ -595,6 +1067,13 @@ module.exports = function createPointsRewards({
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
+      await sendGiftRewardMail({
+        uid,
+        title: item.title,
+        description: item.description || '',
+        imageUrl: item.imageUrl || null,
+        paidWith: 'points',
+      }).catch(() => {});
       return { ok: true, balance: balanceAfter, rewardId: giftRef.id };
     },
   );
@@ -681,6 +1160,13 @@ module.exports = function createPointsRewards({
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });
+        await sendGiftRewardMail({
+          uid,
+          title: win.title || win.label,
+          description: '',
+          imageUrl: win.imageUrl || null,
+          paidWith: 'sil_supur',
+        }).catch(() => {});
         reward = { type: 'gift', rewardId: giftRef.id, title: win.title || win.label };
       } else {
         reward = { type: 'none' };
@@ -908,7 +1394,7 @@ module.exports = function createPointsRewards({
   const adminSetEsimSecrets = onCall({ region: 'europe-west1' }, async (request) => {
     if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Giriş gerekli');
     await assertPlatformAdmin(request.auth.uid);
-    await assertAdminPermission(request.auth.uid, 'manage_points');
+    await assertAdminPermission(request.auth.uid, 'manage_esim_secrets');
     try {
       await esim.setCredentials(db, {
         accessCode: request.data?.accessCode,
@@ -920,6 +1406,42 @@ module.exports = function createPointsRewards({
       throw new HttpsError('invalid-argument', e.message || 'Kayıt başarısız');
     }
   });
+
+  const adminRefreshUsdTryRate = onCall({ region: 'europe-west1', timeoutSeconds: 30 }, async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    await assertAdminPermission(request.auth.uid, 'manage_points');
+    try {
+      const rate = await fetchTcmbUsdTry();
+      const patch = await applyUsdTryRate(db, FieldValue, {
+        rate,
+        source: 'tcmb',
+        by: request.auth.uid,
+      });
+      return { ok: true, ...patch };
+    } catch (e) {
+      throw new HttpsError('unavailable', String(e.message || e).slice(0, 200));
+    }
+  });
+
+  const usdTryRateTick = onSchedule(
+    {
+      schedule: '5 16 * * 1-5',
+      timeZone: 'Europe/Istanbul',
+      region: 'europe-west1',
+      timeoutSeconds: 60,
+    },
+    async () => {
+      const cfg = await readConfig();
+      if (cfg.usdTryAuto === false) return;
+      try {
+        const rate = await fetchTcmbUsdTry();
+        await applyUsdTryRate(db, FieldValue, { rate, source: 'tcmb_auto', by: 'scheduler' });
+      } catch (e) {
+        console.error('usdTryRateTick', e.message || e);
+      }
+    },
+  );
 
   const adminListEsimPackages = onCall({ region: 'europe-west1', timeoutSeconds: 60 }, async (request) => {
     if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Giriş gerekli');
@@ -948,12 +1470,27 @@ module.exports = function createPointsRewards({
         (/EU-30/i.test(slug) || /Europe\(30/i.test(name) || /30\+ areas/i.test(name));
     };
 
+    const wrapApi = async (fn) => {
+      try {
+        return await fn();
+      } catch (e) {
+        const msg = String(e.message || e);
+        if (e.code === 'failed-precondition' || /kimlik bilgisi yok/i.test(msg)) {
+          throw new HttpsError(
+            'failed-precondition',
+            'eSIM Access anahtarları kayıtlı değil. Puan → eSIM API sekmesinden AccessCode / SecretKey kaydet.',
+          );
+        }
+        throw new HttpsError('internal', msg.slice(0, 280) || 'eSIM API hatası');
+      }
+    };
+
     let list = [];
     if (locationCode === 'ALL' || locationCode === 'SHOP') {
-      const [tr, rg] = await Promise.all([
+      const [tr, rg] = await wrapApi(() => Promise.all([
         esim.listPackages(db, { locationCode: 'TR' }),
         esim.listPackages(db, { locationCode: '!RG' }),
-      ]);
+      ]));
       const seen = new Set();
       for (const p of [...mapList(tr), ...mapList(rg)]) {
         if (seen.has(p.packageCode)) continue;
@@ -962,11 +1499,11 @@ module.exports = function createPointsRewards({
         if (loc === 'TR' || isEu30(p)) list.push(p);
       }
       list.sort((a, b) => a.priceUsd - b.priceUsd);
-      return { items: list };
+      return { items: list, filter: locationCode };
     }
 
     const fetchCode = locationCode === 'EU30' ? '!RG' : locationCode;
-    const obj = await esim.listPackages(db, { locationCode: fetchCode });
+    const obj = await wrapApi(() => esim.listPackages(db, { locationCode: fetchCode }));
     list = mapList(obj);
     const filtered = list.filter((p) => {
       const loc = String(p.location || '');
@@ -975,7 +1512,7 @@ module.exports = function createPointsRewards({
       return loc === 'TR' || loc.split(',').includes('TR');
     });
     filtered.sort((a, b) => a.priceUsd - b.priceUsd);
-    return { items: filtered.length ? filtered : list };
+    return { items: filtered.length ? filtered : list, filter: locationCode };
   });
 
   const adminSeedDefaultCatalog = onCall({ region: 'europe-west1' }, async (request) => {
@@ -986,8 +1523,9 @@ module.exports = function createPointsRewards({
       {
         id: 'esim_tr_1_7',
         type: 'esim',
-        title: 'Türkiye 1GB · 7 Gün',
-        description: 'Sadece TR. Top-up destekli.',
+        title: 'Türkiye 1 GB · 7 Gün',
+        description:
+          'Türkiye’de 7 gün geçerli eSIM. 1 GB mobil veri — kısa kullanım ve acil bağlantı için.',
         pointsCost: 120,
         locationLabel: 'Türkiye',
         silSupurEligible: true,
@@ -998,8 +1536,9 @@ module.exports = function createPointsRewards({
       {
         id: 'esim_tr_5_30',
         type: 'esim',
-        title: 'Türkiye 5GB · 30 Gün',
-        description: 'Kampüs için ideal TR paketi.',
+        title: 'Türkiye 5 GB · 30 Gün',
+        description:
+          'Türkiye’de 30 gün geçerli eSIM. 5 GB veri — aylık kampüs ve şehir kullanımı için dengeli paket.',
         pointsCost: 450,
         locationLabel: 'Türkiye',
         silSupurEligible: true,
@@ -1010,10 +1549,11 @@ module.exports = function createPointsRewards({
       {
         id: 'esim_eu30_1_7',
         type: 'esim',
-        title: 'Avrupa+TR 1GB · 7 Gün',
-        description: '34 ülkede geçerli (TR dahil).',
+        title: 'Avrupa + Türkiye 1 GB · 7 Gün',
+        description:
+          '34 ülkede (Türkiye dahil) 7 gün geçerli eSIM. 1 GB veri — kısa Avrupa seyahati için.',
         pointsCost: 220,
-        locationLabel: 'Avrupa + Türkiye (EU-30)',
+        locationLabel: 'Avrupa + Türkiye',
         silSupurEligible: true,
         silSupurWeight: 4,
         sort: 30,
@@ -1022,10 +1562,11 @@ module.exports = function createPointsRewards({
       {
         id: 'esim_eu30_5_30',
         type: 'esim',
-        title: 'Avrupa+TR 5GB · 30 Gün',
-        description: 'EU-30 bölgesi, TR dahil.',
+        title: 'Avrupa + Türkiye 5 GB · 30 Gün',
+        description:
+          '34 ülkede (Türkiye dahil) 30 gün geçerli eSIM. 5 GB veri — dönemlik Avrupa kullanımı için.',
         pointsCost: 980,
-        locationLabel: 'Avrupa + Türkiye (EU-30)',
+        locationLabel: 'Avrupa + Türkiye',
         silSupurEligible: false,
         silSupurWeight: 0,
         sort: 40,
@@ -1124,6 +1665,220 @@ module.exports = function createPointsRewards({
     },
   );
 
+  const adminUpsertPointsQr = onCall({ region: 'europe-west1' }, async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    await assertAdminPermission(request.auth.uid, 'manage_points');
+
+    const idIn = sanitizePlainText(request.data?.id, 80);
+    const title = sanitizePlainText(request.data?.title, 120);
+    let slug = slugifyQr(request.data?.slug || title);
+    if (!slug || slug.length < 2) {
+      throw new HttpsError('invalid-argument', 'Geçerli bir slug / ad gerekli');
+    }
+    const points = Math.floor(asNum(request.data?.points));
+    if (!(points > 0) || points > 100000) {
+      throw new HttpsError('invalid-argument', 'Puan 1–100000 arası olmalı');
+    }
+    const maxClaims = Math.max(0, Math.floor(asNum(request.data?.maxClaims)));
+    const perUserLimit = Math.max(1, Math.min(20, Math.floor(asNum(request.data?.perUserLimit, 1))));
+    const active = request.data?.active !== false;
+    const mysteryLine =
+      sanitizePlainText(request.data?.mysteryLine, 80) || 'Gizemli bir şey buldun';
+
+    let docId = idIn;
+    if (!docId) {
+      const clash = await db.collection(QR_CODES).doc(slug).get();
+      if (clash.exists) {
+        throw new HttpsError('already-exists', 'Bu slug zaten kullanılıyor');
+      }
+      docId = slug;
+    }
+
+    const ref = db.collection(QR_CODES).doc(docId);
+    const existing = await ref.get();
+    if (existing.exists) {
+      const prevSlug = String(existing.data()?.slug || docId);
+      if (slug !== prevSlug) {
+        const other = await db.collection(QR_CODES).doc(slug).get();
+        if (other.exists && other.id !== docId) {
+          throw new HttpsError('already-exists', 'Bu slug zaten kullanılıyor');
+        }
+      }
+    }
+
+    const patch = {
+      slug,
+      title: title || slug,
+      points,
+      maxClaims,
+      perUserLimit,
+      active,
+      mysteryLine,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: request.auth.uid,
+    };
+    if (!existing.exists) {
+      patch.claimCount = 0;
+      patch.createdAt = FieldValue.serverTimestamp();
+      patch.createdBy = request.auth.uid;
+    }
+    await ref.set(patch, { merge: true });
+    const snap = await ref.get();
+    return { ok: true, item: mapQrDoc(ref.id, snap.data() || {}) };
+  });
+
+  const adminListPointsQr = onCall({ region: 'europe-west1' }, async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    await assertAdminPermission(request.auth.uid, 'manage_points');
+    const snap = await db.collection(QR_CODES).limit(100).get();
+    const items = snap.docs
+      .map((d) => mapQrDoc(d.id, d.data() || {}))
+      .sort((a, b) => {
+        const ta = a.createdAt?.toMillis?.() || Date.parse(a.createdAt || '') || 0;
+        const tb = b.createdAt?.toMillis?.() || Date.parse(b.createdAt || '') || 0;
+        return tb - ta;
+      });
+    return { ok: true, items };
+  });
+
+  const adminListPointsQrClaims = onCall({ region: 'europe-west1' }, async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    await assertAdminPermission(request.auth.uid, 'manage_points');
+    const qrId = sanitizePlainText(request.data?.qrId, 80);
+    if (!qrId) throw new HttpsError('invalid-argument', 'qrId gerekli');
+    const snap = await db.collection(QR_CLAIMS).where('qrId', '==', qrId).limit(500).get();
+    const items = snap.docs
+      .map((d) => {
+        const x = d.data() || {};
+        return {
+          id: d.id,
+          qrId: x.qrId || qrId,
+          slug: x.slug || '',
+          uid: x.uid || '',
+          userName: x.userName || '',
+          userEmail: x.userEmail || '',
+          username: x.username || '',
+          points: Math.floor(asNum(x.points)),
+          createdAt: x.createdAt || null,
+        };
+      })
+      .sort((a, b) => {
+        const ta = a.createdAt?.toMillis?.() || Date.parse(a.createdAt || '') || 0;
+        const tb = b.createdAt?.toMillis?.() || Date.parse(b.createdAt || '') || 0;
+        return tb - ta;
+      });
+    return { ok: true, items };
+  });
+
+  const adminDeletePointsQr = onCall({ region: 'europe-west1' }, async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    await assertPlatformAdmin(request.auth.uid);
+    await assertAdminPermission(request.auth.uid, 'manage_points');
+    const id = sanitizePlainText(request.data?.id, 80);
+    if (!id) throw new HttpsError('invalid-argument', 'id gerekli');
+    await db.collection(QR_CODES).doc(id).delete();
+    return { ok: true };
+  });
+
+  const claimPointsQr = onCall({ region: 'europe-west1' }, async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    const uid = request.auth.uid;
+    const raw = sanitizePlainText(request.data?.code || request.data?.slug, 120);
+    const slug = slugifyQr(raw) || raw.toLowerCase();
+    if (!slug) throw new HttpsError('invalid-argument', 'QR kodu gerekli');
+
+    let qrDocId = slug;
+    const byId = await db.collection(QR_CODES).doc(slug).get();
+    if (!byId.exists) {
+      const q = await db.collection(QR_CODES).where('slug', '==', slug).limit(1).get();
+      if (q.empty) throw new HttpsError('not-found', 'Bu QR bulunamadı');
+      qrDocId = q.docs[0].id;
+    }
+
+    const userSnap = await db.collection('users').doc(uid).get();
+    const ud = userSnap.exists ? userSnap.data() || {} : {};
+    const userName = sanitizePlainText(ud.fullName || ud.firstName || '', 80);
+    const userEmail = sanitizePlainText(ud.email || '', 120);
+    const username = sanitizePlainText(ud.username || '', 64);
+
+    return db.runTransaction(async (tx) => {
+      const qrRef = db.collection(QR_CODES).doc(qrDocId);
+      const qrSnap = await tx.get(qrRef);
+      if (!qrSnap.exists) {
+        throw new HttpsError('not-found', 'Bu QR bulunamadı');
+      }
+      const qr = qrSnap.data() || {};
+      const qrSlug = String(qr.slug || qrSnap.id);
+      const points = Math.floor(asNum(qr.points));
+      const maxClaims = Math.max(0, Math.floor(asNum(qr.maxClaims)));
+      const claimCount = Math.max(0, Math.floor(asNum(qr.claimCount)));
+      const perUserLimit = Math.max(1, Math.floor(asNum(qr.perUserLimit, 1)));
+      if (qr.active === false) {
+        throw new HttpsError('failed-precondition', 'Bu QR artık aktif değil');
+      }
+      if (!(points > 0)) {
+        throw new HttpsError('failed-precondition', 'QR puanı geçersiz');
+      }
+      if (maxClaims > 0 && claimCount >= maxClaims) {
+        throw new HttpsError('resource-exhausted', 'Bu QR’ın ödül hakkı doldu');
+      }
+
+      let used = 0;
+      for (let i = 1; i <= perUserLimit; i += 1) {
+        const cRef = db.collection(QR_CLAIMS).doc(`${qrSnap.id}_${uid}_${i}`);
+        const cSnap = await tx.get(cRef);
+        if (cSnap.exists) used += 1;
+      }
+      if (used >= perUserLimit) {
+        throw new HttpsError('already-exists', 'Bu QR’ı zaten kullandın');
+      }
+      const nextIndex = used + 1;
+      const claimRef = db.collection(QR_CLAIMS).doc(`${qrSnap.id}_${uid}_${nextIndex}`);
+      const ledgerKey = `qr_hunt_${qrSnap.id}_${uid}_${nextIndex}`;
+
+      const ledger = await applyLedgerTx(tx, {
+        uid,
+        delta: points,
+        reason: 'qr_hunt',
+        idempotencyKey: ledgerKey,
+        meta: { qrId: qrSnap.id, slug: qrSlug, title: qr.title || '' },
+      });
+
+      tx.set(claimRef, {
+        qrId: qrSnap.id,
+        slug: qrSlug,
+        title: qr.title || '',
+        uid,
+        userName,
+        userEmail,
+        username,
+        points,
+        claimIndex: nextIndex,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(
+        qrRef,
+        {
+          claimCount: claimCount + 1,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      return {
+        ok: true,
+        duplicate: !!ledger.duplicate,
+        points,
+        balance: ledger.balance,
+        title: qr.title || qrSlug,
+        mysteryLine: qr.mysteryLine || 'Gizemli bir şey buldun',
+      };
+    });
+  });
+
   const esimWebhook = onRequest({ region: 'europe-west1' }, async (req, res) => {
     try {
       const payload = req.body || {};
@@ -1162,9 +1917,12 @@ module.exports = function createPointsRewards({
     adminGetPointsConfig,
     adminSavePointsConfig,
     adminSetEsimSecrets,
+    adminRefreshUsdTryRate,
     listPointsCatalog,
     upsertPointsCatalogItem,
     deletePointsCatalogItem,
+    deletePointsCatalogItems,
+    adminBulkUpsertPointsCatalog,
     redeemPointsCatalogItem,
     playSilSupur,
     listMyRewards,
@@ -1172,9 +1930,15 @@ module.exports = function createPointsRewards({
     topupMyEsim,
     applyEngagementPoints,
     adminAdjustPoints,
+    adminUpsertPointsQr,
+    adminListPointsQr,
+    adminListPointsQrClaims,
+    adminDeletePointsQr,
+    claimPointsQr,
     adminListEsimPackages,
     adminSeedDefaultCatalog,
     silSupurNotifyTick,
+    usdTryRateTick,
     esimWebhook,
   };
 };

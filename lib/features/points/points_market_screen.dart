@@ -201,36 +201,18 @@ class _PointsMarketScreenState extends State<PointsMarketScreen> {
                 onTap: () => context.push('/points/sil-supur'),
               ),
             const SizedBox(height: 20),
-            Row(
-              children: [
-                const Text(
-                  'Ödüller',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                ),
-                const Spacer(),
-                Text(
-                  '1 KP = ${cfg.tlPerPoint.toStringAsFixed(2)}₺',
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
+            const Text(
+              'Ödüller',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             if (pts.loading && pts.catalog.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (pts.catalog.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Henüz ürün yok. Admin panelinden eSIM / hediye ekleyebilirsin.',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-              )
+              const _EmptyRewards()
             else
               ...pts.catalog.map(
                 (item) => _CatalogCard(
@@ -240,13 +222,130 @@ class _PointsMarketScreenState extends State<PointsMarketScreen> {
                   onRedeem: () => _redeem(item),
                 ),
               ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => context.push('/market'),
-              icon: const Icon(Icons.storefront_outlined),
-              label: const Text('Klasik Market (merch / Plus)'),
-            ),
+            const SizedBox(height: 20),
+            _MarketLink(onTap: () => context.push('/market')),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyRewards extends StatelessWidget {
+  const _EmptyRewards();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.navy.withValues(alpha: 0.06),
+            AppColors.cyan.withValues(alpha: 0.08),
+          ],
+        ),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: AppColors.navy.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Icon(
+              Icons.card_giftcard_rounded,
+              size: 32,
+              color: AppColors.navy,
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Ödüller yakında',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'eSIM ve hediyeler buraya düşecek.\nBu arada Sil Süpür’ü kaçırma.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              height: 1.45,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MarketLink extends StatelessWidget {
+  const _MarketLink({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.navy.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.storefront_rounded,
+                  color: AppColors.navy,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Klasik Market',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Ürünler, Plus ve kodların',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+            ],
+          ),
         ),
       ),
     );
@@ -334,50 +433,63 @@ class _SilSupurBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: open ? const Color(0xFFFFF4D6) : AppColors.surface,
-      borderRadius: BorderRadius.circular(18),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.gold.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: open
+                ? const LinearGradient(
+                    colors: [Color(0xFFFFF7E0), Color(0xFFFFE8A3)],
+                  )
+                : null,
+            color: open ? null : AppColors.surface,
+            border: Border.all(
+              color: open ? const Color(0xFFE8C547) : AppColors.border,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.gold.withValues(alpha: open ? 0.28 : 0.16),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.casino_rounded, color: AppColors.gold),
                 ),
-                child: const Icon(Icons.casino_rounded, color: AppColors.gold),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Sil Süpür',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                    ),
-                    Text(
-                      open
-                          ? 'Bugün açık · $spinsLeft hak kaldı'
-                          : 'Her $weekday açılır',
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 13,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Sil Süpür',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                       ),
-                    ),
-                  ],
+                      Text(
+                        open
+                            ? 'Bugün açık · $spinsLeft hak kaldı'
+                            : 'Her $weekday açılır',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Icon(
-                Icons.chevron_right,
-                color: open ? AppColors.navy : AppColors.textSecondary,
-              ),
-            ],
+                Icon(
+                  Icons.chevron_right,
+                  color: open ? AppColors.navy : AppColors.textSecondary,
+                ),
+              ],
+            ),
           ),
         ),
       ),

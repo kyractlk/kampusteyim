@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../core/constants/app_assets.dart';
 import '../../core/theme/app_colors.dart';
 import 'esim_quick_install.dart';
 import 'points_models.dart';
@@ -156,7 +158,8 @@ class _EsimTileState extends State<_EsimTile> {
   void didUpdateWidget(covariant _EsimTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.reward.id != widget.reward.id ||
-        oldWidget.reward.status != widget.reward.status) {
+        oldWidget.reward.status != widget.reward.status ||
+        oldWidget.reward.ac != widget.reward.ac) {
       _r = widget.reward;
     }
   }
@@ -177,8 +180,48 @@ class _EsimTileState extends State<_EsimTile> {
     }
   }
 
+  String get _statusLabel {
+    final s = _r.status.toLowerCase();
+    if (s == 'ready') return 'Kuruluma hazır';
+    if (s == 'active' || s == 'in_use') return 'Aktif';
+    if (s == 'expired') return 'Süresi doldu';
+    if (s == 'pending') return 'Hazırlanıyor';
+    return _r.status;
+  }
+
+  Future<void> _quickInstall({required bool apple}) async {
+    final ok = apple
+        ? await EsimQuickInstall.launchApple(_r.ac)
+        : await EsimQuickInstall.launchAndroid(_r.ac);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            apple
+                ? 'iPhone kurulumu açılamadı. QR veya kurulum kodunu dene.'
+                : 'Android kurulumu açılamadı. QR veya kurulum kodunu dene.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _copyLpa() async {
+    final lpa = EsimQuickInstall.normalize(_r.ac);
+    if (lpa == null) return;
+    await Clipboard.setData(ClipboardData(text: lpa));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Kurulum kodu kopyalandı')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final hasAc = EsimQuickInstall.normalize(_r.ac) != null;
+    final onIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+    final onAndroid = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
@@ -198,10 +241,7 @@ class _EsimTileState extends State<_EsimTile> {
           ),
         ),
         title: Text(_r.title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: Text(
-          '${_r.paidLabel} · ${_r.status}'
-          '${_r.esimStatus != null ? ' · ${_r.esimStatus}' : ''}',
-        ),
+        subtitle: Text('${_r.paidLabel} · $_statusLabel'),
         children: [
           if (_busy) const LinearProgressIndicator(minHeight: 2),
           Padding(
@@ -209,60 +249,25 @@ class _EsimTileState extends State<_EsimTile> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _kv('Kalan data', '${_r.remainGb.toStringAsFixed(2)} / ${_r.totalGb.toStringAsFixed(2)} GB'),
+                _kv('Kalan data',
+                    '${_r.remainGb.toStringAsFixed(2)} / ${_r.totalGb.toStringAsFixed(2)} GB'),
                 _kv('Süre', '${_r.totalDuration ?? '-'} gün'),
-                _kv('ICCID', _r.iccid ?? '—'),
-                _kv('SM-DP', _r.smdpStatus ?? '—'),
                 _kv('Aktivasyon', _r.activateTime ?? 'Henüz aktif değil'),
                 _kv('Bitiş', _r.expiredTime ?? '—'),
                 if ((_r.locationCodes ?? '').isNotEmpty)
                   _kv('Ülkeler', _r.locationCodes!),
-                if ((_r.ac ?? '').isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  FilledButton.icon(
-                    onPressed: () async {
-                      final ok = await EsimQuickInstall.launch(_r.ac);
-                      if (!ok && context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Quick Install açılamadı. QR veya LPA ile kur.',
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.sim_card_download_outlined),
-                    label: const Text('Quick Install (iPhone / Android)'),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('Kurulum (LPA)', style: TextStyle(fontWeight: FontWeight.w700)),
-                  SelectableText(_r.ac!, style: const TextStyle(fontSize: 12)),
-                  TextButton.icon(
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: _r.ac!));
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('LPA kopyalandı')),
-                      );
-                    },
-                    icon: const Icon(Icons.copy, size: 16),
-                    label: const Text('LPA kopyala'),
+                if (hasAc) ...[
+                  const SizedBox(height: 14),
+                  _InstallPanel(
+                    lpa: _r.ac!,
+                    onIos: onIos,
+                    onAndroid: onAndroid,
+                    onApple: () => _quickInstall(apple: true),
+                    onAndroidInstall: () => _quickInstall(apple: false),
+                    onCopy: _copyLpa,
                   ),
                 ],
-                if ((_r.qrCodeUrl ?? '').isNotEmpty)
-                  TextButton.icon(
-                    onPressed: () => launchUrl(Uri.parse(_r.qrCodeUrl!)),
-                    icon: const Icon(Icons.qr_code, size: 16),
-                    label: const Text('QR aç'),
-                  ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Kurulum: Ayarlar → Mobil servis / eSIM → QR veya aktivasyon kodu ile ekle. '
-                  'Veri için uluslararası dolaşımı aç.',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 OutlinedButton(
                   onPressed: _busy ? null : _refresh,
                   child: const Text('Kullanımı yenile'),
@@ -282,10 +287,206 @@ class _EsimTileState extends State<_EsimTile> {
           children: [
             SizedBox(
               width: 100,
-              child: Text(k, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              child: Text(
+                k,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
             ),
             Expanded(child: Text(v, style: const TextStyle(fontSize: 13))),
           ],
         ),
       );
+}
+
+class _InstallPanel extends StatelessWidget {
+  const _InstallPanel({
+    required this.lpa,
+    required this.onIos,
+    required this.onAndroid,
+    required this.onApple,
+    required this.onAndroidInstall,
+    required this.onCopy,
+  });
+
+  final String lpa;
+  final bool onIos;
+  final bool onAndroid;
+  final VoidCallback onApple;
+  final VoidCallback onAndroidInstall;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0B1F3A), Color(0xFF163356)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF1E3A5F)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Kurulum',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'QR’ı tara veya tek dokunuşla kur',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.72),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: QrImageView(
+                data: lpa,
+                version: QrVersions.auto,
+                size: 188,
+                backgroundColor: Colors.white,
+                errorCorrectionLevel: QrErrorCorrectLevel.H,
+                eyeStyle: const QrEyeStyle(
+                  eyeShape: QrEyeShape.square,
+                  color: AppColors.navy,
+                ),
+                dataModuleStyle: const QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.square,
+                  color: AppColors.navy,
+                ),
+                embeddedImage: const AssetImage(AppAssets.kampusIcon),
+                embeddedImageStyle: const QrEmbeddedImageStyle(
+                  size: Size(34, 34),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Hızlı kurulum',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFFBAE6FD),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _PlatformInstallButton(
+                  label: 'iPhone',
+                  icon: Icons.phone_iphone,
+                  primary: onIos || (!onIos && !onAndroid),
+                  onPressed: onApple,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _PlatformInstallButton(
+                  label: 'Android',
+                  icon: Icons.android,
+                  primary: onAndroid,
+                  onPressed: onAndroidInstall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: onCopy,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('Kurulum kodunu kopyala'),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'LPA nedir? eSIM’i telefona yüklemek için kullanılan gizli kurulum kodudur. '
+            'Kopyalayıp Ayarlar → eSIM Ekle ile de girebilirsin.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.62),
+              fontSize: 11,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Kurulumdan sonra uluslararası dolaşımı / data roaming’i aç.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.cyan.withValues(alpha: 0.9),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlatformInstallButton extends StatelessWidget {
+  const _PlatformInstallButton({
+    required this.label,
+    required this.icon,
+    required this.primary,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool primary;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    if (primary) {
+      return FilledButton.icon(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.cyan,
+          foregroundColor: AppColors.navy,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        icon: Icon(icon, size: 18),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+      );
+    }
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+      ),
+      icon: Icon(icon, size: 18),
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+    );
+  }
 }

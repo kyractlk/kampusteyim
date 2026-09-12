@@ -271,11 +271,16 @@ function brandedEmail({
   const safeCtaUrl = escapeHtml(String(ctaUrl || '').replace(/[<>"']/g, ''));
   const cta =
     ctaLabel && ctaUrl
-      ? `<p style="margin:28px 0 8px;text-align:center;">
-          <a href="${safeCtaUrl}" style="display:inline-block;background:#0B1F3A;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:12px;font-weight:700;font-size:15px;">
-            ${safeCtaLabel}
-          </a>
-        </p>`
+      ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:28px 0 8px;">
+          <tr>
+            <td align="center" bgcolor="#0B1F3A" style="background-color:#0B1F3A;border-radius:14px;border:2px solid #38BDF8;">
+              <a href="${safeCtaUrl}" target="_blank"
+                style="display:block;padding:16px 22px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:800;text-align:center;text-decoration:none;color:#FFFFFF !important;-webkit-text-fill-color:#FFFFFF;background-color:#0B1F3A;">
+                ${safeCtaLabel}
+              </a>
+            </td>
+          </tr>
+        </table>`
       : '';
   const note = footerNote
     ? `<p style="margin:20px 0 0;font-size:13px;color:#6b7280;line-height:1.5;">${escapeHtml(footerNote)}</p>`
@@ -286,15 +291,24 @@ function brandedEmail({
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="color-scheme" content="light dark"/>
+  <meta name="supported-color-schemes" content="light dark"/>
   <title>${safeTitle}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) {
+      .kt-card { background:#0F172A !important; }
+      .kt-body-text { color:#E2E8F0 !important; }
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background:#EEF2F7;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EEF2F7;padding:32px 12px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #E2E8F0;box-shadow:0 8px 28px rgba(11,31,58,0.08);">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="kt-card" style="max-width:560px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #E2E8F0;box-shadow:0 8px 28px rgba(11,31,58,0.08);">
           <tr>
-            <td style="background:linear-gradient(135deg,#0B1F3A 0%,#12355C 100%);padding:28px 28px 22px;text-align:center;">
+            <td style="background:#0B1F3A;background:linear-gradient(135deg,#0B1F3A 0%,#12355C 100%);padding:28px 28px 22px;text-align:center;">
               <img src="${BRAND_LOGO}" alt="KampüsteyimAPP" width="64" height="64" style="display:inline-block;border-radius:16px;background:#ffffff;padding:4px;"/>
               <p style="margin:14px 0 0;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.2px;">KampüsteyimAPP</p>
               <p style="margin:4px 0 0;color:#A8C5E2;font-size:13px;">AYS Tech · Kampüs sosyal ağı</p>
@@ -304,7 +318,7 @@ function brandedEmail({
             <td style="padding:28px 28px 8px;">
               <h1 style="margin:0 0 16px;font-size:20px;line-height:1.35;color:#0B1F3A;">${safeTitle}</h1>
               ${safeGreeting}
-              <div style="font-size:15px;line-height:1.65;color:#334155;">${bodyHtml || ''}</div>
+              <div class="kt-body-text" style="font-size:15px;line-height:1.65;color:#334155;">${bodyHtml || ''}</div>
               ${cta}
               ${note}
             </td>
@@ -317,7 +331,7 @@ function brandedEmail({
                 AYS Tech · Kayra Çatalkaya
               </p>
               <p style="margin:0;text-align:center;">
-                <a href="${BRAND_HOME}" style="display:inline-block;background:#0EA5E9;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:10px;font-weight:700;font-size:13px;">
+                <a href="${BRAND_HOME}" style="display:inline-block;background-color:#0EA5E9;color:#ffffff !important;-webkit-text-fill-color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:10px;font-weight:700;font-size:13px;border:2px solid #0369A1;">
                   ${BRAND_LABEL}’i aç
                 </a>
               </p>
@@ -5362,6 +5376,161 @@ async function executeTestModePurge(actorId) {
   stats.finishedAt = new Date().toISOString();
   return stats;
 }
+
+// ─── Load-test batch temizliği (admin SDK) ─────────────────────────
+
+/**
+ * HTTPS: loadTest / loadTestBatch verilerini chunk chunk siler.
+ * Header: x-loadtest-key: kampus-lt-cleanup-2026
+ * Query/body: batch=<id> | all=1 , phase=posts|stories|reels|users|auth
+ * Tek çağrı ~7 dk çalışır; done:false ise aynı phase tekrar çağır.
+ */
+exports.cleanupLoadTestBatch = onRequest(
+  {
+    region: 'europe-west1',
+    timeoutSeconds: 540,
+    memory: '1GiB',
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      const key = String(req.get('x-loadtest-key') || '');
+      if (key !== 'kampus-lt-cleanup-2026') {
+        res.status(403).json({ error: 'forbidden' });
+        return;
+      }
+
+      const body = typeof req.body === 'object' && req.body ? req.body : {};
+      const batchId = String(req.query.batch || body.batch || '').trim();
+      const all = String(req.query.all || body.all || '') === '1';
+      const phase = String(req.query.phase || body.phase || 'posts').trim();
+      if (!all && !batchId) {
+        res.status(400).json({ error: 'batch or all=1 required' });
+        return;
+      }
+
+      const field = all ? 'loadTest' : 'loadTestBatch';
+      const value = all ? true : batchId;
+      const started = Date.now();
+      const budgetMs = 120_000;
+      let deleted = 0;
+      let authDeleted = 0;
+
+      if (phase === 'auth' || phase === 'users') {
+        const { getAuth } = require('firebase-admin/auth');
+        const auth = getAuth();
+        while (Date.now() - started < budgetMs) {
+          const snap = await db
+            .collection('users')
+            .where(field, '==', value)
+            .limit(80)
+            .get();
+          if (snap.empty) {
+            res.json({
+              ok: true,
+              done: true,
+              phase,
+              deleted,
+              authDeleted,
+              ms: Date.now() - started,
+            });
+            return;
+          }
+          for (const doc of snap.docs) {
+            const data = doc.data() || {};
+            const username = String(data.username || '').trim();
+            if (username) {
+              try {
+                await db.collection('handles').doc(username).delete();
+              } catch (_) {
+                /* ignore */
+              }
+            }
+            for (const sub of ['notifications', 'cv', 'cv_exports', 'cv_ai_usage']) {
+              try {
+                await deleteCollectionRef(doc.ref.collection(sub));
+              } catch (_) {
+                /* ignore */
+              }
+            }
+            try {
+              await doc.ref.delete();
+              deleted += 1;
+            } catch (_) {
+              /* ignore */
+            }
+            const ids = new Set(
+              [doc.id, String(data.authUid || ''), String(data.stableId || '')]
+                .map((x) => String(x || '').trim())
+                .filter(Boolean),
+            );
+            for (const id of ids) {
+              try {
+                await auth.deleteUser(id);
+                authDeleted += 1;
+              } catch (_) {
+                /* ignore */
+              }
+            }
+          }
+        }
+        res.json({
+          ok: true,
+          done: false,
+          phase,
+          deleted,
+          authDeleted,
+          ms: Date.now() - started,
+        });
+        return;
+      }
+
+      if (!['posts', 'stories', 'reels'].includes(phase)) {
+        res.status(400).json({ error: 'bad phase' });
+        return;
+      }
+
+      while (Date.now() - started < budgetMs) {
+        const snap = await db
+          .collection(phase)
+          .where(field, '==', value)
+          .limit(400)
+          .get();
+        if (snap.empty) {
+          res.json({
+            ok: true,
+            done: true,
+            phase,
+            deleted,
+            ms: Date.now() - started,
+          });
+          return;
+        }
+        if (phase === 'reels') {
+          for (const doc of snap.docs) {
+            try {
+              await deleteCollectionRef(doc.ref.collection('comments'));
+            } catch (_) {
+              /* ignore */
+            }
+          }
+        }
+        deleted += await batchDeleteDocs(snap.docs);
+      }
+
+      res.json({
+        ok: true,
+        done: false,
+        phase,
+        deleted,
+        ms: Date.now() - started,
+      });
+    } catch (e) {
+      console.error('[cleanupLoadTestBatch]', e);
+      res.status(500).json({ error: e.message || String(e) });
+    }
+  },
+);
 
 /**
  * Admin: test modunu aç/kapat. Kapatılınca admin hariç tüm veri silinir.
@@ -10888,9 +11057,12 @@ exports.getPointsConfig = _pointsRewards.getPointsConfig;
 exports.adminGetPointsConfig = _pointsRewards.adminGetPointsConfig;
 exports.adminSavePointsConfig = _pointsRewards.adminSavePointsConfig;
 exports.adminSetEsimSecrets = _pointsRewards.adminSetEsimSecrets;
+exports.adminRefreshUsdTryRate = _pointsRewards.adminRefreshUsdTryRate;
 exports.listPointsCatalog = _pointsRewards.listPointsCatalog;
 exports.upsertPointsCatalogItem = _pointsRewards.upsertPointsCatalogItem;
 exports.deletePointsCatalogItem = _pointsRewards.deletePointsCatalogItem;
+exports.deletePointsCatalogItems = _pointsRewards.deletePointsCatalogItems;
+exports.adminBulkUpsertPointsCatalog = _pointsRewards.adminBulkUpsertPointsCatalog;
 exports.redeemPointsCatalogItem = _pointsRewards.redeemPointsCatalogItem;
 exports.playSilSupur = _pointsRewards.playSilSupur;
 exports.listMyRewards = _pointsRewards.listMyRewards;
@@ -10898,9 +11070,15 @@ exports.refreshMyEsim = _pointsRewards.refreshMyEsim;
 exports.topupMyEsim = _pointsRewards.topupMyEsim;
 exports.applyEngagementPoints = _pointsRewards.applyEngagementPoints;
 exports.adminAdjustPoints = _pointsRewards.adminAdjustPoints;
+exports.adminUpsertPointsQr = _pointsRewards.adminUpsertPointsQr;
+exports.adminListPointsQr = _pointsRewards.adminListPointsQr;
+exports.adminListPointsQrClaims = _pointsRewards.adminListPointsQrClaims;
+exports.adminDeletePointsQr = _pointsRewards.adminDeletePointsQr;
+exports.claimPointsQr = _pointsRewards.claimPointsQr;
 exports.adminListEsimPackages = _pointsRewards.adminListEsimPackages;
 exports.adminSeedDefaultCatalog = _pointsRewards.adminSeedDefaultCatalog;
 exports.silSupurNotifyTick = _pointsRewards.silSupurNotifyTick;
+exports.usdTryRateTick = _pointsRewards.usdTryRateTick;
 exports.esimWebhook = _pointsRewards.esimWebhook;
 
 exports.processProfilePhoto = require('./profile_photo').processProfilePhoto;

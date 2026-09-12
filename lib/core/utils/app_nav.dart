@@ -217,6 +217,13 @@ class AppNav {
       case 'profile':
       case 'market':
       case 'points':
+        if (segs.length >= 3 && segs[1].toLowerCase() == 'qr-claim') {
+          open(
+            context,
+            '/points/qr-claim/${Uri.encodeComponent(segs[2])}',
+          );
+          return true;
+        }
         if (id != null && id.isNotEmpty) {
           open(context, '/points/${Uri.encodeComponent(id)}');
           return true;

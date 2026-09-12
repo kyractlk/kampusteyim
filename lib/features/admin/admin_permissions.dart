@@ -91,7 +91,12 @@ enum AdminPermission {
   ),
   managePoints(
     'manage_points',
-    'Puan marketi, Sil Süpür, eSIM ödülleri',
+    'Puan marketi, Sil Süpür, eSIM katalog / kur / marj',
+    'Ticaret',
+  ),
+  manageEsimSecrets(
+    'manage_esim_secrets',
+    'eSIM Access API anahtarlarını kaydet / değiştir',
     'Ticaret',
   ),
   manageAds('manage_ads', 'Reklam / sponsor teklif / push-mail bot', 'Ticaret'),
@@ -313,6 +318,7 @@ class StaffRole {
         AdminPermission.managePlus,
         AdminPermission.manageMarket,
         AdminPermission.managePoints,
+        AdminPermission.manageEsimSecrets,
         AdminPermission.manageCvAi,
         AdminPermission.manageAds,
         AdminPermission.reviewPayments,
@@ -330,6 +336,19 @@ class StaffRole {
         AdminPermission.manageAmbassadors,
         AdminPermission.manageUsers,
         AdminPermission.manageAds,
+        AdminPermission.accessDuringMaintenance,
+      },
+      isSystem: true,
+    ),
+    StaffRole(
+      id: 'role_points_esim',
+      name: 'Puan & eSIM',
+      description:
+          'Kampüsteyim Puan, Sil Süpür, eSIM katalogu ve TCMB kuru. '
+          'API anahtarları için ayrıca “eSIM Access anahtarları” yetkisi gerekir.',
+      permissions: {
+        AdminPermission.managePoints,
+        AdminPermission.manageMarket,
         AdminPermission.accessDuringMaintenance,
       },
       isSystem: true,

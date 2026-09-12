@@ -32,7 +32,7 @@
       path = '/user/' + tUser + (path.indexOf('?') >= 0 ? path.slice(path.indexOf('?')) : '?src=promo');
       if (path.indexOf('src=promo') < 0) path += (path.indexOf('?') >= 0 ? '&' : '?') + 'src=promo';
     }
-    if (!/^\/(post|user|event|announcement|stories|reels|tickets|home|profile|search|about)(\/|$)/.test(path)
+    if (!/^\/(post|user|event|announcement|stories|reels|tickets|home|profile|search|about|points)(\/|$)/.test(path)
         && path !== '/reels' && path !== '/tickets' && path !== '/home' && path !== '/profile' && path !== '/search' && path !== '/about') {
       path = '/home';
     }

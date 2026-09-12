@@ -545,6 +545,12 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
             child: Text('Plus kaldır'),
           ),
       ],
+      if (widget.admin.can(widget.me, AdminPermission.managePoints) ||
+          widget.me.isSuperAdmin)
+        const PopupMenuItem(
+          value: 'adjust_points',
+          child: Text('Puan güncelle'),
+        ),
       if (widget.admin.can(widget.me, AdminPermission.restrictUsers)) ...[
         const PopupMenuItem(value: 'warn', child: Text('Uyarı gönder')),
         const PopupMenuItem(value: 'mute', child: Text('24 saat sustur')),

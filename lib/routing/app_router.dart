@@ -36,6 +36,7 @@ import '../features/payments/pay_result_screen.dart';
 import '../features/market/market_screen.dart';
 import '../features/market/delivery_addresses_screen.dart';
 import '../features/points/points_market_screen.dart';
+import '../features/points/points_qr_hunt_screen.dart';
 import '../features/points/points_rewards_screen.dart';
 import '../features/points/sil_supur_screen.dart';
 import '../features/notifications/notification_settings_screen.dart';
@@ -109,12 +110,20 @@ GoRouter createRouter(AuthProvider auth) {
               loc == '/register' ||
               loc == '/pending-approval')) {
         final next = state.uri.queryParameters['next'] ?? '';
-        if (next == '/tanitimkarti' || next.startsWith('/invites/')) return next;
+        if (next == '/tanitimkarti' ||
+            next.startsWith('/invites/') ||
+            next.startsWith('/points/qr-claim/')) {
+          return next;
+        }
         return auth.homeRoute;
       }
       if (loggedIn && (loc == '/login' || loc == '/register')) {
         final next = state.uri.queryParameters['next'] ?? '';
-        if (next == '/tanitimkarti' || next.startsWith('/invites/')) return next;
+        if (next == '/tanitimkarti' ||
+            next.startsWith('/invites/') ||
+            next.startsWith('/points/qr-claim/')) {
+          return next;
+        }
         return auth.homeRoute;
       }
       return null;
@@ -367,6 +376,18 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/points/rewards',
         parentNavigatorKey: appRootNavigatorKey,
         builder: (context, state) => const PointsRewardsScreen(),
+      ),
+      GoRoute(
+        path: '/points/qr-hunt',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (context, state) => const PointsQrHuntScreen(),
+      ),
+      GoRoute(
+        path: '/points/qr-claim/:code',
+        parentNavigatorKey: appRootNavigatorKey,
+        builder: (context, state) => PointsQrHuntScreen(
+          initialCode: state.pathParameters['code'],
+        ),
       ),
       GoRoute(
         path: '/profile/delivery-addresses',

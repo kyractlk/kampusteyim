@@ -1141,40 +1141,6 @@ ${fields}
         const iframeSrc = escapeHtml(
           'https://www.paytr.com/odeme/guvenli/' + token,
         );
-        const showTable =
-          cfg.installmentTableEnabled === true &&
-          cfg.installmentTableToken &&
-          amountNum > 0 &&
-          order.noInstallment !== true;
-        const tableToken = encodeURIComponent(cfg.installmentTableToken || '');
-        const merchantId = encodeURIComponent(cfg.paytrMerchantId || '736106');
-        const amountParam = encodeURIComponent(amountNum.toFixed(2));
-        const cashNote =
-          order.cashPriceInstallments === true
-            ? '<p class="cash-note">Bu üründe peşin fiyatına taksit seçenekleri geçerlidir (banka koşullarına göre).</p>'
-            : '';
-        const taksitBlock = showTable
-          ? `
-<section class="taksit">
-  <h2>Taksit seçenekleri</h2>
-  ${cashNote}
-  <style>
-    #paytr_taksit_tablosu{clear:both;font-size:12px;max-width:100%;text-align:center;font-family:inherit}
-    #paytr_taksit_tablosu::before{display:table;content:" "}
-    #paytr_taksit_tablosu::after{content:"";clear:both;display:table}
-    .taksit-tablosu-wrapper{margin:5px;width:min(280px,100%);padding:12px;cursor:default;text-align:center;display:inline-block;border:1px solid #e1e1e1;border-radius:12px;background:#fff}
-    .taksit-logo img{max-height:28px;padding-bottom:10px}
-    .taksit-tutari-text{float:left;width:126px;color:#a2a2a2;margin-bottom:5px}
-    .taksit-tutar-wrapper{display:inline-block;background-color:#f7f7f7}
-    .taksit-tutar-wrapper:hover{background-color:#e8e8e8}
-    .taksit-tutari{float:left;width:126px;padding:6px 0;color:#474747;border:2px solid #ffffff}
-    .taksit-tutari-bold{font-weight:bold}
-    @media all and (max-width:600px){.taksit-tablosu-wrapper{margin:5px 0}}
-  </style>
-  <div id="paytr_taksit_tablosu"></div>
-  <script src="https://www.paytr.com/odeme/taksit-tablosu/v2?token=${tableToken}&merchant_id=${merchantId}&amount=${amountParam}&taksit=0&tumu=0"></script>
-</section>`
-          : '';
         res.set('Content-Type', 'text/html; charset=utf-8');
         res.set('Cache-Control', 'no-store');
         res.set(
@@ -1207,9 +1173,6 @@ body{margin:0;min-height:100vh;font-family:"DM Sans",system-ui,sans-serif;backgr
 .head .hint{margin:0;color:var(--muted);font-size:.85rem;line-height:1.4}
 .pay{padding:0;min-height:78vh;background:#fff}
 .pay iframe{width:100%;min-height:78vh;border:0;display:block;background:#fff}
-.taksit{margin:1rem 1.1rem 0;padding:1rem;background:#fff;border:1px solid var(--line);border-radius:14px}
-.taksit h2{margin:0 0 .65rem;font-size:1rem;font-weight:800;color:var(--navy);text-align:center}
-.cash-note{margin:0 0 .75rem;font-size:.82rem;color:var(--muted);text-align:center;line-height:1.4}
 .foot{margin-top:.85rem;padding:0 1.1rem;text-align:center;font-size:.78rem;color:var(--muted)}
 .foot a{color:var(--navy);font-weight:700;text-decoration:none;margin:0 .45rem}
 @media(min-width:900px){
@@ -1217,7 +1180,6 @@ body{margin:0;min-height:100vh;font-family:"DM Sans",system-ui,sans-serif;backgr
   .bar{padding:0;margin-bottom:1rem}
   .card{border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 32px rgba(15,23,42,.06)}
   .pay,.pay iframe{min-height:640px}
-  .taksit{margin:1.1rem 0 0}
   .foot{padding:0}
 }
 </style>
@@ -1232,7 +1194,7 @@ body{margin:0;min-height:100vh;font-family:"DM Sans",system-ui,sans-serif;backgr
       <div class="head">
         <h1>${title}</h1>
         <div class="row">
-          <span class="hint">PayTR güvenceli ödeme</span>
+          <span class="hint">PayTR güvenceli ödeme · taksit seçenekleri kart ekranında</span>
           <span class="amt">${amountStr} TL</span>
         </div>
       </div>
@@ -1240,7 +1202,6 @@ body{margin:0;min-height:100vh;font-family:"DM Sans",system-ui,sans-serif;backgr
         <iframe src="${iframeSrc}" id="paytriframe" title="PayTR güvenli ödeme" allow="payment *"></iframe>
       </div>
     </div>
-    ${taksitBlock}
     <div class="foot">
       Kart bilgilerin Kampüsteyim sunucularında saklanmaz.
       <div style="margin-top:.45rem">

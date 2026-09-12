@@ -32,16 +32,12 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
   final _paytrCb = TextEditingController();
   final _shopierCb = TextEditingController();
   final _shopierPay = TextEditingController();
-  final _installmentToken = TextEditingController(
-    text: 'cf322a02b0690c8492d89adcba8a56ba9d6c7117e932f9072c4e43edf2d86a86',
-  );
 
   String _active = 'paytr';
   final Set<String> _enabled = {'paytr'};
   bool _paytrTest = false;
   bool _marketInApp = true;
   bool _merchPaytr = true;
-  bool _installmentTable = false;
   bool _installmentsDefault = true;
   bool _loading = true;
   bool _saving = false;
@@ -77,7 +73,6 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
       _paytrCb,
       _shopierCb,
       _shopierPay,
-      _installmentToken,
     ]) {
       c.dispose();
     }
@@ -113,10 +108,7 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
     _paytrTest = cfg.paytrTestMode;
     _marketInApp = cfg.raw['marketInAppVisible'] == true;
     _merchPaytr = cfg.raw['merchPaytrEnabled'] != false;
-    _installmentTable = cfg.raw['installmentTableEnabled'] == true;
     _installmentsDefault = cfg.raw['installmentsDefaultEnabled'] != false;
-    final tok = '${cfg.raw['installmentTableToken'] ?? ''}'.trim();
-    if (tok.isNotEmpty) _installmentToken.text = tok;
     _paytrKey.clear();
     _paytrSalt.clear();
     _shopierKey.clear();
@@ -159,8 +151,8 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
         'paytrTestMode': _paytrTest,
         'marketInAppVisible': _marketInApp,
         'merchPaytrEnabled': _merchPaytr,
-        'installmentTableEnabled': _installmentTable,
-        'installmentTableToken': _installmentToken.text.trim(),
+        'installmentTableEnabled': false,
+        'installmentTableToken': '',
         'installmentsDefaultEnabled': _installmentsDefault,
         'shopierWebsiteIndex': int.tryParse(_shopierIndex.text.trim()) ?? 1,
         'plusProductName': _productName.text.trim(),
@@ -300,29 +292,11 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Taksit (varsayılan)'),
                 subtitle: const Text(
-                  'Kapalıysa tüm siparişlerde peşin (ürün özel açabilir)',
+                  'Açıkken PayTR ödeme ekranında taksit seçilir. Kapalıysa peşin.',
                 ),
                 value: _installmentsDefault,
                 onChanged: (v) => setState(() => _installmentsDefault = v),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Ödeme sayfasında taksit tablosu'),
-                subtitle: const Text('PayTR taksit karşılaştırma kutusu'),
-                value: _installmentTable,
-                onChanged: (v) => setState(() => _installmentTable = v),
-              ),
-              if (_installmentTable) ...[
-                const SizedBox(height: 6),
-                TextField(
-                  controller: _installmentToken,
-                  decoration: const InputDecoration(
-                    labelText: 'Taksit tablosu token',
-                    border: OutlineInputBorder(),
-                    helperText: 'PayTR panel → Taksit ayarları',
-                  ),
-                ),
-              ],
             ],
           ),
         ),

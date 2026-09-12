@@ -15,6 +15,7 @@ import '../auth/data/auth_provider.dart';
 import '../maintenance/maintenance_provider.dart';
 import '../moderation/moderation_models.dart';
 import '../notifications/notification_provider.dart';
+import 'admin_adjust_points_dialog.dart';
 import 'admin_content_tabs.dart';
 import 'admin_points_tab.dart';
 import 'admin_edit_user_dialog.dart';
@@ -29,6 +30,7 @@ import 'admin_registrations_tab.dart';
 import 'admin_name_requests_tab.dart';
 import 'admin_study_rooms_tab.dart';
 import 'admin_promo_hub_tab.dart';
+import 'admin_qr_hunt_tab.dart';
 import 'admin_ambassador_hub.dart';
 import 'admin_create_accounts_tab.dart';
 import 'admin_cv_ai_limits_tab.dart';
@@ -184,13 +186,44 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
           ],
           builder: () => const AdminMarketTab(),
         ),
-      if (admin.can(me, AdminPermission.managePoints) || me.isSuperAdmin)
+      if (admin.can(me, AdminPermission.managePoints) || me.isSuperAdmin) ...[
         _AdminTab(
-          label: 'Puan / Sil Süpür',
+          label: 'Puan',
+          icon: const Icon(Icons.dashboard_customize_outlined),
+          required: const [AdminPermission.managePoints],
+          builder: () => const AdminPointsTab(section: 'dashboard'),
+        ),
+        _AdminTab(
+          label: 'Puan sorgula',
+          icon: const Icon(Icons.manage_search_outlined),
+          required: const [AdminPermission.managePoints],
+          builder: () => const AdminPointsTab(section: 'users'),
+        ),
+        _AdminTab(
+          label: 'Sil Süpür',
           icon: const Icon(Icons.casino_outlined),
           required: const [AdminPermission.managePoints],
-          builder: () => const AdminPointsTab(),
+          builder: () => const AdminPointsTab(section: 'settings'),
         ),
+        _AdminTab(
+          label: 'KP Katalog',
+          icon: const Icon(Icons.inventory_2_outlined),
+          required: const [AdminPermission.managePoints],
+          builder: () => const AdminPointsTab(section: 'catalog'),
+        ),
+        _AdminTab(
+          label: 'eSIM API',
+          icon: const Icon(Icons.sim_card_outlined),
+          required: const [AdminPermission.managePoints],
+          builder: () => const AdminPointsTab(section: 'esim'),
+        ),
+        _AdminTab(
+          label: 'Puan QR',
+          icon: const Icon(Icons.qr_code_2_outlined),
+          required: const [AdminPermission.managePoints],
+          builder: () => const AdminQrHuntTab(),
+        ),
+      ],
       if (admin.can(me, AdminPermission.managePlus))
         _AdminTab(
           label: 'Plus',
@@ -904,6 +937,8 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
             ),
           ),
         );
+      case 'adjust_points':
+        await showAdminAdjustPointsDialog(context: context, user: u);
       case 'make_admin':
         final roleId = await _pickRole(context, admin);
         if (roleId != null) {
