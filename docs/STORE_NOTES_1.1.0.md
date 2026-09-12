@@ -21,7 +21,7 @@ Hesaplar arasında çıkış yapmadan geç. Tanıtım kartı ve QR istatistikler
 
 | Platform | Mağaza sürümü | Zorunlu min (şimdilik boş) |
 |----------|----------------|----------------------------|
-| iOS | 1.72 | boş → kimse kilitlenmez |
+| iOS | 1.73 | boş → kimse kilitlenmez |
 | Android | 1.1.0 | boş → kimse kilitlenmez |
 
 Soft uyarı: kullanıcı o platformda mağazadan gerideyse “Sonra” ile kapatılabilir. iOS ile Android asla kıyaslanmaz.

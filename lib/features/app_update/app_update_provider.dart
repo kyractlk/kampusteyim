@@ -10,7 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'app_update_models.dart';
 
 /// Açılışta bu platformun mağaza sürümünü kontrol eder.
-/// iOS 1.72 ile Android 1.1.0 asla birbirine kıyaslanmaz.
+/// iOS 1.73 ile Android 1.1.0 asla birbirine kıyaslanmaz.
 class AppUpdateProvider extends ChangeNotifier {
   AppUpdateProvider() {
     unawaited(check());
