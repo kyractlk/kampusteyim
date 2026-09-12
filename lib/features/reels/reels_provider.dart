@@ -15,6 +15,7 @@ import '../auth/data/auth_provider.dart';
 import '../feed/feed_provider.dart';
 import '../notifications/notification_models.dart';
 import '../notifications/push_service.dart';
+import '../points/points_models.dart';
 import 'reel_models.dart';
 import 'reels_video_cache.dart';
 
@@ -459,6 +460,13 @@ class ReelsProvider extends ChangeNotifier {
         actorName: author.fullName,
         mentionedIds: mentionedIds,
       ));
+      unawaited(
+        PointsService.applyEngagement(
+          kind: 'reel_created',
+          targetUid: author.id,
+          contentId: doc.id,
+        ),
+      );
       return null;
     } catch (e) {
       debugPrint('[reels] createUrl: $e');
@@ -631,6 +639,16 @@ class ReelsProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[reels] like: $e');
     }
+    final owner = _items[i].authorId;
+    if (owner.isNotEmpty) {
+      unawaited(
+        PointsService.applyEngagement(
+          kind: was ? 'like_removed' : 'like_received',
+          targetUid: owner,
+          contentId: reelId,
+        ),
+      );
+    }
   }
 
   Stream<List<ReelComment>> commentsStream(String reelId) {
@@ -695,6 +713,16 @@ class ReelsProvider extends ChangeNotifier {
         actorName: author.fullName,
         mentionedIds: mentioned,
       ));
+      final owner = i >= 0 ? _items[i].authorId : '';
+      if (owner.isNotEmpty) {
+        unawaited(
+          PointsService.applyEngagement(
+            kind: 'comment_received',
+            targetUid: owner,
+            contentId: doc.id,
+          ),
+        );
+      }
       return null;
     } catch (e) {
       debugPrint('[reels] comment: $e');

@@ -60,8 +60,16 @@ class FeedScreen extends StatelessWidget {
             final filtered = allPosts.where((p) {
               if (!auth.canViewPost(p)) return false;
               if (user == null) return scope == FeedScope.all;
-              // Şehir / üniversite — yazar profili VEYA post denormalize alanları.
               final author = auth.findUser(p.authorId);
+              // AYS Tech Guard vb. platform botları herkese / her filtrede görünür.
+              if (CampusAffinity.isPlatformWideAuthor(
+                    author,
+                    authorId: p.authorId,
+                    handle: p.authorHandle,
+                  )) {
+                return true;
+              }
+              // Şehir / üniversite — yazar profili VEYA post denormalize alanları.
               if (scope == FeedScope.city) {
                 if (user.city.trim().isEmpty) return false;
                 final their = (author?.city.trim().isNotEmpty == true

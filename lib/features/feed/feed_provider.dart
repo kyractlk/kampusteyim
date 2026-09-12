@@ -10,6 +10,7 @@ import '../../core/utils/mention_utils.dart';
 import '../../models/models.dart';
 import '../notifications/notification_models.dart';
 import '../notifications/notification_provider.dart';
+import '../points/points_models.dart';
 import '../study/music_link_meta.dart';
 
 /// Akış filtresi — Firestore stream canlı kalır; filtre client tarafında uygulanır.
@@ -528,6 +529,14 @@ class FeedProvider extends ChangeNotifier {
     _posts[i] = updated;
     notifyListeners();
     _writePost(updated.copyWith(isLiked: false));
+    // Beğeni alan yazara puan (geri alınırsa düşer). Self skip sunucuda.
+    if (post.authorId.isNotEmpty) {
+      PointsService.applyEngagement(
+        kind: liked ? 'like_received' : 'like_removed',
+        targetUid: post.authorId,
+        contentId: postId,
+      );
+    }
   }
 
   void toggleRepost({required String postId, required AppUser user}) {
@@ -565,6 +574,13 @@ class FeedProvider extends ChangeNotifier {
     }
     notifyListeners();
     _writePost(updated.copyWith(isReposted: false));
+    if (post.authorId.isNotEmpty) {
+      PointsService.applyEngagement(
+        kind: reposted ? 'repost_received' : 'repost_removed',
+        targetUid: post.authorId,
+        contentId: postId,
+      );
+    }
   }
 
   String? lastPostedId;
@@ -697,6 +713,13 @@ class FeedProvider extends ChangeNotifier {
             directory: directory,
           ),
         );
+        unawaited(
+          PointsService.applyEngagement(
+            kind: 'post_created',
+            targetUid: authorId,
+            contentId: post.id,
+          ),
+        );
         if (!skipReelMirror) {
           unawaited(
             _mirrorVideoToReels(
@@ -733,6 +756,13 @@ class FeedProvider extends ChangeNotifier {
         actorId: authorId,
         actorName: authorName,
         directory: directory,
+      ),
+    );
+    unawaited(
+      PointsService.applyEngagement(
+        kind: 'post_created',
+        targetUid: authorId,
+        contentId: post.id,
       ),
     );
     if (!skipReelMirror) {
@@ -952,6 +982,13 @@ class FeedProvider extends ChangeNotifier {
       _writePost(updated);
     }
     notifyListeners();
+    if (pi >= 0 && _posts[pi].authorId.isNotEmpty) {
+      PointsService.applyEngagement(
+        kind: 'comment_received',
+        targetUid: _posts[pi].authorId,
+        contentId: comment.id,
+      );
+    }
   }
 
   /// Beğeni sonrası bildirim için: yeni beğenildiyse yorumu döner.
@@ -1239,14 +1276,44 @@ class FeedProvider extends ChangeNotifier {
     if (i < 0) return;
     final event = _events[i];
     EventApplication? target;
+    for (final a in event.applications) {
+      if (a.id == applicationId) {
+        target = a;
+        break;
+      }
+    }
+    if (target == null) return;
+
+    // Onay: sunucuda bilet + QR e-posta (organizatör akışı ile aynı).
+    if (approve) {
+      try {
+        final callable = FirebaseFunctions.instanceFor(
+          region: 'europe-west1',
+        ).httpsCallable('approveEventApplication');
+        await callable.call({
+          'eventId': eventId,
+          'applicationId': applicationId,
+        });
+      } catch (e) {
+        debugPrint('[feed] approveEventApplication: $e');
+        rethrow;
+      }
+      // Firestore stream günceller; optimistic UI için lokal onay.
+      final apps = event.applications.map((a) {
+        if (a.id != applicationId) return a;
+        return a.copyWith(status: EventApplicationStatus.approved);
+      }).toList();
+      _events[i] = event.copyWith(
+        applications: apps,
+        applicantCount: apps.where((a) => a.holdsSlot).length,
+      );
+      notifyListeners();
+      return;
+    }
+
     final apps = event.applications.map((a) {
       if (a.id != applicationId) return a;
-      target = a;
-      return a.copyWith(
-        status: approve
-            ? EventApplicationStatus.approved
-            : EventApplicationStatus.rejected,
-      );
+      return a.copyWith(status: EventApplicationStatus.rejected);
     }).toList();
 
     var updated = event.copyWith(
@@ -1254,8 +1321,7 @@ class FeedProvider extends ChangeNotifier {
       applicantCount: apps.where((a) => a.holdsSlot).length,
     );
 
-    // Red sonrası slot açılır; kadro doluysa ve red ise başvurular yeniden açılabilir
-    if (!approve && updated.isRosterFull == false) {
+    if (updated.isRosterFull == false) {
       updated = updated.copyWith(applicationsOpen: !updated.isDeadlinePassed);
     }
 
@@ -1263,29 +1329,15 @@ class FeedProvider extends ChangeNotifier {
     notifyListeners();
     await _writeEvent(updated);
 
-    if (target != null) {
-      await _notify(
-        toUserId: target!.userId,
-        copy: approve
-            ? NotificationCopy.eventApplicationApproved(eventTitle: event.title)
-            : NotificationCopy.eventApplicationRejected(
-                eventTitle: event.title,
-              ),
-        type: 'event',
-        targetId: event.id,
-        linkPath: '/event/${Uri.encodeComponent(event.id)}',
-      );
-    }
-
-    if (approve && updated.isRosterFull && event.communityId != null) {
-      await _notify(
-        toUserId: event.communityId!,
-        copy: NotificationCopy.eventRosterFull(event.title),
-        type: 'event',
-        targetId: event.id,
-        linkPath: '/event/${Uri.encodeComponent(event.id)}',
-      );
-    }
+    await _notify(
+      toUserId: target.userId,
+      copy: NotificationCopy.eventApplicationRejected(
+        eventTitle: event.title,
+      ),
+      type: 'event',
+      targetId: event.id,
+      linkPath: '/event/${Uri.encodeComponent(event.id)}',
+    );
   }
 
   /// Topluluk başvuruyu siler → kontenjan açılır, admin bilgilendirilir.

@@ -16,6 +16,7 @@ import '../maintenance/maintenance_provider.dart';
 import '../moderation/moderation_models.dart';
 import '../notifications/notification_provider.dart';
 import 'admin_content_tabs.dart';
+import 'admin_points_tab.dart';
 import 'admin_edit_user_dialog.dart';
 import 'admin_users_tab.dart';
 import 'admin_feedback_tab.dart';
@@ -182,6 +183,13 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
             AdminPermission.reviewPayments,
           ],
           builder: () => const AdminMarketTab(),
+        ),
+      if (admin.can(me, AdminPermission.managePoints) || me.isSuperAdmin)
+        _AdminTab(
+          label: 'Puan / Sil Süpür',
+          icon: const Icon(Icons.casino_outlined),
+          required: const [AdminPermission.managePoints],
+          builder: () => const AdminPointsTab(),
         ),
       if (admin.can(me, AdminPermission.managePlus))
         _AdminTab(

@@ -348,6 +348,30 @@ class _StajAiScreenState extends State<StajAiScreen> {
       );
       return;
     }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Başvurmak üzeresiniz'),
+        content: Text(
+          '“${job.title}” ilanına başvurmak istediğinize emin misiniz?\n\n'
+          'Yanlışlıkla gönderilen başvurular geri alınamayabilir.',
+          style: const TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Başvur'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
     final notif = context.read<NotificationProvider>();
     final ok = await jobs.apply(
       jobId: job.id,

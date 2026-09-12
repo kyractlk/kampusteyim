@@ -175,6 +175,12 @@ class ProfileSettingsScreen extends StatelessWidget {
                 children: [
                   _tile(
                     svg: MtIcons.ticket,
+                    title: 'Kampüsteyim Puan & Sil Süpür',
+                    subtitle: 'KP ile eSIM / hediye · haftalık çevirme',
+                    onTap: () => context.push('/points'),
+                  ),
+                  _tile(
+                    svg: MtIcons.ticket,
                     title: 'Market',
                     subtitle: 'Merch ürünleri ve kampüs koleksiyonu',
                     onTap: () => context.push('/market'),

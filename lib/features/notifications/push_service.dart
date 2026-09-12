@@ -255,7 +255,10 @@ class PushService {
       final postId = tid.startsWith('job_') ? tid : 'job_$tid';
       return '/post/${Uri.encodeComponent(postId)}';
     }
-    if (t == 'application' || t == 'offer') {
+    if (t == 'offer') {
+      return '/notifications';
+    }
+    if (t == 'application') {
       if (tid.isEmpty) return '/firma';
       return '/firma/job/${Uri.encodeComponent(tid)}';
     }

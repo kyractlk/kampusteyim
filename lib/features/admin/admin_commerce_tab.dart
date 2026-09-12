@@ -1162,8 +1162,9 @@ class _MarketStatusPanelState extends State<_MarketStatusPanel> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Kapalıyken Ayarlar → Market gizlenir; ürün / sipariş paneli '
-                'admin’de kalır. Açınca öğrenciler uygulamadan marketi görür.',
+                'Kapalıyken Ayarlar’daki Market, Kampüsteyim Puan (KP), '
+                'Sil Süpür ve eSIM marketi gizlenir; puan kazanma / harcama da durur. '
+                'Ürün ve sipariş paneli admin’de kalır. Açınca öğrenciler hepsini görür.',
                 style: TextStyle(
                   color: AppColors.textSecondary,
                   height: 1.4,

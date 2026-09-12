@@ -290,7 +290,9 @@ class _AdminPaymentsPanelState extends State<AdminPaymentsPanel> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Uygulama içi Market'),
-                subtitle: const Text('Kapalıysa Ayarlar → Market gizlenir'),
+                subtitle: const Text(
+                  'Kapalıysa Market, KP, Sil Süpür ve eSIM de gizlenir',
+                ),
                 value: _marketInApp,
                 onChanged: (v) => setState(() => _marketInApp = v),
               ),

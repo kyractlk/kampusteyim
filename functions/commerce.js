@@ -245,8 +245,10 @@ function commerceModule({
               .replace(/>/g, '&gt;')
               .replace(/"/g, '&quot;');
     let brand = {
-      companyName: String(event.organizerCompanyName || event.communityName || 'Organizatör'),
-      logoUrl: '',
+      companyName: String(
+        event.communityName || event.organizerCompanyName || 'Organizatör',
+      ),
+      logoUrl: String(event.communityLogoUrl || ''),
       signature: {},
     };
     try {
@@ -254,6 +256,28 @@ function commerceModule({
         brand = await loadCompanyMailBrand(organizerId);
       }
     } catch (_) {}
+    if (
+      !brand.companyName ||
+      brand.companyName === 'Firma' ||
+      brand.companyName === 'Topluluk'
+    ) {
+      const fromEvent = String(
+        event.communityName || event.organizerCompanyName || '',
+      ).trim();
+      if (fromEvent) brand.companyName = fromEvent;
+    }
+    if (!brand.logoUrl && event.communityLogoUrl) {
+      brand.logoUrl = String(event.communityLogoUrl);
+    }
+    if (!brand.signature || typeof brand.signature !== 'object') {
+      brand.signature = {};
+    }
+    if (!String(brand.signature.contactName || '').trim()) {
+      brand.signature.contactName = brand.companyName;
+    }
+    if (!String(brand.signature.logoUrl || '').trim() && brand.logoUrl) {
+      brand.signature.logoUrl = brand.logoUrl;
+    }
     const qr = ticket.qrPayload || buildQrPayload(ticket.id);
     const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&ecc=M&data=${encodeURIComponent(qr)}`;
     const eventUrl = `${APP_HOME}/event/${encodeURIComponent(ticket.eventId)}`;
@@ -316,6 +340,105 @@ function commerceModule({
       html,
       attachments,
     });
+  }
+
+  function eventNeedsPaidTicket(event) {
+    if (event?.paymentRequired === true) return true;
+    const tiers = Array.isArray(event?.priceTiers) ? event.priceTiers : [];
+    return tiers.some((t) => Number(t?.price ?? t?.amount ?? 0) > 0);
+  }
+
+  async function assertCanReviewEvent(uid, event) {
+    const orgId = String(
+      event.communityId || event.organizerCompanyId || '',
+    ).trim();
+    if (!orgId) {
+      throw new HttpsError('failed-precondition', 'Etkinlik organizatörü yok');
+    }
+    if (uid === orgId) return { orgId };
+    const userSnap = await db.collection('users').doc(uid).get();
+    const u = userSnap.data() || {};
+    if (
+      u.panelAccess === true &&
+      String(u.panelOrgId || '') === orgId &&
+      ['company', 'community'].includes(String(u.panelOrgType || ''))
+    ) {
+      return { orgId };
+    }
+    throw new HttpsError('permission-denied', 'Bu başvuruyu onaylayamazsınız');
+  }
+
+  /** Ücretsiz / onaylı başvuru → bilet + QR mail (ödeme fulfillment ile aynı bilet formatı). */
+  async function issueComplimentaryEventTicket({
+    eventId,
+    event,
+    eventRef,
+    uid,
+    userName,
+    applicationId,
+    organizerId,
+  }) {
+    const existing = await db
+      .collection(TICKETS)
+      .where('eventId', '==', eventId)
+      .where('uid', '==', uid)
+      .limit(1)
+      .get();
+    if (!existing.empty) {
+      const doc = existing.docs[0];
+      return {
+        ticket: { id: doc.id, ...doc.data() },
+        ticketRef: doc.ref,
+        created: false,
+      };
+    }
+
+    const buyer = await db.collection('users').doc(uid).get();
+    const bd = buyer.data() || {};
+    const email = String(bd.email || '').trim();
+    const displayName =
+      String(userName || '').trim() ||
+      String(bd.fullName || `${bd.firstName || ''} ${bd.lastName || ''}`).trim() ||
+      uid;
+
+    const ticketRef = db.collection(TICKETS).doc();
+    let shortCode = '';
+    try {
+      shortCode = await allocateShortCode(ticketRef.id);
+    } catch (e) {
+      console.error('[issueComplimentary] shortCode', e);
+    }
+    const qrKey = shortCode || ticketRef.id;
+    const ticket = {
+      id: ticketRef.id,
+      eventId,
+      eventTitle: String(event.title || ''),
+      uid,
+      payerUid: null,
+      userEmail: email,
+      userName: displayName,
+      orderId: null,
+      applicationId: applicationId || null,
+      tierLabel: 'Onaylı katılım',
+      amountPaid: 0,
+      discountCode: null,
+      status: 'active',
+      organizerId,
+      city: String(event.city || ''),
+      startsAt: event.startsAt || null,
+      createdAt: nowIso(),
+      ibanReference: null,
+      shortCode: shortCode || null,
+      qrPayload: buildQrPayload(qrKey),
+      refundsAllowed: event.refundsAllowed === true,
+      entryType: 'single',
+      entryLimit: 1,
+      entriesUsed: 0,
+      entries: [],
+      complimentary: true,
+    };
+    await ticketRef.set(ticket);
+    return { ticket, ticketRef, created: true };
   }
 
   async function resolveAdOwner(uid) {
@@ -2002,6 +2125,180 @@ function commerceModule({
     },
   );
 
+  const approveEventApplication = onCall(
+    { region: 'europe-west1' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Giriş gerekli');
+      const eventId = sanitizePlainText(request.data?.eventId || '', 120);
+      const applicationId = sanitizePlainText(
+        request.data?.applicationId || '',
+        120,
+      );
+      if (!eventId || !applicationId) {
+        throw new HttpsError('invalid-argument', 'eventId ve applicationId gerekli');
+      }
+
+      const eventRef = db.collection('events').doc(eventId);
+      const eventSnap = await eventRef.get();
+      if (!eventSnap.exists) {
+        throw new HttpsError('not-found', 'Etkinlik bulunamadı');
+      }
+      const event = eventSnap.data() || {};
+      const { orgId: organizerId } = await assertCanReviewEvent(
+        request.auth.uid,
+        event,
+      );
+
+      const apps = Array.isArray(event.applications)
+        ? event.applications.map((a) => ({ ...a }))
+        : [];
+      const idx = apps.findIndex(
+        (a) => a && String(a.id || '') === applicationId,
+      );
+      if (idx < 0) {
+        throw new HttpsError('not-found', 'Başvuru bulunamadı');
+      }
+      const app = apps[idx];
+      const applicantUid = String(app.userId || '').trim();
+      if (!applicantUid) {
+        throw new HttpsError('failed-precondition', 'Başvuru kullanıcısı eksik');
+      }
+
+      const prevStatus = String(app.status || 'pending');
+      if (prevStatus === 'rejected' || prevStatus === 'cancelled') {
+        throw new HttpsError(
+          'failed-precondition',
+          'Bu başvuru onaylanamaz',
+        );
+      }
+
+      apps[idx] = {
+        ...app,
+        status: 'approved',
+        reviewedAt: nowIso(),
+        reviewedBy: request.auth.uid,
+      };
+
+      const capacity = Number(event.capacity) || 0;
+      const held = apps.filter((a) => {
+        const st = String(a?.status || '');
+        return st === 'pending' || st === 'approved';
+      }).length;
+
+      await eventRef.set(
+        {
+          applications: apps,
+          applicantCount: held,
+          updatedAt: nowIso(),
+        },
+        { merge: true },
+      );
+
+      let ticketId = String(app.ticketId || '').trim();
+      let emailed = false;
+      let ticketCreated = false;
+
+      const needsPaid = eventNeedsPaidTicket(event);
+      if (!needsPaid) {
+        const issued = await issueComplimentaryEventTicket({
+          eventId,
+          event,
+          eventRef,
+          uid: applicantUid,
+          userName: app.userName,
+          applicationId,
+          organizerId,
+        });
+        ticketId = issued.ticket.id;
+        ticketCreated = issued.created;
+
+        apps[idx] = {
+          ...apps[idx],
+          ticketId,
+          paid: false,
+          amountPaid: 0,
+        };
+        await eventRef.set(
+          { applications: apps, updatedAt: nowIso() },
+          { merge: true },
+        );
+
+        try {
+          let ticket = { ...issued.ticket };
+          if (!ticket.userEmail) {
+            const buyer = await db.collection('users').doc(applicantUid).get();
+            const bd = buyer.data() || {};
+            ticket.userEmail = String(bd.email || '');
+            ticket.userName =
+              ticket.userName ||
+              String(
+                bd.fullName || `${bd.firstName || ''} ${bd.lastName || ''}`,
+              ).trim();
+            if (ticket.userEmail) {
+              await issued.ticketRef.set(
+                { userEmail: ticket.userEmail, userName: ticket.userName },
+                { merge: true },
+              );
+            }
+          }
+          if (!ticket.ticketEmailSentAt) {
+            await sendTicketEmail(ticket, event, organizerId);
+            await issued.ticketRef.set(
+              { ticketEmailSentAt: nowIso() },
+              { merge: true },
+            );
+            emailed = true;
+          }
+        } catch (e) {
+          console.error('[approveEventApplication] ticket email', e);
+        }
+
+        const eventTitle = String(event.title || 'Etkinlik').trim();
+        await notifyUser({
+          uid: applicantUid,
+          title: 'Biletin hazır',
+          body: `${eventTitle} başvurun onaylandı. Biletin uygulamada ve e-postanda.`,
+          emoji: '🎫',
+          type: 'ticket',
+          targetId: ticketId,
+          link: `${APP_HOME}/tickets`,
+        });
+      } else {
+        await notifyUser({
+          uid: applicantUid,
+          title: 'Başvuru onaylandı',
+          body: `${String(event.title || 'Etkinlik')} başvurun onaylandı.`,
+          emoji: '✅',
+          type: 'event',
+          targetId: eventId,
+          link: `${APP_HOME}/event/${encodeURIComponent(eventId)}`,
+        });
+      }
+
+      if (capacity > 0 && held >= capacity && organizerId) {
+        await notifyUser({
+          uid: organizerId,
+          title: 'Kadro doldu',
+          body: `${String(event.title || 'Etkinlik')} kontenjanı doldu.`,
+          emoji: '📋',
+          type: 'event',
+          targetId: eventId,
+          link: `${APP_HOME}/notifications`,
+        });
+      }
+
+      return {
+        ok: true,
+        eventId,
+        applicationId,
+        ticketId: ticketId || null,
+        ticketCreated,
+        emailed,
+        paidEvent: needsPaid,
+      };
+    },
+  );
+
   const getMyTickets = onCall(
     { region: 'europe-west1' },
     async (request) => {
@@ -2232,6 +2529,7 @@ function commerceModule({
     checkInTicket,
     reverseEventFulfillment,
     reverseMerchFulfillment,
+    approveEventApplication,
   };
 }
 

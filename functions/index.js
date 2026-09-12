@@ -151,7 +151,10 @@ function resolveDeepLinkPath({
     const postId = tid.startsWith('job_') ? tid : `job_${tid}`;
     return `/post/${enc(postId)}`;
   }
-  if (t === 'application' || t === 'offer') {
+  if (t === 'offer') {
+    return '/notifications';
+  }
+  if (t === 'application') {
     return tid ? `/firma/job/${enc(tid)}` : '/firma';
   }
   if (blob.includes('hikâye') || blob.includes('hikaye')) {
@@ -486,6 +489,10 @@ async function loadCompanyMailBrand(companyId) {
   let companyName = '';
   let logoUrl = '';
   let signature = null;
+  let replyFallback = '';
+  let phoneFallback = '';
+  let websiteFallback = '';
+  let isCommunity = false;
   if (id) {
     try {
       const snap = await db.collection('companies').doc(id).get();
@@ -501,19 +508,52 @@ async function loadCompanyMailBrand(companyId) {
       const user = await findUserDocByAnyId(id);
       if (user) {
         const ud = user.data() || {};
+        isCommunity =
+          ud.role === 'community' ||
+          ud.isCommunity === true ||
+          String(ud.panelOrgType || '') === 'community';
         if (!companyName) {
           companyName =
-            String(ud.fullName || '').trim() ||
+            String(ud.fullName || ud.companyName || '').trim() ||
             `${ud.firstName || ''} ${ud.lastName || ''}`.trim();
         }
         if (!logoUrl) {
-          logoUrl = String(ud.communityLogoUrl || ud.photoUrl || ud.companyLogoUrl || '').trim();
+          logoUrl = String(
+            ud.communityLogoUrl || ud.photoUrl || ud.companyLogoUrl || '',
+          ).trim();
         }
         if (!signature && ud.mailSignature) signature = ud.mailSignature;
+        replyFallback = String(ud.email || '').trim();
+        phoneFallback = String(ud.phone || ud.phoneNumber || '').trim();
+        const links = Array.isArray(ud.links) ? ud.links : [];
+        const linkUrl = links
+          .map((l) => String((l && (l.url || l.href)) || l || '').trim())
+          .find((u) => /^https?:\/\//i.test(u));
+        websiteFallback = linkUrl || String(ud.website || '').trim();
       }
     } catch (_) {}
   }
-  const sig = signature || {};
+  let sig = signature && typeof signature === 'object' ? { ...signature } : {};
+  // Topluluk / firma için yapılandırılmış imza yoksa profilden otomatik sentez (bilet mailleri).
+  // Job maillerindeki `ready` şartını bozmamak için configured=true zorlanmaz.
+  if (!String(sig.contactName || '').trim()) {
+    sig.contactName = companyName || (isCommunity ? 'Topluluk' : 'Organizasyon');
+  }
+  if (!String(sig.jobTitle || '').trim() && isCommunity) {
+    sig.jobTitle = 'Topluluk hesabı';
+  }
+  if (!String(sig.replyEmail || '').includes('@') && replyFallback.includes('@')) {
+    sig.replyEmail = replyFallback;
+  }
+  if (!String(sig.phone || '').trim() && phoneFallback) {
+    sig.phone = phoneFallback;
+  }
+  if (!String(sig.website || '').trim() && websiteFallback) {
+    sig.website = websiteFallback;
+  }
+  if (!String(sig.logoUrl || '').trim() && logoUrl) {
+    sig.logoUrl = logoUrl;
+  }
   const ready =
     sig.configured === true &&
     !!String(logoUrl || sig.logoUrl || '').trim() &&
@@ -521,10 +561,11 @@ async function loadCompanyMailBrand(companyId) {
     String(sig.replyEmail || '').includes('@');
   return {
     companyId: id,
-    companyName: companyName || 'Firma',
+    companyName: companyName || (isCommunity ? 'Topluluk' : 'Firma'),
     logoUrl: logoUrl || String(sig.logoUrl || '').trim(),
     signature: sig,
     ready,
+    isCommunity,
   };
 }
 
@@ -990,6 +1031,201 @@ exports.generateAtsCv = onCall({ region: 'europe-west1', timeoutSeconds: 120 }, 
 });
 
 /**
+ * Firma: aday CV PDF verisi.
+ * Aynı dilde hazır export varsa onu döner; yoksa ATS üretip öğrencinin
+ * cv_exports altına yazar (öğrenci kotasına yazılmaz).
+ * data: { studentId, languageCode, languageName }
+ */
+exports.companyResolveApplicantCv = onCall(
+  { region: 'europe-west1', timeoutSeconds: 120 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Giriş gerekli');
+    }
+    const companyUid = request.auth.uid;
+    const studentId = String(request.data?.studentId || '').trim();
+    const languageCode = String(request.data?.languageCode || 'tr').trim() || 'tr';
+    const languageName =
+      String(request.data?.languageName || 'Türkçe').trim() || 'Türkçe';
+    if (!studentId) {
+      throw new HttpsError('invalid-argument', 'studentId zorunlu');
+    }
+
+    const companySnap = await db.collection('users').doc(companyUid).get();
+    const cu = companySnap.data() || {};
+    const staffCompany =
+      cu.panelAccess === true &&
+      String(cu.panelOrgType || '') === 'company' &&
+      String(cu.panelOrgId || '').trim();
+    const isCompany =
+      cu.role === 'company' || cu.isCompany === true || !!staffCompany;
+    if (!isCompany) {
+      throw new HttpsError('permission-denied', 'Yalnızca firma hesapları');
+    }
+    const orgId = staffCompany || companyUid;
+
+    // Mevcut export (aynı dil) — en yeni
+    const existing = await db
+      .collection('users')
+      .doc(studentId)
+      .collection('cv_exports')
+      .where('languageCode', '==', languageCode)
+      .limit(25)
+      .get();
+    if (!existing.empty) {
+      const sorted = [...existing.docs].sort((a, b) => {
+        const aa = String((a.data() || {}).createdAt || '');
+        const bb = String((b.data() || {}).createdAt || '');
+        return bb.localeCompare(aa);
+      });
+      const d = sorted[0];
+      const data = d.data() || {};
+      const polished = data.polished || {};
+      if (polished && typeof polished === 'object' && Object.keys(polished).length) {
+        return {
+          ok: true,
+          reused: true,
+          exportId: d.id,
+          languageCode: data.languageCode || languageCode,
+          languageName: data.languageName || languageName,
+          accentArgb:
+            typeof data.accentArgb === 'number' ? data.accentArgb : 0xFF3DB8A8,
+          polished,
+          studentId,
+        };
+      }
+    }
+
+    const cvSnap = await db.collection('cvs').doc(studentId).get();
+    if (!cvSnap.exists) {
+      throw new HttpsError('not-found', 'Öğrencinin CV’si bulunamadı');
+    }
+    const cvDoc = cvSnap.data() || {};
+    const cvData = cvDoc.cv_data || cvDoc.cvData;
+    if (!cvData || typeof cvData !== 'object') {
+      throw new HttpsError('failed-precondition', 'CV verisi eksik');
+    }
+
+    const studentSnap = await db.collection('users').doc(studentId).get();
+    const su = studentSnap.data() || {};
+    const userEmail = String(su.email || '').trim();
+    const userName =
+      String(su.fullName || '').trim() ||
+      `${su.firstName || ''} ${su.lastName || ''}`.trim();
+    const studentNo = String(su.studentNo || '').trim();
+
+    const accentArgb = resolveCvAccentArgb({
+      requested: cvDoc.last_accent_argb,
+      isPlus: false,
+      features: {},
+    });
+
+    const { client, model } = await getOpenAI();
+    const rawNotes = String(cvData.raw_notes || cvData.rawNotes || '').trim();
+    const payload = {
+      personal_info: {
+        name: cvData.personal_info?.name || userName || '',
+        email: cvData.personal_info?.email || userEmail || '',
+        phone: cvData.personal_info?.phone || '',
+        address: cvData.personal_info?.address || '',
+        linkedin: cvData.personal_info?.linkedin || '',
+        github: cvData.personal_info?.github || '',
+        website: cvData.personal_info?.website || '',
+        about: cvData.personal_info?.about || '',
+        motivation_letter: cvData.personal_info?.motivation_letter || '',
+        headline:
+          cvData.personal_info?.headline || cvData.personal_info?.title || '',
+        department: cvData.personal_info?.department || '',
+        class: cvData.personal_info?.class || '',
+        studentNo: cvData.personal_info?.studentNo || studentNo || '',
+        photoUrl:
+          cvData.personal_info?.photoUrl ||
+          cvData.personal_info?.photo_url ||
+          '',
+      },
+      education: cvData.education || [],
+      experiences: cvData.experiences || [],
+      projects: cvData.projects || [],
+      skills: cvData.skills || [],
+      languages: cvData.languages || [],
+      raw_notes: rawNotes,
+    };
+
+    const completion = await client.chat.completions.create({
+      model,
+      temperature: 0.25,
+      max_tokens: 6000,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: buildSystemPrompt(languageName, languageCode) },
+        {
+          role: 'user',
+          content:
+            `LOCALIZE TO: ${languageName} (${languageCode}).\n` +
+            'Source language may be anything. Translate EVERY user-written field into the TARGET language with correct orthography and formal ATS HR terms — not just section titles.\n' +
+            'If raw_notes is non-empty: structure it into CV sections, then translate.\n' +
+            'Do NOT paraphrase loosely. Do NOT leave source-language sentences.\n' +
+            'Return ONLY JSON: personal_info (with headline), education, experiences, projects, skills, languages, section_labels (required).\n' +
+            'Descriptions = newline-separated formal bullet lines in the TARGET language.\n\n' +
+            JSON.stringify(payload),
+        },
+      ],
+    });
+
+    let text = completion.choices[0]?.message?.content?.trim() || '{}';
+    if (text.startsWith('```')) {
+      text = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    }
+    let polished;
+    try {
+      polished = JSON.parse(text);
+    } catch (_) {
+      throw new HttpsError('internal', 'AI JSON parse hatası');
+    }
+    polished.personal_info = {
+      ...payload.personal_info,
+      ...(polished.personal_info || {}),
+      email: payload.personal_info.email,
+      phone: payload.personal_info.phone,
+      studentNo: payload.personal_info.studentNo,
+      linkedin: payload.personal_info.linkedin,
+      github: payload.personal_info.github,
+      website: payload.personal_info.website,
+      photoUrl: payload.personal_info.photoUrl,
+    };
+
+    const exportId = `${languageCode}_${Date.now()}`;
+    await db
+      .collection('users')
+      .doc(studentId)
+      .collection('cv_exports')
+      .doc(exportId)
+      .set({
+        languageCode,
+        languageName,
+        model,
+        polished,
+        accentArgb,
+        createdAt: new Date().toISOString(),
+        userId: studentId,
+        requestedByCompanyId: orgId,
+        companyGenerated: true,
+      });
+
+    return {
+      ok: true,
+      reused: false,
+      exportId,
+      languageCode,
+      languageName,
+      accentArgb,
+      polished,
+      studentId,
+    };
+  },
+);
+
+/**
  * Callable: sendCvPdfEmail
  * CV PDF'i Storage'dan indirip kayıtlı e-postaya ek gönderir.
  * data: { exportId, storagePath, fileName?, languageName? }
@@ -1168,10 +1404,39 @@ exports.sendCompanyMail = onCall({ region: 'europe-west1' }, async (request) => 
     : 'Merhaba,';
   const titleByKind =
     kind === 'offer'
-      ? `${brand.companyName} · Teklif`
+      ? `${brand.companyName} · Sana özel teklif`
       : kind === 'job'
         ? `${brand.companyName} · İlan`
         : String(subject).trim();
+
+  let composedBody = safeBody;
+  if (kind === 'offer') {
+    const sig = brand.signature || {};
+    const contactBits = [
+      sig.contactName,
+      sig.jobTitle,
+      brand.companyName,
+      sig.replyEmail,
+      sig.phone,
+      sig.website,
+    ]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
+    composedBody = `
+      <p>Sana <strong>${escapeHtml(brand.companyName)}</strong> üzerinden özel bir teklif geldi.</p>
+      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:14px;padding:16px;margin:16px 0;line-height:1.55;color:#0B1F3A;">
+        ${safeBody}
+      </div>
+      <p style="font-size:13px;color:#475569;line-height:1.5;">
+        Firmanın iletişim bilgileri bu e-postanın imzasında yer alır.
+        ${
+          contactBits.length
+            ? ` Kısa özet: ${escapeHtml(contactBits.join(' · '))}.`
+            : ''
+        }
+      </p>
+    `;
+  }
 
   const html = companyBrandedEmail({
     companyName: brand.companyName,
@@ -1179,12 +1444,12 @@ exports.sendCompanyMail = onCall({ region: 'europe-west1' }, async (request) => 
     signature: brand.signature,
     title: titleByKind,
     greeting,
-    bodyHtml: safeBody,
+    bodyHtml: composedBody,
     ctaLabel: ctaLabel || 'KampüsteyimAPP’e git',
     ctaUrl: ctaUrl || BRAND_HOME,
     footerNote:
       kind === 'offer'
-        ? 'Bu teklif KampüsteyimAPP Firma Online üzerinden gönderildi.'
+        ? 'Bu teklif KampüsteyimAPP Firma Online üzerinden gönderildi. İletişim için imzadaki kanalları kullanabilirsiniz.'
         : 'Bu e-posta KampüsteyimAPP Firma Online üzerinden gönderildi.',
   });
 
@@ -10479,6 +10744,7 @@ exports.getActiveAds = _commerce.getActiveAds;
 exports.getMyTickets = _commerce.getMyTickets;
 exports.renameTicketAttendee = _commerce.renameTicketAttendee;
 exports.checkInTicket = _commerce.checkInTicket;
+exports.approveEventApplication = _commerce.approveEventApplication;
 
 const { orgGrowthModule } = require('./org_growth');
 const _orgGrowth = orgGrowthModule({
@@ -10587,5 +10853,54 @@ if (_payments.plusExpiryReminders) {
 }
 exports.adminReviewEvent = _payments.adminReviewEvent;
 exports.adminDeleteEvent = _payments.adminDeleteEvent;
+
+const createPointsRewards = require('./points_rewards');
+const _pointsRewards = createPointsRewards({
+  db,
+  FieldValue,
+  assertPlatformAdmin,
+  assertAdminPermission,
+  sendMail,
+  brandedEmail,
+  escapeHtml,
+  dispatchPushToUser: async (uid, { title, body, type, link, emoji }) => {
+    try {
+      const userDoc = await db.collection('users').doc(uid).get();
+      const userData = userDoc.exists ? userDoc.data() || {} : {};
+      const tokens = userData.fcmTokens || [];
+      if (!tokens.length) return;
+      await sendFcmToUser(uid, tokens, {
+        notification: { title, body },
+        data: {
+          type: String(type || 'sil_supur'),
+          link: String(link || '/points/sil-supur'),
+          emoji: String(emoji || '🎰'),
+          title: String(title || ''),
+          body: String(body || ''),
+        },
+      });
+    } catch (_) {
+      /* ignore */
+    }
+  },
+});
+exports.getPointsConfig = _pointsRewards.getPointsConfig;
+exports.adminGetPointsConfig = _pointsRewards.adminGetPointsConfig;
+exports.adminSavePointsConfig = _pointsRewards.adminSavePointsConfig;
+exports.adminSetEsimSecrets = _pointsRewards.adminSetEsimSecrets;
+exports.listPointsCatalog = _pointsRewards.listPointsCatalog;
+exports.upsertPointsCatalogItem = _pointsRewards.upsertPointsCatalogItem;
+exports.deletePointsCatalogItem = _pointsRewards.deletePointsCatalogItem;
+exports.redeemPointsCatalogItem = _pointsRewards.redeemPointsCatalogItem;
+exports.playSilSupur = _pointsRewards.playSilSupur;
+exports.listMyRewards = _pointsRewards.listMyRewards;
+exports.refreshMyEsim = _pointsRewards.refreshMyEsim;
+exports.topupMyEsim = _pointsRewards.topupMyEsim;
+exports.applyEngagementPoints = _pointsRewards.applyEngagementPoints;
+exports.adminAdjustPoints = _pointsRewards.adminAdjustPoints;
+exports.adminListEsimPackages = _pointsRewards.adminListEsimPackages;
+exports.adminSeedDefaultCatalog = _pointsRewards.adminSeedDefaultCatalog;
+exports.silSupurNotifyTick = _pointsRewards.silSupurNotifyTick;
+exports.esimWebhook = _pointsRewards.esimWebhook;
 
 exports.processProfilePhoto = require('./profile_photo').processProfilePhoto;

@@ -10,6 +10,7 @@ import '../../core/storage/media_disk_cache.dart';
 import '../../core/storage/media_upload.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
+import '../points/points_models.dart';
 import 'story_models.dart';
 
 class StoriesProvider extends ChangeNotifier {
@@ -333,6 +334,13 @@ class StoriesProvider extends ChangeNotifier {
       notifyListeners();
       // Yeni hikâyeyi arka planda ısıt (stream-first — bloklama yok).
       MediaDiskCache.instance.prefetchAll([url], concurrency: 1, front: true);
+      unawaited(
+        PointsService.applyEngagement(
+          kind: 'story_created',
+          targetUid: author.id,
+          contentId: item.id,
+        ),
+      );
       return null;
     } catch (e) {
       debugPrint('[stories] create: $e');
@@ -365,6 +373,15 @@ class StoriesProvider extends ChangeNotifier {
       );
     } catch (e) {
       debugPrint('[stories] like: $e');
+    }
+    if (item.authorId.isNotEmpty) {
+      unawaited(
+        PointsService.applyEngagement(
+          kind: wasLiked ? 'like_removed' : 'like_received',
+          targetUid: item.authorId,
+          contentId: storyId,
+        ),
+      );
     }
   }
 

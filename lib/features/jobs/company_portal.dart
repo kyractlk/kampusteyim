@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants/app_info.dart';
+import '../../core/icons/mt_icons.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/utils/breakpoints.dart';
 import '../../core/widgets/app_circle_logo.dart';
 import '../../core/widgets/panel_chrome.dart';
 import '../../models/models.dart';
@@ -14,6 +14,7 @@ import '../auth/data/auth_provider.dart';
 import '../notifications/notification_provider.dart';
 import 'company_applicant_widgets.dart';
 import 'company_mail_gate.dart';
+import 'company_offer_sheet.dart';
 import 'job_models.dart';
 import 'jobs_provider.dart';
 import 'student_browse_screen.dart';
@@ -250,8 +251,16 @@ Future<void> launchFirmaAi(BuildContext context, JobsProvider jobs) async {
   context.push('/firma/ai');
 }
 
-class CompanyDashboardScreen extends StatelessWidget {
+class CompanyDashboardScreen extends StatefulWidget {
   const CompanyDashboardScreen({super.key});
+
+  @override
+  State<CompanyDashboardScreen> createState() => _CompanyDashboardScreenState();
+}
+
+class _CompanyDashboardScreenState extends State<CompanyDashboardScreen> {
+  /// null = hoş geldin; 0 = ilanlar.
+  int? _section;
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +277,6 @@ class CompanyDashboardScreen extends StatelessWidget {
       return const CompanyLoginScreen();
     }
 
-    // Auth ile firma id sapmışsa düzelt
     final uid = me?.id;
     if (uid != null && uid.isNotEmpty && jobs.company!.id != uid) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -276,297 +284,259 @@ class CompanyDashboardScreen extends StatelessWidget {
       });
     }
 
-    return CompanyPortalShell(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= AppBreakpoints.wide;
-          final openCount = jobs.companyOpenCount;
-          final applicants = jobs.companyApplicantCount;
-          final aiReady = jobs.companyAiReadyCount;
-          final closedCount = jobs.companyClosedCount;
+    final companyName = jobs.company!.name;
+    final sectionTitle =
+        _section == null ? companyName : 'İlanlarım';
 
-          return Scaffold(
-            appBar: AppBar(
-              title: Row(
-                children: [
-                  const AppCircleLogo(logo: AppLogo.ays, size: 32),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          jobs.company!.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        Text(
-                          isOrganizer
-                              ? 'Firma Online · organizatör paneli'
-                              : 'Firma Online · işveren paneli',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                IconButton(
-                  tooltip: 'Tanıtım kartı',
-                  onPressed: () => context.push('/tanitimkarti'),
-                  icon: const Icon(Icons.qr_code_2_rounded),
-                ),
-                if (jobs.status != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Center(
-                      child: Text(
-                        jobs.status!,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ),
-                PopupMenuButton<String>(
-                  tooltip: 'Menü',
-                  onSelected: (v) {
-                    switch (v) {
-                      case 'ads':
-                        context.push('/firma/ads');
-                      case 'events':
-                        context.push('/firma/events');
-                      case 'organizer':
-                        context.push('/firma/organizer');
-                      case 'staff':
-                        context.push('/firma/staff');
-                      case 'students':
-                        context.push('/firma/students');
-                      case 'settings':
-                        context.push('/firma/settings');
-                      case 'ai':
-                        launchFirmaAi(context, jobs);
+    return CompanyPortalShell(
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          leading: _section == null
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/home');
                     }
                   },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                      value: 'ads',
-                      child: Text('Reklamlar'),
-                    ),
-                    if (isOrganizer) ...[
-                      const PopupMenuItem(
-                        value: 'events',
-                        child: Text('Etkinlikler'),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () => setState(() => _section = null),
+                ),
+          title: Row(
+            children: [
+              const VerifiedBadge(gold: true, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  sectionTitle,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Tanıtım kartı',
+              onPressed: () => context.push('/tanitimkarti'),
+              icon: const Icon(Icons.qr_code_2_rounded),
+            ),
+            IconButton(
+              tooltip: 'Öğrenci tara',
+              onPressed: () => context.push('/firma/students'),
+              icon: const Icon(Icons.school_outlined),
+            ),
+            IconButton(
+              tooltip: 'Kampüs akışı',
+              onPressed: () => context.go('/home'),
+              icon: const Icon(Icons.home_outlined),
+            ),
+          ],
+        ),
+        floatingActionButton: _section == 0
+            ? FloatingActionButton.extended(
+                onPressed: () => context.push('/firma/job/new'),
+                icon: const Icon(Icons.add),
+                label: const Text('Yeni ilan'),
+              )
+            : null,
+        body: _section == null
+            ? _CompanyWelcome(
+                companyName: companyName,
+                jobs: jobs,
+                isOrganizer: isOrganizer,
+                onOpenJobs: () => setState(() => _section = 0),
+              )
+            : _CompanyJobsSection(jobs: jobs),
+      ),
+    );
+  }
+}
+
+class _CompanyWelcome extends StatelessWidget {
+  const _CompanyWelcome({
+    required this.companyName,
+    required this.jobs,
+    required this.isOrganizer,
+    required this.onOpenJobs,
+  });
+
+  final String companyName;
+  final JobsProvider jobs;
+  final bool isOrganizer;
+  final VoidCallback onOpenJobs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+          children: [
+            PanelWelcomeHeader(
+              title: 'Hoş geldiniz',
+              subtitle: '$companyName yönetim paneli',
+            ),
+            if (!jobs.hasMailSignature) ...[
+              const SizedBox(height: 12),
+              PanelCard(
+                color: AppColors.crimson.withValues(alpha: 0.06),
+                child: Row(
+                  children: [
+                    const Icon(Icons.draw_outlined, color: AppColors.crimson),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Mail imzanızı ayarlayın — teklif ve ilan bildirimi için gerekli',
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      const PopupMenuItem(
-                        value: 'organizer',
-                        child: Text('Organizatör'),
-                      ),
-                    ],
-                    const PopupMenuItem(
-                      value: 'staff',
-                      child: Text('Yönetim kadrosu'),
                     ),
-                    const PopupMenuItem(
-                      value: 'students',
-                      child: Text('Öğrenci tara'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'settings',
-                      child: Text('Mail imzası'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'ai',
-                      child: Text('Firma AI'),
+                    FilledButton(
+                      onPressed: () => context.push('/firma/settings'),
+                      child: const Text('Ayarla'),
                     ),
                   ],
                 ),
-                IconButton(
-                  tooltip: 'Kampüs akışı',
-                  onPressed: () => context.go('/home'),
-                  icon: const Icon(Icons.home_outlined),
-                ),
-                IconButton(
-                  tooltip: 'Çıkış',
-                  onPressed: () async {
-                    jobs.companyLogout();
-                    await context.read<AuthProvider>().signOut();
-                    if (context.mounted) context.go('/home');
-                  },
-                  icon: const Icon(Icons.logout),
-                ),
-              ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            PanelNavTile(
+              accent: true,
+              icon: Icons.qr_code_scanner_rounded,
+              title: 'Kapı girişi',
+              subtitle: 'Bilet QR doğrula',
+              onTap: () => context.push('/firma/organizer/scan'),
             ),
-            floatingActionButton: FloatingActionButton.extended(
-              onPressed: () => context.push('/firma/job/new'),
-              icon: const Icon(Icons.add),
-              label: const Text('Yeni ilan'),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              accent: !isOrganizer,
+              icon: Icons.work_outline,
+              title: 'İlanlarım',
+              subtitle:
+                  '${jobs.companyOpenCount} açık · ${jobs.companyApplicantCount} başvuru',
+              onTap: onOpenJobs,
             ),
-            body: Column(
-              children: [
-                if (!wide)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        ActionChip(
-                          avatar: const Icon(Icons.campaign_outlined, size: 18),
-                          label: const Text('Reklamlar'),
-                          onPressed: () => context.push('/firma/ads'),
-                        ),
-                        if (isOrganizer) ...[
-                          ActionChip(
-                            avatar: const Icon(Icons.event_outlined, size: 18),
-                            label: const Text('Etkinlikler'),
-                            onPressed: () => context.push('/firma/events'),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(
-                              Icons.account_balance_wallet_outlined,
-                              size: 18,
-                            ),
-                            label: const Text('Organizatör'),
-                            onPressed: () => context.push('/firma/organizer'),
-                          ),
-                        ],
-                        ActionChip(
-                          avatar:
-                              const Icon(Icons.group_add_outlined, size: 18),
-                          label: const Text('Kadro'),
-                          onPressed: () => context.push('/firma/staff'),
-                        ),
-                      ],
-                    ),
-                  ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(wide ? 16 : 12, 12, wide ? 16 : 12, 8),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _FirmaStat(
-                              label: 'Açık ilan',
-                              value: '$openCount',
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _FirmaStat(
-                              label: 'Başvuru',
-                              value: '$applicants',
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _FirmaStat(
-                              label: 'AI hazır',
-                              value: '$aiReady',
-                              onTap: aiReady > 0
-                                  ? () => launchFirmaAi(context, jobs)
-                                  : null,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _FirmaStat(
-                              label: 'Kapalı',
-                              value: '$closedCount',
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (!jobs.hasMailSignature) ...[
-                        const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-                          decoration: BoxDecoration(
-                            color: AppColors.crimson.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: AppColors.crimson.withValues(alpha: 0.2),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.draw_outlined,
-                                color: AppColors.crimson,
-                              ),
-                              const SizedBox(width: 12),
-                              const Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'Mail imzanızı ayarlayın',
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    SizedBox(height: 2),
-                                    Text(
-                                      'Mail, teklif ve ilan bildirimi için zorunlu',
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: AppColors.textSecondary,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              FilledButton(
-                                onPressed: () =>
-                                    context.push('/firma/settings'),
-                                child: const Text('Ayarla'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: wide
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            SizedBox(
-                              width: 260,
-                              child: _SideNav(
-                                jobs: jobs,
-                                isOrganizer: isOrganizer,
-                              ),
-                            ),
-                            const VerticalDivider(width: 1),
-                            Expanded(child: _JobsPane(jobs: jobs)),
-                          ],
-                        )
-                      : _JobsPane(jobs: jobs),
-                ),
-              ],
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.campaign_outlined,
+              title: 'Reklam',
+              subtitle: 'Kampanya talebi oluştur',
+              onTap: () => context.push('/firma/ads'),
             ),
-          );
-        },
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.event_outlined,
+              title: 'Etkinlik',
+              subtitle: isOrganizer
+                  ? 'Oluştur · ücretli bilet'
+                  : 'Oluştur · ücretsiz katılım',
+              onTap: () => context.push('/firma/events'),
+            ),
+            if (isOrganizer) ...[
+              const SizedBox(height: 10),
+              PanelNavTile(
+                icon: Icons.account_balance_wallet_outlined,
+                title: 'Organizatör',
+                subtitle: 'Bilet · bakiye · çekim',
+                onTap: () => context.push('/firma/organizer'),
+              ),
+            ],
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.group_add_outlined,
+              title: 'Yönetim kadrosu',
+              subtitle: 'Davet · yetki',
+              onTap: () => context.push('/firma/staff'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.school_outlined,
+              title: 'Öğrenci tara',
+              subtitle: 'Kampüs öğrencilerini filtrele',
+              onTap: () => context.push('/firma/students'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.draw_outlined,
+              title: 'Mail imzası',
+              subtitle: jobs.hasMailSignature ? 'Hazır' : 'Ayarlanmadı',
+              onTap: () => context.push('/firma/settings'),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.auto_awesome,
+              title: 'Firma AI',
+              subtitle: 'Başvuruları sırala',
+              onTap: () => launchFirmaAi(context, jobs),
+            ),
+            const SizedBox(height: 10),
+            PanelNavTile(
+              icon: Icons.logout_rounded,
+              title: 'Çıkış',
+              subtitle: 'Firma panelinden ayrıl',
+              onTap: () async {
+                jobs.companyLogout();
+                await context.read<AuthProvider>().signOut();
+                if (context.mounted) context.go('/home');
+              },
+            ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _CompanyJobsSection extends StatelessWidget {
+  const _CompanyJobsSection({required this.jobs});
+  final JobsProvider jobs;
+
+  @override
+  Widget build(BuildContext context) {
+    final openCount = jobs.companyOpenCount;
+    final applicants = jobs.companyApplicantCount;
+    final aiReady = jobs.companyAiReadyCount;
+    final closedCount = jobs.companyClosedCount;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: _FirmaStat(label: 'Açık ilan', value: '$openCount'),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _FirmaStat(label: 'Başvuru', value: '$applicants'),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _FirmaStat(
+                  label: 'AI hazır',
+                  value: '$aiReady',
+                  onTap: aiReady > 0
+                      ? () => launchFirmaAi(context, jobs)
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _FirmaStat(label: 'Kapalı', value: '$closedCount'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(child: _JobsPane(jobs: jobs)),
+      ],
     );
   }
 }
@@ -630,90 +600,6 @@ class _FirmaStat extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         child: child,
       ),
-    );
-  }
-}
-
-class _SideNav extends StatelessWidget {
-  const _SideNav({required this.jobs, required this.isOrganizer});
-  final JobsProvider jobs;
-  final bool isOrganizer;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        ListTile(
-          leading: const Icon(Icons.work_outline),
-          title: const Text('İlanlarım'),
-          selected: true,
-          onTap: () {},
-        ),
-        ListTile(
-          leading: const Icon(Icons.campaign_outlined),
-          title: const Text('Reklamlar'),
-          subtitle: const Text('Görsel yükle · yayın talebi'),
-          onTap: () => context.push('/firma/ads'),
-        ),
-        if (isOrganizer) ...[
-          ListTile(
-            leading: const Icon(Icons.event_outlined),
-            title: const Text('Etkinlikler'),
-            onTap: () => context.push('/firma/events'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.account_balance_wallet_outlined),
-            title: const Text('Organizatör'),
-            subtitle: const Text('Bilet · bakiye · çekim'),
-            onTap: () => context.push('/firma/organizer'),
-          ),
-        ],
-        ListTile(
-          leading: const Icon(Icons.group_add_outlined),
-          title: const Text('Yönetim kadrosu'),
-          subtitle: const Text('Davet · yetki'),
-          onTap: () => context.push('/firma/staff'),
-        ),
-        ListTile(
-          leading: const Icon(Icons.people_outline),
-          title: const Text('Öğrenci tara'),
-          onTap: () => context.push('/firma/students'),
-        ),
-        ListTile(
-          leading: const Icon(Icons.draw_outlined),
-          title: const Text('Mail imzası'),
-          subtitle: Text(
-            jobs.hasMailSignature ? 'Hazır' : 'Ayarlanmadı',
-          ),
-          onTap: () => context.push('/firma/settings'),
-        ),
-        ListTile(
-          leading: const Icon(Icons.auto_awesome),
-          title: const Text('Firma AI'),
-          subtitle: const Text('Başvuruları sırala'),
-          onTap: () => launchFirmaAi(context, jobs),
-        ),
-        const Divider(),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: Text(
-            'Firma Online',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: AppColors.navy,
-              fontSize: 12,
-            ),
-          ),
-        ),
-        Text(
-          '  ${AppInfo.developer}\n  ${AppInfo.author}',
-          style: const TextStyle(
-            fontSize: 11,
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1428,33 +1314,18 @@ class CompanyAiScreen extends StatelessWidget {
                               ),
                               TextButton(
                                 onPressed: () async {
-                                  if (!await ensureCompanyMailSignature(
+                                  await showCompanyOfferComposer(
                                     context,
-                                  )) {
-                                    return;
-                                  }
-                                  if (!context.mounted) return;
-                                  final auth = context.read<AuthProvider>();
-                                  final user = auth.findUser(r.studentId);
-                                  await jobs.sendOffer(
                                     studentId: r.studentId,
-                                    message:
-                                        'Merhaba ${r.name.split(' ').first}, AI değerlendirmemizde öne çıktınız. Görüşmek isteriz.',
-                                    notifications: context
-                                        .read<NotificationProvider>(),
-                                    auth: auth,
-                                    studentEmail: user?.email,
                                     studentName: r.name,
+                                    studentEmail: context
+                                        .read<AuthProvider>()
+                                        .findUser(r.studentId)
+                                        ?.email,
+                                    presetMessage:
+                                        'Merhaba ${r.name.split(' ').first},\n\n'
+                                        'AI değerlendirmemizde öne çıktınız. Görüşmek isteriz.',
                                   );
-                                  if (!context.mounted) return;
-                                  final msg = jobs.status ?? 'Teklif gönderildi';
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(msg)),
-                                  );
-                                  if (jobs.status ==
-                                      'MAIL_SIGNATURE_REQUIRED') {
-                                    context.push('/firma/settings');
-                                  }
                                 },
                                 child: const Text('Teklif gönder'),
                               ),

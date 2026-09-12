@@ -119,7 +119,7 @@ class NotificationCopy {
   }
 
   static (String title, String body, String emoji) offer(String company) =>
-      ('Firma teklifi', '$company sana bir teklif gönderdi', '🎯');
+      ('Sana özel teklif', '$company sana bir teklif gönderdi', '🎯');
 
   static (String title, String body, String emoji) offerForUser({
     required String firstName,
@@ -127,8 +127,8 @@ class NotificationCopy {
   }) {
     final who = firstName.trim().isEmpty ? 'Merhaba' : 'Merhaba $firstName';
     return (
-      'Firma teklifi',
-      '$who, $company sana özel bir teklif gönderdi.',
+      'Sana özel teklif',
+      '$who, $company sana özel bir teklif gönderdi. Mailindeki imzadan iletişime geçebilirsin.',
       '🎯',
     );
   }

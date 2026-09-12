@@ -113,6 +113,23 @@ class CampusAffinity {
   }
 
   /// İki metin (şehir / üniversite adı) eşleşiyor mu?
+  /// Platform bot / resmi hesap — şehir-üniversite filtresinden muaftır.
+  static bool isPlatformWideAuthor(AppUser? author, {String? authorId, String? handle}) {
+    if (author != null) {
+      if (author.isBot) return true;
+      final uname = (author.username ?? '').toLowerCase();
+      if (uname == 'aystechbot' || uname == 'kampusteyim') return true;
+      if (author.id == 'ays_guard' || author.email == 'guard@aystech.com') {
+        return true;
+      }
+    }
+    final id = (authorId ?? '').trim().toLowerCase();
+    if (id == 'ays_guard') return true;
+    final h = (handle ?? '').trim().toLowerCase().replaceFirst('@', '');
+    if (h == 'aystechbot') return true;
+    return false;
+  }
+
   static bool sameLabel(String? a, String? b) {
     final na = fold(a);
     final nb = fold(b);
@@ -309,6 +326,10 @@ class CampusAffinity {
       }
     }
     if (author?.isCompany == true && sameTown) campus += 0.18;
+    // Platform bot (Guard) — herkese görünür skor
+    if (isPlatformWideAuthor(author, authorId: author?.id)) {
+      campus += 0.55;
+    }
 
     final tagBoost = signals.tagsBoost(hashtags) / 8.0;
 
@@ -425,31 +446,36 @@ class PeopleSuggestions {
           u.accountStatus.isNotEmpty) {
         continue;
       }
-      if (u.isBot) continue;
+      // Platform botları (AYS Tech Guard) herkese önerilir; diğer botlar elenir.
+      final isPlatformBot = CampusAffinity.isPlatformWideAuthor(u);
+      if (u.isBot && !isPlatformBot) continue;
 
       final tags = <String>{
         ...?authorTags[u.id],
         for (final id in ids) ...?authorTags[id],
       };
 
-      final score = CampusAffinity.scoreCandidate(
+      var score = CampusAffinity.scoreCandidate(
         viewer: me,
         candidate: u,
         auth: auth,
         signals: signals,
         candidateTags: tags,
       );
-      if (score < 0.35) continue;
+      if (isPlatformBot) score = math.max(score, 12.0);
+      if (score < 0.35 && !isPlatformBot) continue;
       scored.add(
         SuggestedPerson(
           user: u,
           score: score,
-          reason: CampusAffinity.suggestionReason(
-            viewer: me,
-            candidate: u,
-            auth: auth,
-            signals: signals,
-          ),
+          reason: isPlatformBot
+              ? 'Platform asistanı'
+              : CampusAffinity.suggestionReason(
+                  viewer: me,
+                  candidate: u,
+                  auth: auth,
+                  signals: signals,
+                ),
         ),
       );
     }

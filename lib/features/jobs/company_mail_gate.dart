@@ -13,10 +13,12 @@ Future<bool> ensureCompanyMailSignature(BuildContext context) async {
   final go = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Mail imzası gerekli'),
+      title: const Text('Mail imzası zorunlu'),
       content: const Text(
-        'Öğrenciye mail, teklif veya ilan bildirimi göndermeden önce '
-        'Gmail tarzı mail imzanızı (logo + yetkili bilgileri) ayarlamanız gerekir.',
+        'Teklif, öğrenciye e-posta ve bildirim olarak gider. '
+        'Göndermeden önce logo, yetkili adı ve yanıt e-postasını '
+        'imza sayfasında doldurmanız gerekir. İletişim bilgileriniz '
+        'mailin imzasına otomatik eklenir.',
       ),
       actions: [
         TextButton(
@@ -25,7 +27,7 @@ Future<bool> ensureCompanyMailSignature(BuildContext context) async {
         ),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Ayarlara git'),
+          child: const Text('İmza sayfasına git'),
         ),
       ],
     ),

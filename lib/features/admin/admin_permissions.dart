@@ -89,6 +89,11 @@ enum AdminPermission {
     'Market: ürün, sipariş, kampanya, uygulama içi aç/kapa',
     'Ticaret',
   ),
+  managePoints(
+    'manage_points',
+    'Puan marketi, Sil Süpür, eSIM ödülleri',
+    'Ticaret',
+  ),
   manageAds('manage_ads', 'Reklam / sponsor teklif / push-mail bot', 'Ticaret'),
   reviewPayments(
     'review_payments',
@@ -307,6 +312,7 @@ class StaffRole {
         AdminPermission.manageLanding,
         AdminPermission.managePlus,
         AdminPermission.manageMarket,
+        AdminPermission.managePoints,
         AdminPermission.manageCvAi,
         AdminPermission.manageAds,
         AdminPermission.reviewPayments,
@@ -334,6 +340,7 @@ class StaffRole {
       description: 'Market, reklam onayı, sponsor teklifi ve firma ticareti.',
       permissions: {
         AdminPermission.manageMarket,
+        AdminPermission.managePoints,
         AdminPermission.manageAds,
         AdminPermission.reviewPayments,
         AdminPermission.createCompany,

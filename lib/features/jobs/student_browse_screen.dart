@@ -9,9 +9,9 @@ import '../../core/widgets/social_widgets.dart';
 import '../../data/campus_catalog.dart';
 import '../../models/models.dart';
 import '../auth/data/auth_provider.dart';
-import '../notifications/notification_provider.dart';
 import 'company_applicant_widgets.dart';
 import 'company_mail_gate.dart';
+import 'company_offer_sheet.dart';
 import 'company_portal.dart';
 import 'jobs_provider.dart';
 
@@ -36,7 +36,6 @@ class StudentBrowseScreen extends StatefulWidget {
 class _StudentBrowseScreenState extends State<StudentBrowseScreen> {
   final _q = TextEditingController();
   final _mail = TextEditingController();
-  final _offer = TextEditingController();
 
   CampusCatalog? _catalog;
   String? _city;
@@ -86,7 +85,6 @@ class _StudentBrowseScreenState extends State<StudentBrowseScreen> {
   void dispose() {
     _q.dispose();
     _mail.dispose();
-    _offer.dispose();
     super.dispose();
   }
 
@@ -335,41 +333,13 @@ class _StudentBrowseScreenState extends State<StudentBrowseScreen> {
   }
 
   Future<void> _sendOffer(AppUser s, JobsProvider jobs) async {
-    _offer.text = 'Sizi staj / iş görüşmesine davet ediyoruz.';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Direkt teklif'),
-        content: TextField(controller: _offer, maxLines: 4),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('İptal'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Gönder'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    if (!await ensureCompanyMailSignature(context)) return;
-    if (!mounted) return;
-    await jobs.sendOffer(
+    await showCompanyOfferComposer(
+      context,
       studentId: s.id,
-      message: _offer.text,
-      notifications: context.read<NotificationProvider>(),
-      auth: context.read<AuthProvider>(),
+      studentName: s.fullName.trim().isNotEmpty ? s.fullName : s.firstName,
       studentEmail: s.email,
-      studentName: s.firstName,
+      studentPhoto: s.photoUrl,
     );
-    if (!mounted) return;
-    if (jobs.status == 'MAIL_SIGNATURE_REQUIRED') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Önce mail imzasını ayarlayın')),
-      );
-    }
   }
 
   @override

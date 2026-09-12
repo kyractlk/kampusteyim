@@ -216,6 +216,13 @@ class AppNav {
       case 'notifications':
       case 'profile':
       case 'market':
+      case 'points':
+        if (id != null && id.isNotEmpty) {
+          open(context, '/points/${Uri.encodeComponent(id)}');
+          return true;
+        }
+        GoRouter.of(context).go('/points');
+        return true;
       case 'search':
       case 'tickets':
         GoRouter.of(context).go('/$head');
@@ -259,6 +266,15 @@ class AppNav {
     final tid = targetId?.trim();
     final aid = actorId?.trim();
     final blob = '$title $body'.toLowerCase();
+
+    if (t == 'sil_supur') {
+      open(context, '/points/sil-supur');
+      return;
+    }
+    if (t == 'points' || t == 'esim_reward' || t == 'esim') {
+      open(context, '/points/rewards');
+      return;
+    }
 
     if (t == 'reel' || t.startsWith('reel_') || blob.contains('reels')) {
       openReel(context, reelId: tid);

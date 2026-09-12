@@ -28,6 +28,7 @@ class AuthProvider extends ChangeNotifier {
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _regSecuritySub;
   Timer? _refreshTimer;
   bool _restoring = false;
+  bool _sessionBootstrapped = false;
   Future<int>? _directorySyncFuture;
   bool _intentionalAuth = false;
   String? _boundAuthUid;
@@ -49,6 +50,14 @@ class AuthProvider extends ChangeNotifier {
   AppUser? get user => _user;
   bool get isAuthenticated => _user != null;
   bool get isBusy => _busy;
+  /// İlk oturum / profil hydrate bitene kadar true.
+  bool get isHydrating =>
+      !_sessionBootstrapped ||
+      _restoring ||
+      (_busy &&
+          _user == null &&
+          fa.FirebaseAuth.instance.currentUser != null);
+  bool get isSessionBootstrapped => _sessionBootstrapped;
   String? get error => _error;
   RegistrationSecurityConfig get registrationSecurity => _regSecurity;
 
@@ -472,6 +481,8 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('[auth] restore: $e');
     } finally {
       _restoring = false;
+      _sessionBootstrapped = true;
+      notifyListeners();
       final pending = _pendingAuthUser;
       _pendingAuthUser = null;
       if (pending != null) {
@@ -1519,6 +1530,13 @@ class AuthProvider extends ChangeNotifier {
           if (_user != null && (u.id == _user!.id || u.email == _user!.email)) {
             return false;
           }
+          // Platform botları / sabit id'ler senkron dışı kalmasın.
+          if (u.isBot ||
+              u.id == 'ays_guard' ||
+              u.email == 'guard@aystech.com' ||
+              (u.username ?? '').toLowerCase() == 'aystechbot') {
+            return false;
+          }
           return !seenIds.contains(u.id);
         });
       }
@@ -1721,7 +1739,7 @@ class AuthProvider extends ChangeNotifier {
     unawaited(_syncProfileToFirestore(_user!));
   }
 
-  void updateProfile({
+  Future<void> updateProfile({
     String? bio,
     String? photoUrl,
     List<ProfileLink>? links,
@@ -1730,7 +1748,7 @@ class AuthProvider extends ChangeNotifier {
     String? phone,
     String? communityLogoUrl,
     bool clearPhoto = false,
-  }) {
+  }) async {
     if (_user == null) return;
     _user = _user!.copyWith(
       bio: bio,
@@ -1743,8 +1761,8 @@ class AuthProvider extends ChangeNotifier {
       clearPhoto: clearPhoto,
     );
     _upsert(_user!);
-    _syncProfileToFirestore(_user!);
     notifyListeners();
+    await _syncProfileToFirestore(_user!);
   }
 
   /// Reddedilen / bekleyen kullanıcı yeni belge yükler → tekrar pending.

@@ -666,14 +666,21 @@ class JobsProvider extends ChangeNotifier {
           .set(offer.toJson());
     } catch (_) {}
 
-    final copy = NotificationCopy.offer(company!.name);
+    final copy = NotificationCopy.offerForUser(
+      firstName: displayName.split(' ').first,
+      company: company!.name,
+    );
     await notifications?.pushSocial(
       toUserId: studentId,
       title: copy.$1,
-      body: message.trim().isNotEmpty ? message : copy.$2,
+      body: message.trim().isNotEmpty
+          ? '${copy.$2}\n\n${message.trim()}'
+          : copy.$2,
       emoji: copy.$3,
       type: 'offer',
       actorId: company!.id,
+      targetId: offer.id,
+      linkPath: '/notifications',
       personalize: true,
     );
 
@@ -687,12 +694,12 @@ class JobsProvider extends ChangeNotifier {
             .httpsCallable('sendCompanyMail');
         await callable.call({
           'to': mailTo,
-          'subject': '${company!.name} · Teklif',
+          'subject': '${company!.name} · Sana özel teklif',
           'bodyText': message,
           'kind': 'offer',
           'studentName': displayName.split(' ').first,
-          'ctaLabel': 'KampüsteyimAPP’i aç',
-          'ctaUrl': 'https://app.kampusteyim.app/staj-ai',
+          'ctaLabel': 'Teklifi uygulamada aç',
+          'ctaUrl': 'https://app.kampusteyim.app/notifications',
         });
         mailed = true;
         status = 'Teklif ve mail gönderildi · $mailTo';

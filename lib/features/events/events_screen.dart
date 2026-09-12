@@ -77,6 +77,11 @@ class _EventsScreenState extends State<EventsScreen>
       if (cid == null) return true;
       final org = auth.findUser(cid);
       if (org == null) return true;
+      // Resmi / platform hesabı (üniversite = marka adı veya boş) → tüm kampüsler
+      if (_isPlatformWideCommunity(org) ||
+          CampusAffinity.isPlatformWideAuthor(org)) {
+        return true;
+      }
       return CampusAffinity.sameLabel(org.university, uni);
     }).toList();
 
@@ -90,6 +95,19 @@ class _EventsScreenState extends State<EventsScreen>
       return a.startsAt.compareTo(b.startsAt);
     });
     return list;
+  }
+
+  /// KampüsteyimAPP gibi resmi hesaplar: university alanı marka adı, kampüs filtresine uymaz.
+  bool _isPlatformWideCommunity(AppUser org) {
+    final uni = org.university.trim();
+    if (uni.isEmpty) return true;
+    final foldUni = CampusAffinity.fold(uni);
+    final foldName = CampusAffinity.fold(org.fullName);
+    if (foldName.isNotEmpty && foldUni == foldName) return true;
+    if (foldUni.contains('kampusteyim')) return true;
+    final handle = (org.username ?? '').toLowerCase();
+    if (handle == 'kampusteyim' || handle == 'kampusteyimapp') return true;
+    return false;
   }
 
   List<CampusEvent> _offCampusEvents(List<CampusEvent> all) {

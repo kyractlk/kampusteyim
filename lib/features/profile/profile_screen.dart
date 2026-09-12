@@ -81,7 +81,39 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().user;
+    final auth = context.watch<AuthProvider>();
+    if (auth.isHydrating) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Profil')),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              const Text(
+                'Profil yükleniyor…',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'İstersen ana sayfaya dönebilirsin',
+                style: TextStyle(
+                  color: AppColors.textSecondary.withValues(alpha: 0.9),
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () => context.go('/home'),
+                child: const Text('Ana sayfaya dön'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final user = auth.user;
     if (user == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Profil')),
@@ -169,7 +201,28 @@ class _UserProfileViewState extends State<UserProfileView> {
         appBar: AppBar(),
         body: Center(
           child: _loadingRemote
-              ? const CircularProgressIndicator()
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Profil yükleniyor…',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go('/home');
+                        }
+                      },
+                      child: const Text('Geri dön'),
+                    ),
+                  ],
+                )
               : const Text('Kullanıcı bulunamadı'),
         ),
       );
@@ -867,6 +920,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late List<ProfileLink> _links;
   String? _photoUrl;
   bool _uploading = false;
+  bool _saving = false;
   bool _nameBusy = false;
   Map<String, dynamic>? _pendingName;
 
@@ -1038,6 +1092,42 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _saveProfile() async {
+    if (_saving || _uploading) return;
+    setState(() => _saving = true);
+    try {
+      final auth = context.read<AuthProvider>();
+      final user = auth.user;
+      if (_username.text.trim().isNotEmpty &&
+          _username.text.trim().toLowerCase() !=
+              (user?.username ?? '')) {
+        final err = await auth.changeUsername(_username.text.trim());
+        if (err != null && mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(err)));
+          return;
+        }
+      }
+      await auth.updateProfile(
+        bio: _bio.text.trim(),
+        photoUrl: _photoUrl,
+        links: _links,
+        clearPhoto: (_photoUrl ?? '').isEmpty,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kaydedildi')),
+      );
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/profile');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
@@ -1046,29 +1136,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         title: const Text('Profili düzenle'),
         actions: [
           TextButton(
-            onPressed: _uploading
-                ? null
-                : () async {
-                    final auth = context.read<AuthProvider>();
-                    if (_username.text.trim().isNotEmpty &&
-                        _username.text.trim().toLowerCase() !=
-                            (user?.username ?? '')) {
-                      final err =
-                          await auth.changeUsername(_username.text.trim());
-                      if (err != null && context.mounted) {
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(SnackBar(content: Text(err)));
-                      }
-                    }
-                    auth.updateProfile(
-                      bio: _bio.text.trim(),
-                      photoUrl: _photoUrl,
-                      links: _links,
-                      clearPhoto: (_photoUrl ?? '').isEmpty,
-                    );
-                    if (context.mounted) context.pop();
-                  },
-            child: const Text('Kaydet'),
+            onPressed: _uploading || _saving ? null : _saveProfile,
+            child: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Kaydet'),
           ),
         ],
       ),
@@ -1109,7 +1184,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       ),
                     ),
                     IconButton.filled(
-                      onPressed: _uploading ? null : _pickPhoto,
+                      onPressed: _uploading || _saving ? null : _pickPhoto,
                       icon: _uploading
                           ? const SizedBox(
                               width: 18,
@@ -1272,6 +1347,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _uploading || _saving ? null : _saveProfile,
+            child: Text(_saving ? 'Kaydediliyor…' : 'Kaydet'),
           ),
         ],
       ),

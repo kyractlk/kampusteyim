@@ -35,6 +35,7 @@ import 'features/notifications/notification_provider.dart';
 import 'features/notifications/push_service.dart';
 import 'features/partners/partners_provider.dart';
 import 'features/plus/plus_provider.dart';
+import 'features/points/points_provider.dart';
 import 'features/reels/reels_provider.dart';
 import 'features/stories/stories_provider.dart';
 import 'firebase_options.dart';
@@ -121,6 +122,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
   late final StoriesProvider _stories;
   late final ReelsProvider _reels;
   late final PlusProvider _plus;
+  late final PointsProvider _points;
   late final AdsProvider _ads;
   late final PartnersProvider _partners;
   late final ThemeProvider _theme;
@@ -146,6 +148,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
       ..attachAuth(_auth)
       ..attachFeed(_feed);
     _plus = PlusProvider()..bind();
+    _points = PointsProvider();
     _ads = AdsProvider();
     _partners = PartnersProvider();
     unawaited(_plus.ensureConfigSeeded());
@@ -160,6 +163,9 @@ class _MtMobilAppState extends State<MtMobilApp> {
     if (uid == _boundNotifyUid) return;
     _boundNotifyUid = uid;
     unawaited(_notifications.bindUser(uid, profile: _auth.user));
+    if (uid != null && uid.isNotEmpty) {
+      unawaited(_points.refresh());
+    }
     final u = _auth.user;
     if (u != null) {
       unawaited(_admin.loadRolesFromFirestore());
@@ -187,6 +193,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
     _stories.dispose();
     _reels.dispose();
     _plus.dispose();
+    _points.dispose();
     _ads.dispose();
     _partners.dispose();
     _theme.dispose();
@@ -209,6 +216,7 @@ class _MtMobilAppState extends State<MtMobilApp> {
         ChangeNotifierProvider.value(value: _stories),
         ChangeNotifierProvider.value(value: _reels),
         ChangeNotifierProvider.value(value: _plus),
+        ChangeNotifierProvider.value(value: _points),
         ChangeNotifierProvider.value(value: _ads),
         ChangeNotifierProvider.value(value: _partners),
       ],

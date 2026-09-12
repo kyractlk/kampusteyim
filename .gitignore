@@ -44,10 +44,13 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-.env
+# eSIM / local secrets — never commit (Firestore app_secrets only)
+functions/.esim-secrets.json
+**/.esim-secrets.json
 .env.secrets
-functions/.env
-functions/node_modules/
+.env
+.env.*
+
 
 # Local Firebase / caches
 .firebase/

@@ -31,7 +31,7 @@ class _CommunityPortalScreenState extends State<CommunityPortalScreen> {
   static const _titles = [
     'Etkinlik',
     'Duyuru',
-    'Basvuru',
+    'Etkinlik başvuruları',
     'Reklam',
     'Kadro',
   ];
@@ -238,8 +238,8 @@ class _CommunityWelcome extends StatelessWidget {
             const SizedBox(height: 10),
             PanelNavTile(
               icon: Icons.how_to_reg_outlined,
-              title: 'Başvuru',
-              subtitle: 'Üyelik başvurularını onayla',
+              title: 'Etkinlik başvuruları',
+              subtitle: 'Etkinliğe gelen başvuruları onayla / reddet',
               onTap: () => onSelect(2),
             ),
             const SizedBox(height: 10),
@@ -318,6 +318,24 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
     );
     if (time == null) return null;
     return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  /// Resmi hesaplarda university marka adı → damgalama; boş = tüm kampüsler.
+  String _eventUniversityStamp(AppUser me) {
+    final uni = me.university.trim();
+    if (uni.isEmpty) return '';
+    final foldUni = uni
+        .toLowerCase()
+        .replaceAll('ı', 'i')
+        .replaceAll('İ', 'i');
+    final foldName = me.fullName.trim().toLowerCase();
+    if (foldName.isNotEmpty && foldUni == foldName) return '';
+    if (foldUni.contains('kampusteyim') || foldUni.contains('kampüsteyim')) {
+      return '';
+    }
+    final handle = (me.username ?? '').toLowerCase();
+    if (handle == 'kampusteyim' || handle == 'kampusteyimapp') return '';
+    return uni;
   }
 
   String _fmt(DateTime d) => DateFormat('d MMM yyyy - HH:mm', 'tr').format(d);
@@ -490,8 +508,9 @@ class _CommunityEventsTabState extends State<_CommunityEventsTab> {
                 communityId: widget.orgId,
                 communityName: widget.me.fullName,
                 communityLogoUrl: widget.me.communityLogoUrl,
-                organizerCompanyId: widget.orgId,
-                organizerCompanyName: widget.me.fullName,
+                city: widget.me.city,
+                // Resmi hesapta university marka adı olabiliyor; boş bırak → tüm kampüsler.
+                university: _eventUniversityStamp(widget.me),
                 rules: _rules.text.trim(),
                 imageUrl: _bannerUrl.isNotEmpty
                     ? _bannerUrl
@@ -750,7 +769,17 @@ class _CommunityApplicationsTab extends StatelessWidget {
     });
 
     if (rows.isEmpty) {
-      return const Center(child: Text('Basvuru yok'));
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Henüz etkinlik başvurusu yok.\n'
+            'Öğrenciler etkinliğe başvurunca burada listelenir.',
+            textAlign: TextAlign.center,
+            style: TextStyle(height: 1.4, color: AppColors.textSecondary),
+          ),
+        ),
+      );
     }
 
     return ListView.separated(
@@ -781,11 +810,30 @@ class _CommunityApplicationsTab extends StatelessWidget {
                 if (pending) ...[
                   IconButton(
                     tooltip: 'Onayla',
-                    onPressed: () => feed.reviewEventApplication(
-                      eventId: event.id,
-                      applicationId: app.id,
-                      approve: true,
-                    ),
+                    onPressed: () async {
+                      try {
+                        await feed.reviewEventApplication(
+                          eventId: event.id,
+                          applicationId: app.id,
+                          approve: true,
+                        );
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Onaylandı · bilet oluşturuldu, e-posta gönderildi',
+                            ),
+                          ),
+                        );
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Onay başarısız: $e'),
+                          ),
+                        );
+                      }
+                    },
                     icon: const Icon(Icons.check_circle, color: AppColors.lime),
                   ),
                   IconButton(

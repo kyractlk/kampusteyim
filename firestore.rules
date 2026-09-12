@@ -192,6 +192,31 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    /// Puan bakiyesi — kullanıcı kendi kaydını okur; yazma yalnız CF.
+    match /user_points/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if false;
+    }
+    match /points_ledger/{id} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+    match /points_catalog/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /user_rewards/{id} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+    match /sil_supur_plays/{id} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+    match /app_jobs/{id} {
+      allow read, write: if false;
+    }
+
     /// NFC beta teknik kart logları — yalnız CF yazar, yalnız admin okur.
     match /nfc_probe_logs/{logId} {
       allow read: if isAdmin();

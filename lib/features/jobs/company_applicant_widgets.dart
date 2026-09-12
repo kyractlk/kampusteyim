@@ -1,11 +1,13 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/social_widgets.dart';
 import '../auth/data/auth_provider.dart';
-import '../notifications/notification_provider.dart';
-import 'company_mail_gate.dart';
+import '../cv/cv_models.dart';
+import '../cv/cv_pdf.dart';
+import 'company_offer_sheet.dart';
 import 'job_models.dart';
 import 'jobs_provider.dart';
 
@@ -79,183 +81,240 @@ Future<void> showApplicantCvSheet(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (ctx) {
-      final cv = a.cvData;
-      return DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.75,
-        maxChildSize: 0.95,
-        minChildSize: 0.4,
-        builder: (_, scroll) {
-          return ListView(
-            controller: scroll,
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-            children: [
-              Row(
-                children: [
-                  UserAvatar(
-                    name: a.name,
-                    photoUrl: a.photoUrl,
-                    radius: 28,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          a.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 18,
-                          ),
-                        ),
-                        if (a.headline.isNotEmpty)
-                          Text(
-                            a.headline,
-                            style: const TextStyle(color: AppColors.cyan),
-                          ),
-                        Text(
-                          a.email,
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  _CvBadge(hasCv: a.hasCv),
-                ],
-              ),
-              const SizedBox(height: 16),
-              if (!a.hasCv)
-                const Text(
-                  'Öğrencinin CV’si bulunmamaktadır.',
-                  style: TextStyle(
-                    color: AppColors.crimson,
-                    fontWeight: FontWeight.w700,
-                  ),
-                )
-              else ...[
-                _CvSection('Hakkımda / Özet', a.about),
-                _CvSection('Motivasyon mektubu', a.motivationLetter),
-                if (cv != null) ...[
-                  if (cv.education.isNotEmpty)
-                    _CvSection(
-                      'Eğitim',
-                      cv.education
-                          .map((e) =>
-                              '• ${e.school} — ${e.degree} ${e.field}'.trim())
-                          .join('\n'),
-                    ),
-                  if (cv.experiences.isNotEmpty)
-                    _CvSection(
-                      'Deneyim',
-                      cv.experiences
-                          .map((e) =>
-                              '• ${e.position} @ ${e.company}\n  ${e.description}')
-                          .join('\n\n'),
-                    ),
-                  if (cv.skills.isNotEmpty)
-                    _CvSection(
-                      'Yetkinlikler',
-                      cv.skills.map((s) => '${s.name} (${s.level})').join(' · '),
-                    ),
-                  if (cv.projects.isNotEmpty)
-                    _CvSection(
-                      'Projeler',
-                      cv.projects
-                          .map((p) => '• ${p.name}: ${p.description}')
-                          .join('\n'),
-                    ),
-                ],
-              ],
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () async {
-                    final jobs = context.read<JobsProvider>();
-                    final offer = TextEditingController(
-                      text:
-                          'Merhaba ${a.name.split(' ').first}, başvurunuzu değerlendirdik. Görüşme için sizi davet ediyoruz.',
-                    );
-                    final ok = await showDialog<bool>(
-                      context: context,
-                      builder: (dCtx) => AlertDialog(
-                        title: const Text('Teklif gönder'),
-                        content: TextField(
-                          controller: offer,
-                          maxLines: 4,
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(dCtx, false),
-                            child: const Text('İptal'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(dCtx, true),
-                            child: const Text('Gönder'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (ok == true && context.mounted) {
-                      if (!await ensureCompanyMailSignature(context)) {
-                        return;
-                      }
-                      if (!context.mounted) return;
-                      await jobs.sendOffer(
-                        studentId: a.studentId,
-                        message: offer.text,
-                        notifications:
-                            context.read<NotificationProvider>(),
-                        auth: context.read<AuthProvider>(),
-                        studentEmail: a.email,
-                        studentName: a.name.split(' ').first,
-                      );
-                      if (context.mounted) Navigator.pop(ctx);
-                    }
-                    offer.dispose();
-                  },
-                  child: const Text('Teklif gönder'),
-                ),
-              ),
-            ],
-          );
-        },
-      );
-    },
+    builder: (ctx) => _ApplicantCvDownloadSheet(applicant: a),
   );
 }
 
-class _CvSection extends StatelessWidget {
-  const _CvSection(this.title, this.body);
-  final String title;
-  final String body;
+class _ApplicantCvDownloadSheet extends StatefulWidget {
+  const _ApplicantCvDownloadSheet({required this.applicant});
+  final ApplicantPreview applicant;
+
+  @override
+  State<_ApplicantCvDownloadSheet> createState() =>
+      _ApplicantCvDownloadSheetState();
+}
+
+class _ApplicantCvDownloadSheetState extends State<_ApplicantCvDownloadSheet> {
+  late CvLanguageOption _lang;
+  bool _busy = false;
+  String? _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _lang = kCvWorldLanguages.first;
+  }
+
+  ApplicantPreview get a => widget.applicant;
+
+  Future<void> _downloadPdf() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _status = 'CV hazırlanıyor…';
+    });
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable(
+        'companyResolveApplicantCv',
+        options: HttpsCallableOptions(timeout: const Duration(seconds: 120)),
+      );
+      final result = await callable.call(<String, dynamic>{
+        'studentId': a.studentId,
+        'languageCode': _lang.code,
+        'languageName': _lang.name,
+      });
+      final map = Map<String, dynamic>.from(result.data as Map? ?? {});
+      final polished =
+          Map<String, dynamic>.from(map['polished'] as Map? ?? {});
+      if (polished.isEmpty) {
+        throw Exception('CV içeriği boş');
+      }
+      final accentRaw = map['accentArgb'];
+      final accent = accentRaw is num
+          ? accentRaw.toInt()
+          : kCvAccentDefault;
+      final reused = map['reused'] == true;
+      final fileHint =
+          '${a.name.replaceAll(RegExp(r'\s+'), '_')}_CV_${_lang.code.toUpperCase()}.pdf';
+
+      if (mounted) {
+        setState(() {
+          _status = reused
+              ? 'Kayıtlı ${_lang.name} CV indiriliyor…'
+              : 'Yeni ${_lang.name} CV oluşturuldu · açılıyor…';
+        });
+      }
+
+      await CvPdfBuilder.previewAndShare(
+        polished: polished,
+        languageName: '${map['languageName'] ?? _lang.name}',
+        languageCode: '${map['languageCode'] ?? _lang.code}',
+        fileHint: fileHint,
+        accentArgb: isCvAccentAllowed(accent) ? accent : kCvAccentDefault,
+      );
+
+      if (mounted) {
+        setState(() => _status = reused
+            ? 'Hazır CV açıldı'
+            : 'CV oluşturuldu ve açıldı');
+      }
+    } on FirebaseFunctionsException catch (e) {
+      if (mounted) {
+        setState(() => _status = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message ?? 'CV alınamadı (${e.code})'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _status = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CV alınamadı: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _sendOffer() async {
+    final sent = await showCompanyOfferComposer(
+      context,
+      studentId: a.studentId,
+      studentName: a.name,
+      studentEmail: a.email,
+      studentPhoto: a.photoUrl,
+      presetMessage:
+          'Merhaba ${a.name.split(' ').first},\n\n'
+          'Başvurunuzu değerlendirdik. Görüşme için sizi davet ediyoruz.',
+    );
+    if (sent && mounted) Navigator.pop(context);
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (body.trim().isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 8,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 28,
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w800),
+          Row(
+            children: [
+              UserAvatar(
+                name: a.name,
+                photoUrl: a.photoUrl,
+                radius: 28,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      a.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
+                    if (a.headline.isNotEmpty)
+                      Text(
+                        a.headline,
+                        style: const TextStyle(color: AppColors.cyan),
+                      ),
+                    Text(
+                      a.email,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _CvBadge(hasCv: a.hasCv),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'CV PDF',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
           ),
           const SizedBox(height: 6),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceMuted,
-              borderRadius: BorderRadius.circular(12),
+          const Text(
+            'Öğrencinin ATS özgeçmişini seçtiğiniz dilde PDF olarak açın veya indirin. '
+            'Bu dilde daha önce üretilmişse doğrudan o dosya kullanılır.',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13,
+              height: 1.35,
             ),
-            child: Text(body),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            // ignore: deprecated_member_use
+            value: _lang.code,
+            decoration: const InputDecoration(
+              labelText: 'Dil',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              for (final l in kCvWorldLanguages)
+                DropdownMenuItem(
+                  value: l.code,
+                  child: Text(l.name),
+                ),
+            ],
+            onChanged: _busy
+                ? null
+                : (code) {
+                    if (code == null) return;
+                    setState(() {
+                      _lang = kCvWorldLanguages.firstWhere(
+                        (l) => l.code == code,
+                        orElse: () => kCvWorldLanguages.first,
+                      );
+                    });
+                  },
+          ),
+          if (_status != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _status!,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: _busy || !a.hasCv ? null : _downloadPdf,
+            icon: _busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.picture_as_pdf_outlined),
+            label: Text(_busy ? 'Hazırlanıyor…' : 'PDF görüntüle / indir'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed: _busy ? null : _sendOffer,
+            child: const Text('Teklif gönder'),
           ),
         ],
       ),
@@ -272,15 +331,16 @@ class _CvBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: (hasCv ? AppColors.cyan : AppColors.crimson).withValues(alpha: 0.12),
+        color: (hasCv ? AppColors.cyan : AppColors.crimson)
+            .withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
         hasCv ? 'CV var' : 'CV yok',
         style: TextStyle(
-          color: hasCv ? AppColors.cyan : AppColors.crimson,
+          fontSize: 11,
           fontWeight: FontWeight.w800,
-          fontSize: 12,
+          color: hasCv ? AppColors.cyan : AppColors.crimson,
         ),
       ),
     );
@@ -376,12 +436,19 @@ class _JobApplicantsBlockState extends State<JobApplicantsBlock> {
                   [
                     if (a.headline.isNotEmpty) a.headline,
                     if (a.handle.isNotEmpty) a.handle,
-                    a.hasCv ? 'CV hazır' : 'CV eksik',
+                    a.hasCv ? 'CV PDF indirilebilir' : 'CV eksik',
                   ].join(' · '),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                trailing: _CvBadge(hasCv: a.hasCv),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _CvBadge(hasCv: a.hasCv),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.picture_as_pdf_outlined, size: 20),
+                  ],
+                ),
                 onTap: () => showApplicantCvSheet(context, a),
               ),
             ),

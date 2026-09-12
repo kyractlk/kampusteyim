@@ -16,7 +16,7 @@ import '../commerce/commerce_service.dart';
 import '../events/event_banner_picker.dart';
 import '../feed/feed_provider.dart';
 
-/// Organizatör firma: kampüs dışı etkinlik oluşturur → admin onayı.
+/// Firma etkinliği: kampüs dışı. Ücretli bilet yalnızca organizatör hesaplarda.
 class CompanyEventsScreen extends StatefulWidget {
   const CompanyEventsScreen({super.key});
 
@@ -34,20 +34,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
         body: Center(child: Text('Firma hesabı gerekli')),
       );
     }
-    if (!me.isEventOrganizer) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Etkinlikler')),
-        body: const Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Bu hesap henüz etkinlik organizatörü değil. '
-            'Admin panelinden “Etkinlik organizatörü yap” ile yetki verilmeli.',
-            style: TextStyle(height: 1.45),
-          ),
-        ),
-      );
-    }
-
+    final organizer = me.isEventOrganizer;
     final mine = context
         .watch<FeedProvider>()
         .events
@@ -55,15 +42,24 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
         .toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Kampüs dışı etkinliklerim')),
+      appBar: AppBar(title: const Text('Etkinliklerim')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openEditor(context, me),
+        onPressed: () => _openEditor(context, me, organizer: organizer),
         icon: const Icon(Icons.add),
         label: const Text('Etkinlik ekle'),
       ),
       body: mine.isEmpty
-          ? const Center(
-              child: Text('Henüz etkinlik yok. Yeni etkinlik ekle.'),
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  organizer
+                      ? 'Henüz etkinlik yok. Ücretli biletli etkinlik ekle.'
+                      : 'Henüz etkinlik yok. Kampüs kulüpleri gibi ücretsiz, kampüs dışı etkinlik ekleyebilirsin. Ücretli bilet için organizatör yetkisi gerekir.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(height: 1.4),
+                ),
+              ),
             )
           : ListView.separated(
               padding: const EdgeInsets.all(16),
@@ -79,7 +75,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                         style: const TextStyle(fontWeight: FontWeight.w800)),
                     subtitle: Text(
                       '$date\n${e.city.isEmpty ? 'Gaziantep' : e.city} · ${e.status}'
-                      '${e.refundsAllowed ? ' · iade var' : ' · iade yok'}',
+                      '${organizer ? (e.refundsAllowed ? ' · iade var' : ' · iade yok') : ' · ücretsiz'}',
                     ),
                     isThreeLine: true,
                     trailing: Chip(
@@ -91,7 +87,12 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                                 : 'Bekliyor',
                       ),
                     ),
-                    onTap: () => _openEditor(context, me, existing: e),
+                    onTap: () => _openEditor(
+                      context,
+                      me,
+                      existing: e,
+                      organizer: organizer,
+                    ),
                   ),
                 );
               },
@@ -99,9 +100,14 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
     );
   }
 
-  Future<void> _openEditor(BuildContext context, AppUser me, {CampusEvent? existing}) async {
+  Future<void> _openEditor(
+    BuildContext context,
+    AppUser me, {
+    CampusEvent? existing,
+    required bool organizer,
+  }) async {
     final editing = existing != null;
-    if (!editing) {
+    if (organizer && !editing) {
       try {
         final data = await CommerceService.getOrganizerDashboard();
         final s = Map<String, dynamic>.from(data['settings'] as Map? ?? {});
@@ -114,7 +120,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
             builder: (ctx) => AlertDialog(
               title: const Text('Önce IBAN kaydet'),
               content: const Text(
-                'Etkinlik açmadan önce organizatör çekim IBAN’ını '
+                'Ücretli bilet satmadan önce organizatör çekim IBAN’ını '
                 'sisteme kaydetmelisin.',
               ),
               actions: [
@@ -150,9 +156,9 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
     final capacity =
         TextEditingController(text: '${existing?.capacity ?? 100}');
     final drafts = <_PriceTierDraft>[
-      if (existing != null && existing.priceTiers.isNotEmpty)
+      if (organizer && existing != null && existing.priceTiers.isNotEmpty)
         ...existing.priceTiers.map(_PriceTierDraft.fromTier)
-      else
+      else if (organizer)
         _PriceTierDraft(),
     ];
     var city = (existing?.city.isNotEmpty == true)
@@ -199,9 +205,11 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      editing
-                          ? 'İade politikası ve bilet tipi sonradan da değişebilir. Satılmış biletlerin tipi değişmez.'
-                          : 'Kaydettikten sonra KampüsteyimAPP yönetim ekibinin incelemesine iletilir. Onaylanınca listelenir.',
+                      organizer
+                          ? (editing
+                              ? 'İade politikası ve bilet tipi sonradan da değişebilir. Satılmış biletlerin tipi değişmez.'
+                              : 'Kaydettikten sonra KampüsteyimAPP yönetim ekibinin incelemesine iletilir. Onaylanınca listelenir.')
+                          : 'Kampüs kulüpleri gibi ücretsiz katılım. Kampüs dışında yayınlanır; ücretli bilet satışı yalnızca organizatör hesaplarda vardır.',
                       style: const TextStyle(
                         fontSize: 12.5,
                         color: AppColors.textSecondary,
@@ -209,7 +217,9 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                     ),
                     const SizedBox(height: 12),
                     PanelStepBar(
-                      labels: const ['Temel', 'Zaman', 'Bilet'],
+                      labels: organizer
+                          ? const ['Temel', 'Zaman', 'Bilet']
+                          : const ['Temel', 'Zaman'],
                       step: step,
                     ),
                     const SizedBox(height: 12),
@@ -347,7 +357,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                           });
                         },
                       ),
-                    ] else ...[
+                    ] else if (organizer) ...[
                       Row(
                         children: [
                           const Expanded(
@@ -369,7 +379,8 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        'Her dönemde fiyat, stok ve bilet tipi (tek / çoklu giriş) ayrı seçilir.',
+                        'Her dönemde fiyat, stok ve bilet tipi (tek / çoklu giriş) ayrı seçilir. '
+                        'Organizatör olmayan firmalar ücretli bilet satamaz.',
                         style: TextStyle(
                           fontSize: 12,
                           color: AppColors.textSecondary,
@@ -408,7 +419,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                             child: const Text('Geri'),
                           ),
                         const Spacer(),
-                        if (step < 2)
+                        if (step < (organizer ? 2 : 1))
                           FilledButton(
                             onPressed: () {
                               if (step == 0 &&
@@ -458,12 +469,14 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
 
     final cap = int.tryParse(capacity.text) ?? 100;
     final tiers = <EventPriceTier>[];
-    for (final d in drafts) {
-      final t = d.toTier(
-        fallbackStock: cap,
-        saleEndsAt: deadline ?? startsAt,
-      );
-      if (t != null) tiers.add(t);
+    if (organizer) {
+      for (final d in drafts) {
+        final t = d.toTier(
+          fallbackStock: cap,
+          saleEndsAt: deadline ?? startsAt,
+        );
+        if (t != null) tiers.add(t);
+      }
     }
     final event = CampusEvent(
       id: existing?.id ?? 'evt_${const Uuid().v4().substring(0, 10)}',
@@ -483,8 +496,8 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
       mapUrl: mapUrl.text.trim(),
       rules: rules.text.trim(),
       priceTiers: tiers,
-      paymentRequired: tiers.isNotEmpty,
-      refundsAllowed: refundsAllowed,
+      paymentRequired: organizer && tiers.isNotEmpty,
+      refundsAllowed: organizer && refundsAllowed,
       imageUrl: bannerUrl.isEmpty ? null : bannerUrl,
     );
 
@@ -498,7 +511,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
       SetOptions(merge: true),
     );
 
-    if (tiers.isNotEmpty) {
+    if (organizer && tiers.isNotEmpty) {
       try {
         await FirebaseFunctions.instanceFor(region: 'europe-west1')
             .httpsCallable('syncEventMarketTickets')
@@ -512,7 +525,9 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
         content: Text(
           editing
               ? 'Etkinlik güncellendi'
-              : 'Etkinlik inceleme için iletildi · bilet Market’e işlendi',
+              : organizer && tiers.isNotEmpty
+                  ? 'Etkinlik inceleme için iletildi · bilet Market’e işlendi'
+                  : 'Etkinlik inceleme için iletildi',
         ),
       ),
     );

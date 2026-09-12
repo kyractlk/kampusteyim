@@ -204,15 +204,15 @@ class _CompanyOrganizerHubScreenState extends State<CompanyOrganizerHubScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Bilet, bakiye ve etkinlik yönetimi burada yer alır. '
-                  'Reklam ve iş ilanları için firma paneline dönün.',
+                  'Ücretli bilet, bakiye ve çekim burada. '
+                  'Ücretsiz etkinlik için Etkinlikler’e gidin; reklam ve ilanlar firma panelinde.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.textSecondary, height: 1.35),
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: () => context.go('/firma/ads'),
-                  child: const Text('Reklam paneline git'),
+                  onPressed: () => context.go('/firma/events'),
+                  child: const Text('Etkinliklere git'),
                 ),
                 TextButton(
                   onPressed: () => context.go('/firma/dashboard'),

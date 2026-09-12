@@ -95,7 +95,7 @@ class _CompanyAdsScreenState extends State<CompanyAdsScreen> {
             final ok = await AdCampaignFormSheet.open(
               context,
               ownerType: 'company',
-              allowEventLink: me.isEventOrganizer,
+              allowEventLink: true,
               jobs: jobs,
             );
             if (ok == true && context.mounted) {
